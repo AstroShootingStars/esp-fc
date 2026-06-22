@@ -22,6 +22,10 @@ class Hardware
     void detectGyro();
     void detectMag();
     void detectBaro();
+    void detectRangefinder();
+    void detectOpticalFlow();
+    void detectOled();
+    void updateOled();
 
 #if defined(ESPFC_SPI_0)
     template<typename Dev>
@@ -41,6 +45,15 @@ class Hardware
       typename Dev::DeviceType type = dev.getType();
       bool status = dev.begin(&bus);
       _model.logger.info().log(F("I2C")).log(FPSTR(Dev::getName(type))).logln(status ? "Y" : "");
+      return status;
+    }
+
+    template<typename Dev>
+    bool detectDevice(Dev& dev, Device::BusI2C& bus, uint8_t addr)
+    {
+      typename Dev::DeviceType type = dev.getType();
+      bool status = dev.begin(&bus, addr);
+      _model.logger.info().log(F("I2C")).log(FPSTR(Dev::getName(type))).log((int)addr).logln(status ? "Y" : "");
       return status;
     }
 #endif

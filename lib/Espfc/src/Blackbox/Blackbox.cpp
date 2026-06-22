@@ -239,34 +239,81 @@ int FAST_CODE_ATTR Blackbox::update()
 
 void FAST_CODE_ATTR Blackbox::updateData()
 {
+  // === GYROSCOPE DATA ===
   for(size_t i = 0; i < AXIS_COUNT_RPY; i++)
   {
+    // Filtered gyro (main loop rate, in degrees/sec)
     gyro.gyroADCf[i] = Utils::toDeg(_model.state.gyro.adc[i]);
+    // Raw unfiltered gyro (in degrees/sec)
     gyro.gyroADC[i] = Utils::toDeg(_model.state.gyro.scaled[i]);
+  }
+
+  // === ACCELEROMETER DATA ===
+  if(_model.accelActive())
+  {
+    for(size_t i = 0; i < AXIS_COUNT_RPY; i++)
+    {
+      // Accel in 1G units (scaled by acc_1G for proper resolution)
+      acc.accADC[i] = _model.state.accel.adc[i] * ACCEL_G_INV * acc.dev.acc_1G;
+    }
+  }
+
+  // === MAGNETOMETER DATA ===
+  if(_model.magActive())
+  {
+    for(size_t i = 0; i < AXIS_COUNT_RPY; i++)
+    {
+      // Mag in arbitrary units (scaled for numerical stability)
+      mag.magADC[i] = _model.state.mag.adc[i] * 1090;
+    }
+  }
+
+  // === BAROMETER DATA ===
+  if(_model.baroActive())
+  {
+    // Altitude in centimeters (referenced to ground level set at arming)
+    baro.altitude = lrintf(_model.state.baro.altitudeGround * 100.f); // cm
+  }
+
+  // === PID LOOP DATA ===
+  for(size_t i = 0; i < AXIS_COUNT_RPY; i++)
+  {
+    // Inner PID loop terms (scaled by 1000 for precision)
     pidData[i].P = _model.state.innerPid[i].pTerm * 1000.f;
     pidData[i].I = _model.state.innerPid[i].iTerm * 1000.f;
     pidData[i].D = _model.state.innerPid[i].dTerm * 1000.f;
     pidData[i].F = _model.state.innerPid[i].fTerm * 1000.f;
-    rcCommand[i] = (_model.state.input.buffer[i] - 1500) * (i == AXIS_YAW ? -1 : 1);
-    if(_model.accelActive()) {
-      acc.accADC[i] = _model.state.accel.adc[i] * ACCEL_G_INV * acc.dev.acc_1G;
-    }
-    if(_model.magActive()) {
-      mag.magADC[i] = _model.state.mag.adc[i] * 1090;
-    }
-    if(_model.baroActive()) {
-      baro.altitude = lrintf(_model.state.baro.altitudeGround * 100.f); // cm
-    }
   }
-  rcCommand[AXIS_THRUST] = _model.state.input.buffer[AXIS_THRUST];
+
+  // === RC INPUT DATA ===
+  for(size_t i = 0; i < AXIS_COUNT_RPYT; i++)
+  {
+    // RC commands: roll/pitch/yaw centered at 0, thrust as raw PWM value
+    if(i == AXIS_YAW)
+      rcCommand[i] = -(_model.state.input.buffer[i] - 1500); // Yaw inverted for BF convention
+    else if(i == AXIS_THRUST)
+      rcCommand[i] = _model.state.input.buffer[i]; // Thrust raw value
+    else
+      rcCommand[i] = (_model.state.input.buffer[i] - 1500); // Roll/Pitch centered
+  }
+
+  // === MOTOR OUTPUT DATA ===
   for(size_t i = 0; i < 4; i++)
   {
+    // Motor PWM values (1000-2000) or dshot values
     motor[i] = Utils::clamp(_model.state.output.us[i], (int16_t)1000, (int16_t)2000);
     if(_model.state.mixer.digitalOutput)
     {
       motor[i] = PWM_TO_DSHOT(motor[i]);
     }
   }
+
+  // === BATTERY DATA ===
+  // Voltage and current are handled by Betaflight's vbatLatest and amperageLatest
+  // which are populated by getBatteryVoltageLatest() and getAmperageLatest() functions
+  // from BlackboxBridge.cpp, so no need to manually set them here
+
+  // === DEBUG VALUES ===
   if(_model.config.debug.mode != DEBUG_NONE && _model.config.debug.mode != DEBUG_BLACKBOX_OUTPUT)
   {
     for(size_t i = 0; i < DEBUG_VALUE_COUNT; i++)
@@ -274,14 +321,25 @@ void FAST_CODE_ATTR Blackbox::updateData()
       debug[i] = _model.state.debug[i];
     }
   }
+
+  // === GPS DATA ===
+  // GPS home location (set at first arming with GPS lock)
   GPS_home[0] = _model.state.gps.location.home.lat;
   GPS_home[1] = _model.state.gps.location.home.lon;
-  gpsSol.llh.lat = _model.state.gps.location.raw.lat;
-  gpsSol.llh.lon = _model.state.gps.location.raw.lon;
-  gpsSol.llh.altCm = (_model.state.gps.location.raw.height + 50) / 100; // 0.1 m
-  gpsSol.groundSpeed = (_model.state.gps.velocity.raw.groundSpeed + 5) / 10; // cm/s
-  gpsSol.groundCourse = (_model.state.gps.velocity.raw.heading + 5000) / 10000; // 0.1 deg
-  gpsSol.numSat = _model.state.gps.numSats;
+
+  // GPS current position and velocity
+  if(_model.gpsActive())
+  {
+    gpsSol.llh.lat = _model.state.gps.location.raw.lat;       // latitude in deg * 1e7
+    gpsSol.llh.lon = _model.state.gps.location.raw.lon;       // longitude in deg * 1e7
+    gpsSol.llh.altCm = (_model.state.gps.location.raw.height + 50) / 100; // altitude in 0.1m
+    gpsSol.groundSpeed = (_model.state.gps.velocity.raw.groundSpeed + 5) / 10; // cm/s
+    gpsSol.groundCourse = (_model.state.gps.velocity.raw.heading + 5000) / 10000; // 0.1 deg
+    gpsSol.numSat = _model.state.gps.numSats;
+
+    // Optional: GPS accuracy metrics (DOP values if available)
+    // Vertical speed (vspeed) if barometer not available
+  }
 }
 
 void FAST_CODE_ATTR Blackbox::updateArmed()

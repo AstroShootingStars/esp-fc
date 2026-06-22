@@ -7,6 +7,10 @@
 #include "Device/InputIBUS.hpp"
 #include "Device/InputSBUS.h"
 #include "Device/InputCRSF.h"
+#include "Device/InputSpektrum.h"
+#include "Device/InputSUMD.h"
+#include "Device/InputSUMH.h"
+#include "Device/InputFPort.h"
 #include "TelemetryManager.h"
 #if defined(ESPFC_ESPNOW)
 #include "Device/InputEspNow.h"
@@ -27,6 +31,12 @@ enum InputPwmRange {
   PWM_RANGE_MAX = 2000
 };
 
+enum FailsafeProcedure {
+  FAILSAFE_PROCEDURE_DROP = 0,
+  FAILSAFE_PROCEDURE_LAND = 1,
+  FAILSAFE_PROCEDURE_GPS_RESCUE = 2,
+};
+
 class Input
 {
   public:
@@ -45,6 +55,7 @@ class Input
     void failsafeIdle();
     void failsafeStage1();
     void failsafeStage2();
+    void failsafeLanding();
     void filterInputs(InputStatus status);
 
     void updateFrameRate();
@@ -65,12 +76,19 @@ class Input
     Device::InputIBUS _ibus;
     Device::InputSBUS _sbus;
     Device::InputCRSF _crsf;
+    Device::InputSpektrum _spektrum;
+    Device::InputSUMD _sumd;
+    Device::InputSUMH _sumh;
+    Device::InputFPort _fport;
 #if defined(ESPFC_ESPNOW)
     Device::InputEspNow _espnow;
 #endif
 
     static constexpr uint32_t TENTH_TO_US = 100000UL;  // 1_000_000 / 10;
     static constexpr uint32_t FRAME_TIME_DEFAULT_US = 23000; // 23 ms
+    static constexpr uint8_t FAILSAFE_RECOVERY_FRAMES = 3;
+
+    uint8_t _failsafeRecoveryFrames = 0;
 };
 
 }

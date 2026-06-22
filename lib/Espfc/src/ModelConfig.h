@@ -8,6 +8,9 @@
 #include "Device/GyroDevice.h"
 #include "Device/MagDevice.hpp"
 #include "Device/BaroDevice.hpp"
+#include "Device/RangefinderDevice.hpp"
+#include "Device/OpticalFlowDevice.hpp"
+#include "Device/OledDevice.hpp"
 #include "Device/SerialDevice.h"
 #include "Device/InputPPM.h"
 #include "Output/Mixers.h"
@@ -83,12 +86,36 @@ enum FlightMode {
   MODE_ARMED,
   MODE_AIRMODE,
   MODE_ANGLE,
+  MODE_HORIZON,
   MODE_ALTHOLD,
   MODE_BUZZER,
   MODE_FAILSAFE,
   MODE_BLACKBOX,
   MODE_BLACKBOX_ERASE,
+  MODE_MAG,
+  MODE_HEADFREE,
+  MODE_HEADADJ,
+  MODE_CALIB,
+  MODE_GPS_RESCUE,
+  MODE_PREARM,
+  MODE_FLIP_OVER_AFTER_CRASH,
+  MODE_USER1,
+  MODE_USER2,
+  MODE_USER3,
+  MODE_USER4,
+  MODE_ACRO_TRAINER,
+  MODE_LAUNCH_CONTROL,
+  MODE_MSP_OVERRIDE,
+  MODE_STICK_COMMANDS_DISABLE,
+  MODE_BEEPER_MUTE,
+  MODE_PARALYZE,
   MODE_COUNT,
+};
+
+enum RangefinderPosition {
+  RANGEFINDER_BOTTOM = 0,  // Downward facing - altitude hold, landing
+  RANGEFINDER_FRONT = 1,   // Forward facing - obstacle avoidance
+  RANGEFINDER_COUNT = 2,
 };
 
 enum ScalerDimension {
@@ -296,7 +323,7 @@ enum PinFunction {
   PIN_COUNT,
 };
 
-constexpr size_t ACTUATOR_CONDITIONS = 8;
+constexpr size_t ACTUATOR_CONDITIONS = 16;
 
 struct ActuatorCondition
 {
@@ -526,14 +553,20 @@ struct WirelessConfig
 struct FailsafeConfig
 {
   uint8_t delay = 4;
+  uint8_t offDelay = 10;
+  int16_t throttle = 1000;
   uint8_t killSwitch = 0;
+  int16_t throttleLowDelay = 100;
+  uint8_t procedure = 0;
 };
 
 struct BlackboxConfig
 {
   int8_t dev = 0;
-  int16_t pDenom = 32; // 1k
-  int32_t fieldsMask = 0xffff;
+  int16_t pDenom = 32; // 1k loop rate: log every 32 samples (1000/32 ≈ 31Hz)
+  // Enable all available blackbox fields for comprehensive sensor logging:
+  // GYRO | GYRO_RAW | ACC | MAG | BARO | PID | RC | MOTOR | BATTERY | GPS | DEBUG | RPM | ALTITUDE
+  int32_t fieldsMask = 0xffffffff; // Log all available sensor fields
   int8_t mode = 0;
 };
 
@@ -598,18 +631,60 @@ struct AccelConfig
 struct BaroConfig
 {
   int8_t bus = BUS_AUTO;
-  int8_t dev = BARO_NONE;
+  int8_t dev = BARO_DEFAULT;
   FilterConfig filter{FILTER_BIQUAD, 3};
 };
 
 struct MagConfig
 {
   int8_t bus = BUS_AUTO;
-  int8_t dev = MAG_NONE;
+  int8_t dev = MAG_DEFAULT;
   int8_t align = ALIGN_DEFAULT;
   int16_t offset[3] = { 0, 0, 0 };
   int16_t scale[3] = { 1000, 1000, 1000 };
   FilterConfig filter{FILTER_BIQUAD, 10};
+};
+
+struct RangefinderConfig
+{
+  int8_t bus = BUS_AUTO;
+  int8_t dev = Device::RANGEFINDER_DEFAULT;
+  FilterConfig filter{FILTER_BIQUAD, 50};
+  uint8_t address = 0;                    // 0=auto/default I2C address
+  uint8_t position = RANGEFINDER_BOTTOM;  // BOTTOM or FRONT
+  uint8_t enabled = 1;                    // Individual enable flag
+};
+
+struct OpticalFlowConfig
+{
+  int8_t bus = BUS_AUTO;
+  int8_t dev = Device::OPFLOW_DEFAULT;
+  int16_t qualityThreshold = 10;
+};
+
+struct ObstacleAvoidanceConfig
+{
+  uint8_t enabled = 0;              // Enable obstacle avoidance
+  uint16_t minSafeDistance = 100;   // Minimum safe distance in cm
+  uint16_t avoidanceDistance = 150; // Start avoidance at this distance in cm
+  uint16_t maxAvoidanceDistance = 300; // Max rangefinder valid distance in cm
+  uint8_t slowdownPercent = 50;     // Reduce throttle by this % when obstacle detected
+  uint8_t stopPercent = 0;          // Reduce throttle by this % to stop forward motion
+  uint8_t avoidanceMode = 0;        // 0=slow down, 1=stop, 2=bypass (move up/down), 3=auto
+  uint8_t bypassAxis = 0;           // 0=yaw, 1=pitch, 2=roll (for bypass mode)
+  uint8_t enableInAcro = 1;         // Enable in acro mode
+  uint8_t enableInHorizon = 1;      // Enable in horizon mode
+  uint8_t enableInAngle = 1;        // Enable in angle mode
+  uint8_t enableInAltHold = 1;      // Enable in altitude hold mode
+  uint8_t debugMode = 0;            // Debug output mode
+};
+
+struct OledConfig
+{
+  int8_t bus = BUS_AUTO;
+  int8_t dev = Device::OLED_DEFAULT;
+  uint8_t height = 0;      // 0=auto, 32 or 64
+  int16_t pageInterval = 3000; // ms between page auto-scroll
 };
 
 struct YawConfig
@@ -659,12 +734,121 @@ struct ControllerConfig
   int16_t tpaBreakpoint = 1650;
 };
 
+constexpr size_t LED_STRIP_MAX_LENGTH = 32;
+constexpr size_t LED_CONFIGURABLE_COLOR_COUNT = 16;
+constexpr size_t LED_MODE_COUNT = 6;
+constexpr size_t LED_DIRECTION_COUNT = 6;
+constexpr size_t LED_SPECIAL_COLOR_COUNT = 11;
+constexpr uint8_t LED_SPECIAL_MODE_INDEX = 6;
+constexpr uint8_t LED_AUX_CHANNEL_MODE_INDEX = 7;
+
+struct LedHsvConfig
+{
+  uint16_t h = 0;
+  uint8_t s = 0;
+  uint8_t v = 0;
+};
+
+struct LedStripConfig
+{
+  uint32_t ledConfig[LED_STRIP_MAX_LENGTH] = {0};
+  LedHsvConfig colors[LED_CONFIGURABLE_COLOR_COUNT] = {
+    {  0,   0,   0 }, // BLACK
+    {  0, 255, 255 }, // WHITE
+    {  0,   0, 255 }, // RED
+    { 15,   0, 255 }, // ORANGE
+    { 50,   0, 255 }, // YELLOW
+    {100,   0, 255 }, // LIME_GREEN
+    {115,   0, 255 }, // GREEN
+    {125,   0, 255 }, // MINT_GREEN
+    {180,   0, 255 }, // CYAN
+    {210,   0, 255 }, // LIGHT_BLUE
+    {240,   0, 255 }, // BLUE
+    {270,   0, 255 }, // DARK_VIOLET
+    {300,   0, 255 }, // MAGENTA
+    {330,   0, 255 }, // DEEP_PINK
+    {  0,   0,   0 },
+    {  0,   0,   0 },
+  };
+  uint8_t modeColors[LED_MODE_COUNT][LED_DIRECTION_COUNT] = {
+    {1, 11, 2, 13, 10, 3}, // ORIENTATION
+    {5, 11, 3, 13, 10, 3}, // HEADFREE
+    {10, 11, 4, 13, 10, 3}, // HORIZON
+    {8, 11, 4, 13, 10, 3}, // ANGLE
+    {7, 11, 3, 13, 10, 3}, // MAG
+    {1, 11, 2, 13, 10, 3}, // BARO
+  };
+  uint8_t specialColors[LED_SPECIAL_COLOR_COUNT] = {
+    6,  // DISARMED
+    10, // ARMED
+    1,  // ANIMATION
+    0,  // BACKGROUND
+    0,  // BLINKBACKGROUND
+    2,  // GPSNOSATS
+    3,  // GPSNOLOCK
+    6,  // GPSLOCKED
+    0,
+    0,
+    0,
+  };
+  uint8_t auxChannel = AXIS_THRUST;
+  uint8_t profile = 2; // STATUS
+};
+
+constexpr size_t VTX_TABLE_MAX_BANDS = 8;
+constexpr size_t VTX_TABLE_MAX_CHANNELS = 8;
+constexpr size_t VTX_TABLE_MAX_POWER_LEVELS = 8;
+constexpr size_t VTX_TABLE_BAND_NAME_LENGTH = 8;
+constexpr size_t VTX_TABLE_POWER_LABEL_LENGTH = 3;
+
+struct VtxTableConfig
+{
+  uint8_t bands = 5;
+  uint8_t channels = 8;
+  uint8_t powerLevels = 5;
+  uint16_t frequency[VTX_TABLE_MAX_BANDS][VTX_TABLE_MAX_CHANNELS] = {
+    {5865, 5845, 5825, 5805, 5785, 5765, 5745, 5725}, // BOSCAM A
+    {5733, 5752, 5771, 5790, 5809, 5828, 5847, 5866}, // BOSCAM B
+    {5705, 5685, 5665, 5645, 5885, 5905, 5925, 5945}, // BOSCAM E
+    {5740, 5760, 5780, 5800, 5820, 5840, 5860, 5880}, // FATSHARK
+    {5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917}, // RACEBAND
+    {0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0},
+  };
+  char bandNames[VTX_TABLE_MAX_BANDS][VTX_TABLE_BAND_NAME_LENGTH + 1] = {
+    "BOSCAM A",
+    "BOSCAM B",
+    "BOSCAM E",
+    "FATSHARK",
+    "RACEBAND",
+    "BAND6",
+    "BAND7",
+    "BAND8",
+  };
+  char bandLetters[VTX_TABLE_MAX_BANDS] = {'A', 'B', 'E', 'F', 'R', '6', '7', '8'};
+  uint8_t isFactoryBand[VTX_TABLE_MAX_BANDS] = {1, 1, 1, 1, 1, 0, 0, 0};
+  uint16_t powerValues[VTX_TABLE_MAX_POWER_LEVELS] = {25, 100, 200, 400, 600, 0, 0, 0};
+  char powerLabels[VTX_TABLE_MAX_POWER_LEVELS][VTX_TABLE_POWER_LABEL_LENGTH + 1] = {
+    "25 ",
+    "100",
+    "200",
+    "400",
+    "600",
+    "LV5",
+    "LV6",
+    "LV7",
+  };
+};
+
 struct VtxConfig
 {
-  uint8_t channel = 0x8;
-  uint8_t band = 0x1;
-  uint8_t power = 0;
+  uint8_t channel = 1;
+  uint8_t band = 4;
+  uint8_t power = 1;
   uint8_t lowPowerDisarm = 0;
+  uint16_t freq = 5740;
+  uint16_t pitModeFreq = 0;
 };
 
 struct GpsConfig
@@ -694,6 +878,87 @@ struct ArmingConfig
   uint8_t smallAngle = 25;
 };
 
+struct LandingAssistConfig
+{
+  uint8_t enabled = 1;
+  uint8_t throttleIntentMargin = 35;     // us above min_check
+  int16_t descentRateLimitCms = -90;     // cm/s
+  int16_t descentCorrectivePermille = 250; // gain * 1000
+  int16_t descentCorrectiveMaxPermille = 350; // max additive throttle * 1000
+
+  int16_t baroHeightThresholdCm = 30;
+  int16_t baroVarioThresholdCms = 30;
+
+  int16_t gpsDownThresholdMms = 250;
+  int16_t gpsGroundThresholdMms = 500;
+
+  uint8_t flowQualityThreshold = 20;
+  uint8_t flowHandQualityThreshold = 30;
+  int16_t flowRateThresholdMrad = 250;
+  int16_t flowRateHandThresholdMrad = 200;
+
+  int16_t handVarioThresholdCms = 25;
+  int16_t handHeightMinCm = 15;
+  int16_t handHeightMaxCm = 180;
+
+  int16_t touchdownHoldMs = 450;
+  int16_t touchdownRampPermille = 20;   // throttle decrement per loop * 1000
+};
+
+struct AltitudeFusionConfig
+{
+  // Weights are in percent-like units [0..100], normalized at runtime across available sensors.
+  uint8_t baroHeightWeight = 65;
+  uint8_t baroVarioWeight = 70;
+  uint8_t gpsHeightWeight = 35;
+  uint8_t gpsVarioWeight = 30;
+  uint8_t rangeHeightWeight = 95;
+  uint8_t flowVarioWeight = 20;
+
+  int16_t flowStillRate = 220;  // optical-flow rate threshold where stillness cue reaches zero
+
+  // Sensor-loss hysteresis in update cycles to smooth brief dropouts.
+  uint8_t gpsLossHysteresis = 5;
+  uint8_t flowLossHysteresis = 5;
+};
+
+struct AutopilotConfig
+{
+  uint8_t landingAltitudeM = 4;
+  uint16_t hoverThrottle = 1275;
+  uint16_t throttleMin = 1100;
+  uint16_t throttleMax = 1900;
+  uint8_t altitudeP = 30;
+  uint8_t altitudeI = 30;
+  uint8_t altitudeD = 30;
+  uint8_t altitudeF = 30;
+};
+
+struct GpsRescueConfig
+{
+  uint16_t maxRescueAngle = 45;
+  uint16_t returnAltitudeM = 30;
+  uint16_t descentDistanceM = 20;
+  uint16_t groundSpeedCmS = 750;
+  uint8_t yawP = 20;
+  uint8_t minSats = 8;
+  uint8_t velP = 8;
+  uint8_t velI = 40;
+  uint8_t velD = 12;
+  uint16_t minStartDistM = 15;
+  uint8_t sanityChecks = 2;
+  uint8_t allowArmingWithoutFix = 0;
+  uint8_t useMag = 1;
+  uint8_t altitudeMode = 0;
+  uint16_t ascendRate = 750;
+  uint16_t descendRate = 150;
+  uint16_t initialClimbM = 10;
+  uint8_t rollMix = 150;
+  uint8_t disarmThreshold = 30;
+  uint8_t pitchCutoffHz = 75;
+  uint8_t imuYawGain = 10;
+};
+
 // persistent data
 class ModelConfig
 {
@@ -703,14 +968,23 @@ class ModelConfig
     AccelConfig accel;
     BaroConfig baro;
     MagConfig mag;
+    RangefinderConfig rangefinder[RANGEFINDER_COUNT];  // [BOTTOM] and [FRONT]
+    ObstacleAvoidanceConfig obstacleAvoidance;
+    OpticalFlowConfig opticalFlow;
+    OledConfig oled;
     InputConfig input;
     FailsafeConfig failsafe;
     FusionConfig fusion;
     VBatConfig vbat;
     IBatConfig ibat;
     VtxConfig vtx;
+    VtxTableConfig vtxTable;
     GpsConfig gps;
     ArmingConfig arming;
+    LandingAssistConfig landingAssist;
+    AltitudeFusionConfig altitudeFusion;
+    AutopilotConfig autopilot;
+    GpsRescueConfig gpsRescue;
 
     ActuatorCondition conditions[ACTUATOR_CONDITIONS];
     ScalerConfig scaler[SCALER_COUNT];
@@ -808,6 +1082,7 @@ class ModelConfig
     };
 
     LedConfig led;
+    LedStripConfig ledStrip;
     BuzzerConfig buzzer;
     WirelessConfig wireless;
 
@@ -852,6 +1127,19 @@ class ModelConfig
       wireless.ssid[0] = 0;
       wireless.pass[0] = 0;
       modelName[0] = 0;
+
+      // Keep default vtx frequency in sync with the default vtx table selection.
+      if(vtx.band >= 1 && vtx.band <= vtxTable.bands && vtx.channel >= 1 && vtx.channel <= vtxTable.channels)
+      {
+        vtx.freq = vtxTable.frequency[vtx.band - 1][vtx.channel - 1];
+      }
+
+      // Dual rangefinder defaults: keep bottom enabled, front opt-in.
+      rangefinder[RANGEFINDER_BOTTOM].position = RANGEFINDER_BOTTOM;
+      rangefinder[RANGEFINDER_BOTTOM].enabled = 1;
+      rangefinder[RANGEFINDER_FRONT].position = RANGEFINDER_FRONT;
+      rangefinder[RANGEFINDER_FRONT].enabled = 0;
+      rangefinder[RANGEFINDER_FRONT].dev = Device::RANGEFINDER_NONE;
 
 // only local development settings
 #if !defined(ESPFC_REVISION)

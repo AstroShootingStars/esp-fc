@@ -7,6 +7,7 @@
 #include "Sensor/AccelSensor.h"
 #include "Sensor/MagSensor.hpp"
 #include "Sensor/BaroSensor.hpp"
+#include "Sensor/OpticalFlowSensor.hpp"
 #include "Sensor/VoltageSensor.h"
 #include "Device/Input/InputButton.hpp"
 
@@ -33,6 +34,7 @@ class SensorManager
     Sensor::AccelSensor _accel;
     Sensor::MagSensor _mag;
     Sensor::BaroSensor _baro;
+    Sensor::OpticalFlowSensor _opticalFlow;
     Sensor::VoltageSensor _voltage;
     Control::Fusion _fusion;
     Control::Altitude _altitude;

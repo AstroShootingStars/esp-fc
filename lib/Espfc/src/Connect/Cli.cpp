@@ -324,6 +324,9 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
   const char ** gyroDevChoices           = Device::GyroDevice::getNames();
   const char ** baroDevChoices           = Device::BaroDevice::getNames();
   const char ** magDevChoices            = Device::MagDevice::getNames();
+  const char ** rangefinderDevChoices    = Device::RangefinderDevice::getNames();
+  const char ** opticalFlowDevChoices    = Device::OpticalFlowDevice::getNames();
+  const char ** oledDevChoices           = Device::OledDevice::getNames();
 
   const char ** fusionModeChoices        = FusionConfig::getModeNames();
   static const char * const * protocolChoices = EscDriver::getProtocolNames();
@@ -433,6 +436,25 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("baro_lpf_type"), &c.baro.filter.type, filterTypeChoices),
     Param(PSTR("baro_lpf_freq"), &c.baro.filter.freq),
 
+    Param(PSTR("range_bottom_bus"), &c.rangefinder[RANGEFINDER_BOTTOM].bus, busDevChoices),
+    Param(PSTR("range_bottom_dev"), &c.rangefinder[RANGEFINDER_BOTTOM].dev, rangefinderDevChoices),
+    Param(PSTR("range_bottom_addr"), &c.rangefinder[RANGEFINDER_BOTTOM].address),
+    Param(PSTR("range_bottom_enabled"), &c.rangefinder[RANGEFINDER_BOTTOM].enabled),
+
+    Param(PSTR("range_front_bus"), &c.rangefinder[RANGEFINDER_FRONT].bus, busDevChoices),
+    Param(PSTR("range_front_dev"), &c.rangefinder[RANGEFINDER_FRONT].dev, rangefinderDevChoices),
+    Param(PSTR("range_front_addr"), &c.rangefinder[RANGEFINDER_FRONT].address),
+    Param(PSTR("range_front_enabled"), &c.rangefinder[RANGEFINDER_FRONT].enabled),
+
+    Param(PSTR("opflow_bus"), &c.opticalFlow.bus, busDevChoices),
+    Param(PSTR("opflow_dev"), &c.opticalFlow.dev, opticalFlowDevChoices),
+    Param(PSTR("opflow_quality_min"), &c.opticalFlow.qualityThreshold),
+
+    Param(PSTR("oled_bus"), &c.oled.bus, busDevChoices),
+    Param(PSTR("oled_dev"), &c.oled.dev, oledDevChoices),
+    Param(PSTR("oled_height"), &c.oled.height),
+    Param(PSTR("oled_page_ms"), &c.oled.pageInterval),
+
     Param(PSTR("gps_min_sats"), &c.gps.minSats),
     Param(PSTR("gps_set_home_once"), &c.gps.setHomeOnce),
     
@@ -516,7 +538,40 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("input_15"), &c.input.channel[15]),
 
     Param(PSTR("failsafe_delay"), &c.failsafe.delay),
+    Param(PSTR("failsafe_off_delay"), &c.failsafe.offDelay),
+    Param(PSTR("failsafe_throttle"), &c.failsafe.throttle),
     Param(PSTR("failsafe_kill_switch"), &c.failsafe.killSwitch),
+    Param(PSTR("failsafe_throttle_low_delay"), &c.failsafe.throttleLowDelay),
+    Param(PSTR("failsafe_procedure"), &c.failsafe.procedure),
+
+    Param(PSTR("landing_assist_enabled"), &c.landingAssist.enabled),
+    Param(PSTR("landing_assist_thr_margin"), &c.landingAssist.throttleIntentMargin),
+    Param(PSTR("landing_assist_desc_rate"), &c.landingAssist.descentRateLimitCms),
+    Param(PSTR("landing_assist_desc_gain"), &c.landingAssist.descentCorrectivePermille),
+    Param(PSTR("landing_assist_desc_max"), &c.landingAssist.descentCorrectiveMaxPermille),
+    Param(PSTR("landing_assist_baro_h"), &c.landingAssist.baroHeightThresholdCm),
+    Param(PSTR("landing_assist_baro_v"), &c.landingAssist.baroVarioThresholdCms),
+    Param(PSTR("landing_assist_gps_down"), &c.landingAssist.gpsDownThresholdMms),
+    Param(PSTR("landing_assist_gps_ground"), &c.landingAssist.gpsGroundThresholdMms),
+    Param(PSTR("landing_assist_flow_q"), &c.landingAssist.flowQualityThreshold),
+    Param(PSTR("landing_assist_flow_hand_q"), &c.landingAssist.flowHandQualityThreshold),
+    Param(PSTR("landing_assist_flow_rate"), &c.landingAssist.flowRateThresholdMrad),
+    Param(PSTR("landing_assist_flow_hand_rate"), &c.landingAssist.flowRateHandThresholdMrad),
+    Param(PSTR("landing_assist_hand_vario"), &c.landingAssist.handVarioThresholdCms),
+    Param(PSTR("landing_assist_hand_h_min"), &c.landingAssist.handHeightMinCm),
+    Param(PSTR("landing_assist_hand_h_max"), &c.landingAssist.handHeightMaxCm),
+    Param(PSTR("landing_assist_hold_ms"), &c.landingAssist.touchdownHoldMs),
+    Param(PSTR("landing_assist_ramp"), &c.landingAssist.touchdownRampPermille),
+
+    Param(PSTR("alt_fuse_baro_h_w"), &c.altitudeFusion.baroHeightWeight),
+    Param(PSTR("alt_fuse_baro_v_w"), &c.altitudeFusion.baroVarioWeight),
+    Param(PSTR("alt_fuse_gps_h_w"), &c.altitudeFusion.gpsHeightWeight),
+    Param(PSTR("alt_fuse_gps_v_w"), &c.altitudeFusion.gpsVarioWeight),
+    Param(PSTR("alt_fuse_range_h_w"), &c.altitudeFusion.rangeHeightWeight),
+    Param(PSTR("alt_fuse_flow_v_w"), &c.altitudeFusion.flowVarioWeight),
+    Param(PSTR("alt_fuse_flow_still"), &c.altitudeFusion.flowStillRate),
+    Param(PSTR("alt_fuse_gps_hyst"), &c.altitudeFusion.gpsLossHysteresis),
+    Param(PSTR("alt_fuse_flow_hyst"), &c.altitudeFusion.flowLossHysteresis),
 
     Param(PSTR("arming_small_angle"), &c.arming.smallAngle),
 
@@ -553,6 +608,14 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("mode_5"), &c.conditions[5]),
     Param(PSTR("mode_6"), &c.conditions[6]),
     Param(PSTR("mode_7"), &c.conditions[7]),
+    Param(PSTR("mode_8"), &c.conditions[8]),
+    Param(PSTR("mode_9"), &c.conditions[9]),
+    Param(PSTR("mode_10"), &c.conditions[10]),
+    Param(PSTR("mode_11"), &c.conditions[11]),
+    Param(PSTR("mode_12"), &c.conditions[12]),
+    Param(PSTR("mode_13"), &c.conditions[13]),
+    Param(PSTR("mode_14"), &c.conditions[14]),
+    Param(PSTR("mode_15"), &c.conditions[15]),
 
     Param(PSTR("pid_sync"), &c.loopSync),
 
@@ -889,6 +952,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     static const char * const helps[] = {
       PSTR("available commands:"),
       PSTR(" help"), PSTR(" dump"), PSTR(" get param"), PSTR(" set param value ..."), PSTR(" cal [gyro]"),
+      PSTR(" range_bottom [bus dev addr enabled]"), PSTR(" range_front [bus dev addr enabled]"),
       PSTR(" defaults"), PSTR(" save"), PSTR(" reboot"), PSTR(" scaler"), PSTR(" mixer"),
       PSTR(" stats"), PSTR(" status"), PSTR(" devinfo"), PSTR(" version"), PSTR(" logs"), PSTR(" gps [set_home|clear_home]"),
       //PSTR(" load"), PSTR(" eeprom"),
@@ -1002,6 +1066,94 @@ void Cli::execute(CliCmd& cmd, Stream& s)
       s.println(cmd.args[1]);
     }
   }
+  else if(strcmp_P(cmd.args[0], PSTR("range_bottom")) == 0 || strcmp_P(cmd.args[0], PSTR("range_front")) == 0)
+  {
+    const bool isFront = strcmp_P(cmd.args[0], PSTR("range_front")) == 0;
+    const uint8_t idx = isFront ? RANGEFINDER_FRONT : RANGEFINDER_BOTTOM;
+    auto& cfg = _model.config.rangefinder[idx];
+
+    auto parseChoice = [](const char* value, const char * const * choices) -> int {
+      if(!value || !choices) return -1;
+      for(int i = 0; choices[i]; i++)
+      {
+        if(strcasecmp_P(value, choices[i]) == 0) return i;
+      }
+      return -1;
+    };
+
+    const char ** busChoices = Device::BusDevice::getNames();
+    const char ** devChoices = Device::RangefinderDevice::getNames();
+
+    if(!cmd.args[1])
+    {
+      s.print(F("# "));
+      s.print(isFront ? F("range_front") : F("range_bottom"));
+      s.print(F(" "));
+      s.print(cfg.bus);
+      s.print(F(" "));
+      s.print(cfg.dev);
+      s.print(F(" "));
+      s.print(cfg.address);
+      s.print(F(" "));
+      s.println(cfg.enabled ? 1 : 0);
+      s.println(F("# usage: <cmd> [bus dev addr enabled]"));
+      s.println(F("# bus/dev accepts index or enum name"));
+      return;
+    }
+
+    bool ok = true;
+
+    if(cmd.args[1])
+    {
+      int bus = parseChoice(cmd.args[1], busChoices);
+      if(bus < 0) bus = String(cmd.args[1]).toInt();
+      if(bus >= BUS_NONE && bus < BUS_MAX) cfg.bus = bus;
+      else ok = false;
+    }
+
+    if(cmd.args[2])
+    {
+      int dev = parseChoice(cmd.args[2], devChoices);
+      if(dev < 0) dev = String(cmd.args[2]).toInt();
+      if(dev >= Device::RANGEFINDER_DEFAULT && dev < Device::RANGEFINDER_MAX) cfg.dev = dev;
+      else ok = false;
+    }
+
+    if(cmd.args[3])
+    {
+      int addr = String(cmd.args[3]).toInt();
+      if(addr >= 0 && addr < 128) cfg.address = addr;
+      else ok = false;
+    }
+
+    if(cmd.args[4])
+    {
+      int en = String(cmd.args[4]).toInt();
+      if(en == 0 || en == 1) cfg.enabled = en;
+      else ok = false;
+    }
+
+    cfg.position = idx;
+    _model.reload();
+
+    if(!ok)
+    {
+      s.println(F("NOT OK: invalid argument"));
+      s.println(F("# usage: range_bottom|range_front [bus dev addr enabled]"));
+    }
+
+    s.print(F("OK "));
+    s.print(isFront ? F("range_front") : F("range_bottom"));
+    s.print(F(" "));
+    s.print(cfg.bus);
+    s.print(F(" "));
+    s.print(cfg.dev);
+    s.print(F(" "));
+    s.print(cfg.address);
+    s.print(F(" "));
+    s.println(cfg.enabled ? 1 : 0);
+    s.println(F("# tip: save"));
+  }
   else if(strcmp_P(cmd.args[0], PSTR("dump")) == 0)
   {
     s.println(F("defaults"));
@@ -1095,7 +1247,9 @@ void Cli::execute(CliCmd& cmd, Stream& s)
   {
     if(!cmd.args[1])
     {
-      s.println(F("Available presets: scaler, modes, micrus, brobot"));
+      s.println(F("Available presets: scaler, modes, micrus, brobot,"));
+      s.println(F("  landing_indoor, landing_outdoor, landing_freestyle,"));
+      s.println(F("  alt_fusion_indoor, alt_fusion_outdoor"));
     }
     else if(strcmp_P(cmd.args[1], PSTR("scaler")) == 0)
     {
@@ -1142,6 +1296,136 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     else if(strcmp_P(cmd.args[1], PSTR("brobot")) == 0)
     {
       s.println(F("OK"));
+    }
+    else if(strcmp_P(cmd.args[1], PSTR("landing_indoor")) == 0)
+    {
+      // Indoor / hand-catch: prioritize optical flow confidence and gentler touchdown confirmation.
+      _model.config.landingAssist.enabled = 1;
+      _model.config.landingAssist.throttleIntentMargin = 45;
+      _model.config.landingAssist.descentRateLimitCms = -70;
+      _model.config.landingAssist.descentCorrectivePermille = 320;
+      _model.config.landingAssist.descentCorrectiveMaxPermille = 420;
+      _model.config.landingAssist.baroHeightThresholdCm = 35;
+      _model.config.landingAssist.baroVarioThresholdCms = 25;
+      _model.config.landingAssist.gpsDownThresholdMms = 300;
+      _model.config.landingAssist.gpsGroundThresholdMms = 700;
+      _model.config.landingAssist.flowQualityThreshold = 25;
+      _model.config.landingAssist.flowHandQualityThreshold = 40;
+      _model.config.landingAssist.flowRateThresholdMrad = 220;
+      _model.config.landingAssist.flowRateHandThresholdMrad = 160;
+      _model.config.landingAssist.handVarioThresholdCms = 20;
+      _model.config.landingAssist.handHeightMinCm = 12;
+      _model.config.landingAssist.handHeightMaxCm = 160;
+      _model.config.landingAssist.touchdownHoldMs = 550;
+      _model.config.landingAssist.touchdownRampPermille = 15;
+
+      _model.config.altitudeFusion.baroHeightWeight = 60;
+      _model.config.altitudeFusion.baroVarioWeight = 60;
+      _model.config.altitudeFusion.gpsHeightWeight = 20;
+      _model.config.altitudeFusion.gpsVarioWeight = 20;
+      _model.config.altitudeFusion.rangeHeightWeight = 100;
+      _model.config.altitudeFusion.flowVarioWeight = 35;
+      _model.config.altitudeFusion.flowStillRate = 180;
+      _model.config.altitudeFusion.gpsLossHysteresis = 4;
+      _model.config.altitudeFusion.flowLossHysteresis = 8;
+      s.println(F("OK landing_indoor"));
+      s.println(F("# tip: save"));
+    }
+    else if(strcmp_P(cmd.args[1], PSTR("landing_outdoor")) == 0)
+    {
+      // Outdoor ground landing: balanced fusion between baro and GPS with moderate descent.
+      _model.config.landingAssist.enabled = 1;
+      _model.config.landingAssist.throttleIntentMargin = 35;
+      _model.config.landingAssist.descentRateLimitCms = -90;
+      _model.config.landingAssist.descentCorrectivePermille = 250;
+      _model.config.landingAssist.descentCorrectiveMaxPermille = 350;
+      _model.config.landingAssist.baroHeightThresholdCm = 30;
+      _model.config.landingAssist.baroVarioThresholdCms = 30;
+      _model.config.landingAssist.gpsDownThresholdMms = 250;
+      _model.config.landingAssist.gpsGroundThresholdMms = 500;
+      _model.config.landingAssist.flowQualityThreshold = 20;
+      _model.config.landingAssist.flowHandQualityThreshold = 30;
+      _model.config.landingAssist.flowRateThresholdMrad = 250;
+      _model.config.landingAssist.flowRateHandThresholdMrad = 200;
+      _model.config.landingAssist.handVarioThresholdCms = 25;
+      _model.config.landingAssist.handHeightMinCm = 15;
+      _model.config.landingAssist.handHeightMaxCm = 180;
+      _model.config.landingAssist.touchdownHoldMs = 450;
+      _model.config.landingAssist.touchdownRampPermille = 20;
+
+      _model.config.altitudeFusion.baroHeightWeight = 65;
+      _model.config.altitudeFusion.baroVarioWeight = 70;
+      _model.config.altitudeFusion.gpsHeightWeight = 35;
+      _model.config.altitudeFusion.gpsVarioWeight = 30;
+      _model.config.altitudeFusion.rangeHeightWeight = 95;
+      _model.config.altitudeFusion.flowVarioWeight = 20;
+      _model.config.altitudeFusion.flowStillRate = 220;
+      _model.config.altitudeFusion.gpsLossHysteresis = 5;
+      _model.config.altitudeFusion.flowLossHysteresis = 5;
+      s.println(F("OK landing_outdoor"));
+      s.println(F("# tip: save"));
+    }
+    else if(strcmp_P(cmd.args[1], PSTR("landing_freestyle")) == 0)
+    {
+      // Freestyle quick-disarm: faster touchdown confirmation and steeper throttle ramp.
+      _model.config.landingAssist.enabled = 1;
+      _model.config.landingAssist.throttleIntentMargin = 25;
+      _model.config.landingAssist.descentRateLimitCms = -120;
+      _model.config.landingAssist.descentCorrectivePermille = 180;
+      _model.config.landingAssist.descentCorrectiveMaxPermille = 280;
+      _model.config.landingAssist.baroHeightThresholdCm = 20;
+      _model.config.landingAssist.baroVarioThresholdCms = 35;
+      _model.config.landingAssist.gpsDownThresholdMms = 350;
+      _model.config.landingAssist.gpsGroundThresholdMms = 900;
+      _model.config.landingAssist.flowQualityThreshold = 15;
+      _model.config.landingAssist.flowHandQualityThreshold = 25;
+      _model.config.landingAssist.flowRateThresholdMrad = 320;
+      _model.config.landingAssist.flowRateHandThresholdMrad = 280;
+      _model.config.landingAssist.handVarioThresholdCms = 35;
+      _model.config.landingAssist.handHeightMinCm = 10;
+      _model.config.landingAssist.handHeightMaxCm = 220;
+      _model.config.landingAssist.touchdownHoldMs = 250;
+      _model.config.landingAssist.touchdownRampPermille = 35;
+
+      _model.config.altitudeFusion.baroHeightWeight = 70;
+      _model.config.altitudeFusion.baroVarioWeight = 75;
+      _model.config.altitudeFusion.gpsHeightWeight = 25;
+      _model.config.altitudeFusion.gpsVarioWeight = 20;
+      _model.config.altitudeFusion.rangeHeightWeight = 90;
+      _model.config.altitudeFusion.flowVarioWeight = 10;
+      _model.config.altitudeFusion.flowStillRate = 260;
+      _model.config.altitudeFusion.gpsLossHysteresis = 3;
+      _model.config.altitudeFusion.flowLossHysteresis = 3;
+      s.println(F("OK landing_freestyle"));
+      s.println(F("# tip: save"));
+    }
+    else if(strcmp_P(cmd.args[1], PSTR("alt_fusion_indoor")) == 0)
+    {
+      _model.config.altitudeFusion.baroHeightWeight = 60;
+      _model.config.altitudeFusion.baroVarioWeight = 60;
+      _model.config.altitudeFusion.gpsHeightWeight = 15;
+      _model.config.altitudeFusion.gpsVarioWeight = 15;
+      _model.config.altitudeFusion.rangeHeightWeight = 100;
+      _model.config.altitudeFusion.flowVarioWeight = 40;
+      _model.config.altitudeFusion.flowStillRate = 170;
+      _model.config.altitudeFusion.gpsLossHysteresis = 4;
+      _model.config.altitudeFusion.flowLossHysteresis = 8;
+      s.println(F("OK alt_fusion_indoor"));
+      s.println(F("# tip: save"));
+    }
+    else if(strcmp_P(cmd.args[1], PSTR("alt_fusion_outdoor")) == 0)
+    {
+      _model.config.altitudeFusion.baroHeightWeight = 65;
+      _model.config.altitudeFusion.baroVarioWeight = 70;
+      _model.config.altitudeFusion.gpsHeightWeight = 40;
+      _model.config.altitudeFusion.gpsVarioWeight = 35;
+      _model.config.altitudeFusion.rangeHeightWeight = 90;
+      _model.config.altitudeFusion.flowVarioWeight = 20;
+      _model.config.altitudeFusion.flowStillRate = 220;
+      _model.config.altitudeFusion.gpsLossHysteresis = 6;
+      _model.config.altitudeFusion.flowLossHysteresis = 5;
+      s.println(F("OK alt_fusion_outdoor"));
+      s.println(F("# tip: save"));
     }
     else
     {
@@ -1237,6 +1521,8 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     Device::GyroDevice * gyro = _model.state.gyro.dev;
     Device::BaroDevice * baro = _model.state.baro.dev;
     Device::MagDevice  * mag  = _model.state.mag.dev;
+    Device::RangefinderDevice * rangeBottom = _model.state.rangefinder[RANGEFINDER_BOTTOM].dev;
+    Device::RangefinderDevice * rangeFront  = _model.state.rangefinder[RANGEFINDER_FRONT].dev;
     s.print(F("     devices: "));
     if(gyro)
     {
@@ -1269,6 +1555,42 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     {
       s.print(F(", GPS"));
     }
+
+    if(_model.state.opticalFlow.dev)
+    {
+      s.print(F(", "));
+      s.print(FPSTR(Device::OpticalFlowDevice::getName(_model.state.opticalFlow.dev->getType())));
+      s.print('/');
+      s.print(FPSTR(Device::BusDevice::getName(_model.state.opticalFlow.dev->getBus()->getType())));
+    }
+    else if(_model.config.opticalFlow.dev == Device::OPFLOW_MSP || _model.config.opticalFlow.dev == Device::OPFLOW_DEFAULT)
+    {
+      s.print(F(", OPFLOW/MSP"));
+    }
+
+    if(rangeBottom)
+    {
+      s.print(F(", RNG-B:"));
+      s.print(FPSTR(Device::RangefinderDevice::getName(rangeBottom->getType())));
+      s.print('/');
+      s.print(FPSTR(Device::BusDevice::getName(rangeBottom->getBus()->getType())));
+    }
+
+    if(rangeFront)
+    {
+      s.print(F(", RNG-F:"));
+      s.print(FPSTR(Device::RangefinderDevice::getName(rangeFront->getType())));
+      s.print('/');
+      s.print(FPSTR(Device::BusDevice::getName(rangeFront->getBus()->getType())));
+    }
+
+    if(_model.state.oled.dev)
+    {
+      s.print(F(", "));
+      s.print(FPSTR(Device::OledDevice::getName(_model.state.oled.dev->getType())));
+      s.print('/');
+      s.print(FPSTR(Device::BusDevice::getName(_model.state.oled.dev->getBus()->getType())));
+    }
     s.println();
 
     s.print(F("       input: "));
@@ -1277,6 +1599,55 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     s.print(_model.state.input.autoFreq);
     s.print(F(" Hz, "));
     s.println(_model.state.input.autoFactor);
+
+    s.print(F("      opflow: "));
+    s.print(_model.state.opticalFlow.present ? F("OK") : F("NO DATA"));
+    s.print(F(", q="));
+    s.print(_model.state.opticalFlow.quality);
+    s.print(F(", dx="));
+    s.print(_model.state.opticalFlow.motionX);
+    s.print(F(", dy="));
+    s.print(_model.state.opticalFlow.motionY);
+    s.print(F(", vx="));
+    s.print(_model.state.opticalFlow.flowRateX, 2);
+    s.print(F(", vy="));
+    s.print(_model.state.opticalFlow.flowRateY, 2);
+    if(_model.state.opticalFlow.lastUpdateUs)
+    {
+      s.print(F(", age="));
+      s.print((micros() - _model.state.opticalFlow.lastUpdateUs) * 0.001f, 1);
+      s.print(F(" ms"));
+    }
+    s.println();
+
+    s.print(F("      rangeB: "));
+    s.print(_model.state.rangefinder[RANGEFINDER_BOTTOM].present ? F("OK") : F("NO DATA"));
+    s.print(F(", dev="));
+    s.print(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev);
+    s.print(F(", bus="));
+    s.print(_model.config.rangefinder[RANGEFINDER_BOTTOM].bus);
+    s.print(F(", addr="));
+    s.print(_model.config.rangefinder[RANGEFINDER_BOTTOM].address);
+    s.print(F(", en="));
+    s.print(_model.config.rangefinder[RANGEFINDER_BOTTOM].enabled);
+    s.print(F(", mm="));
+    s.println(_model.state.rangefinder[RANGEFINDER_BOTTOM].distance);
+
+    s.print(F("      rangeF: "));
+    s.print(_model.state.rangefinder[RANGEFINDER_FRONT].present ? F("OK") : F("NO DATA"));
+    s.print(F(", dev="));
+    s.print(_model.config.rangefinder[RANGEFINDER_FRONT].dev);
+    s.print(F(", bus="));
+    s.print(_model.config.rangefinder[RANGEFINDER_FRONT].bus);
+    s.print(F(", addr="));
+    s.print(_model.config.rangefinder[RANGEFINDER_FRONT].address);
+    s.print(F(", en="));
+    s.print(_model.config.rangefinder[RANGEFINDER_FRONT].enabled);
+    s.print(F(", mm="));
+    s.println(_model.state.rangefinder[RANGEFINDER_FRONT].distance);
+
+    s.print(F("        oled: "));
+    s.println(_model.state.oled.present ? F("OK") : F("MISSING"));
 
     static const char* armingDisableNames[] = {
       PSTR("NO_GYRO"), PSTR("FAILSAFE"), PSTR("RX_FAILSAFE"), PSTR("BAD_RX_RECOVERY"),

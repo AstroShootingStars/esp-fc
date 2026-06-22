@@ -13,6 +13,12 @@
 #include "Device/Mag/MagHMC5883L.hpp"
 #include "Device/Mag/MagQMC5883L.hpp"
 #include "Device/Mag/MagQMC5883P.hpp"
+#include "Device/OpticalFlowMatek3901L0X.hpp"
+#include "Device/OpticalFlowMicoAirMTF02P.hpp"
+#include "Device/OledSSD1306.hpp"
+#include "Device/RangefinderVL53L0X.hpp"
+#include "Device/RangefinderVL53L1X.hpp"
+#include "Device/RangefinderVL6180X.hpp"
 #include "Hal/Gpio.h"
 #include "Hardware.h"
 #if defined(ESPFC_WIFI_ALT)
@@ -47,6 +53,12 @@ static Espfc::Device::Mag::MagAK8963 ak8963;
 static Espfc::Device::Baro::BaroBMP085 bmp085;
 static Espfc::Device::Baro::BaroBMP280 bmp280;
 static Espfc::Device::Baro::BaroSPL06 spl06;
+static Espfc::Device::RangefinderVL53L0X vl53l0x;
+static Espfc::Device::RangefinderVL6180X vl6180x;
+static Espfc::Device::RangefinderVL53L1X vl53l1x;
+static Espfc::Device::OpticalFlowMatek3901L0X opFlowMatek;
+static Espfc::Device::OpticalFlowMicoAirMTF02P opFlowMicoAir;
+static Espfc::Device::OledSSD1306 oledSsd1306;
 } // namespace
 
 namespace Espfc {
@@ -59,6 +71,9 @@ int Hardware::begin()
   detectGyro();
   detectMag();
   detectBaro();
+  detectRangefinder();
+  detectOpticalFlow();
+  detectOled();
   return 1;
 }
 
@@ -190,6 +205,128 @@ void Hardware::detectBaro()
 
   _model.state.baro.dev = detectedBaro;
   _model.state.baro.present = (bool)detectedBaro;
+}
+
+void Hardware::detectRangefinder()
+{
+  for(size_t i = 0; i < RANGEFINDER_COUNT; i++)
+  {
+    _model.state.rangefinder[i].dev = nullptr;
+    _model.state.rangefinder[i].present = false;
+    _model.state.rangefinder[i].rate = 0;
+    _model.state.rangefinder[i].position = i;
+  }
+
+  auto detectByConfig = [&](const RangefinderConfig& cfg) -> Device::RangefinderDevice* {
+    if(!cfg.enabled) return nullptr;
+    if(cfg.dev == Device::RANGEFINDER_NONE) return nullptr;
+    if(cfg.bus == BUS_NONE) return nullptr;
+    if(cfg.bus != BUS_AUTO && cfg.bus != BUS_I2C) return nullptr;
+
+    const int8_t wantedDev = cfg.dev;
+    const uint8_t wantedAddr = cfg.address;
+
+    Device::RangefinderDevice* detectedRangefinder = nullptr;
+#if defined(ESPFC_I2C_0)
+    if (_model.config.pin[PIN_I2C_0_SDA] != -1 && _model.config.pin[PIN_I2C_0_SCL] != -1)
+    {
+      if (!detectedRangefinder && (wantedDev == Device::RANGEFINDER_DEFAULT || wantedDev == Device::RANGEFINDER_VL53L0X))
+      {
+        if (wantedAddr > 0 && wantedAddr < 0x80) {
+          if (detectDevice(vl53l0x, i2cBus, wantedAddr)) detectedRangefinder = &vl53l0x;
+        } else {
+          if (detectDevice(vl53l0x, i2cBus)) detectedRangefinder = &vl53l0x;
+        }
+      }
+      if (!detectedRangefinder && (wantedDev == Device::RANGEFINDER_DEFAULT || wantedDev == Device::RANGEFINDER_VL6180X))
+      {
+        if (wantedAddr > 0 && wantedAddr < 0x80) {
+          if (detectDevice(vl6180x, i2cBus, wantedAddr)) detectedRangefinder = &vl6180x;
+        } else {
+          if (detectDevice(vl6180x, i2cBus)) detectedRangefinder = &vl6180x;
+        }
+      }
+      if (!detectedRangefinder && (wantedDev == Device::RANGEFINDER_DEFAULT || wantedDev == Device::RANGEFINDER_VL53L1X))
+      {
+        if (wantedAddr > 0 && wantedAddr < 0x80) {
+          if (detectDevice(vl53l1x, i2cBus, wantedAddr)) detectedRangefinder = &vl53l1x;
+        } else {
+          if (detectDevice(vl53l1x, i2cBus)) detectedRangefinder = &vl53l1x;
+        }
+      }
+    }
+#endif
+
+    return detectedRangefinder;
+  };
+
+  Device::RangefinderDevice* bottom = detectByConfig(_model.config.rangefinder[RANGEFINDER_BOTTOM]);
+  Device::RangefinderDevice* front = detectByConfig(_model.config.rangefinder[RANGEFINDER_FRONT]);
+
+  _model.state.rangefinder[RANGEFINDER_BOTTOM].dev = bottom;
+  _model.state.rangefinder[RANGEFINDER_BOTTOM].present = (bool)bottom;
+  _model.state.rangefinder[RANGEFINDER_BOTTOM].rate = bottom ? bottom->getRate() : 0;
+
+  _model.state.rangefinder[RANGEFINDER_FRONT].dev = front;
+  _model.state.rangefinder[RANGEFINDER_FRONT].present = (bool)front;
+  _model.state.rangefinder[RANGEFINDER_FRONT].rate = front ? front->getRate() : 0;
+}
+
+void Hardware::detectOpticalFlow()
+{
+  if (_model.config.opticalFlow.dev == Device::OPFLOW_NONE) return;
+
+  Device::OpticalFlowDevice* detectedFlow = nullptr;
+
+#if defined(ESPFC_I2C_0)
+  if (_model.config.pin[PIN_I2C_0_SDA] != -1 && _model.config.pin[PIN_I2C_0_SCL] != -1)
+  {
+    if (!detectedFlow && (_model.config.opticalFlow.dev == Device::OPFLOW_DEFAULT || _model.config.opticalFlow.dev == Device::OPFLOW_MATEK_3901_L0X))
+    {
+      if (detectDevice(opFlowMatek, i2cBus)) detectedFlow = &opFlowMatek;
+    }
+    if (!detectedFlow && (_model.config.opticalFlow.dev == Device::OPFLOW_DEFAULT || _model.config.opticalFlow.dev == Device::OPFLOW_MICOAIR_MTF_02P))
+    {
+      if (detectDevice(opFlowMicoAir, i2cBus)) detectedFlow = &opFlowMicoAir;
+    }
+  }
+#endif
+
+  _model.state.opticalFlow.dev = detectedFlow;
+  _model.state.opticalFlow.present = (bool)detectedFlow;
+  _model.state.opticalFlow.rate = detectedFlow ? detectedFlow->getRate() : ((_model.config.opticalFlow.dev == Device::OPFLOW_DEFAULT || _model.config.opticalFlow.dev == Device::OPFLOW_MSP) ? 100 : 0);
+}
+
+void Hardware::detectOled()
+{
+  if (_model.config.oled.dev == Device::OLED_NONE) return;
+
+  oledSsd1306.setHeight(_model.config.oled.height);
+  oledSsd1306.setPageInterval(_model.config.oled.pageInterval);
+
+  Device::OledDevice* detectedOled = nullptr;
+
+#if defined(ESPFC_I2C_0)
+  if (_model.config.pin[PIN_I2C_0_SDA] != -1 && _model.config.pin[PIN_I2C_0_SCL] != -1)
+  {
+    if (!detectedOled && (_model.config.oled.dev == Device::OLED_DEFAULT || _model.config.oled.dev == Device::OLED_SSD1306))
+    {
+      if (detectDevice(oledSsd1306, i2cBus)) detectedOled = &oledSsd1306;
+    }
+  }
+#endif
+
+  _model.state.oled.dev = detectedOled;
+  _model.state.oled.present = (bool)detectedOled;
+}
+
+void Hardware::updateOled()
+{
+  if(!_model.oledActive()) return;
+  if(_model.state.oled.dev == &oledSsd1306)
+  {
+    oledSsd1306.update(_model);
+  }
 }
 
 void Hardware::restart(const Model& model)

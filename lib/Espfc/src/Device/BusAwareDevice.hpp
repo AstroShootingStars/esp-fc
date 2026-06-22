@@ -7,6 +7,8 @@ namespace Espfc::Device {
 class BusAwareDevice
 {
 public:
+  BusAwareDevice(): _bus(nullptr), _addr(0) {}
+
   void setBus(BusDevice* bus, uint8_t addr)
   {
     _bus = bus;

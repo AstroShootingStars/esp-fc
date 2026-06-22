@@ -21,6 +21,81 @@ extern "C" {
   uint16_t blackboxGetPRatio(void);
 }
 
+#ifndef MSP2_SENSOR_RANGEFINDER
+#define MSP2_SENSOR_RANGEFINDER 0x1F01
+#endif
+
+#ifndef MSP2_SENSOR_OPTIC_FLOW
+#define MSP2_SENSOR_OPTIC_FLOW  0x1F02
+#endif
+
+#ifndef MSP2_ESPFC_LANDING_ASSIST_CONFIG
+#define MSP2_ESPFC_LANDING_ASSIST_CONFIG      0x1F03
+#endif
+
+#ifndef MSP2_ESPFC_SET_LANDING_ASSIST_CONFIG
+#define MSP2_ESPFC_SET_LANDING_ASSIST_CONFIG  0x1F04
+#endif
+
+#ifndef MSP2_ESPFC_ALT_FUSION_CONFIG
+#define MSP2_ESPFC_ALT_FUSION_CONFIG          0x1F05
+#endif
+
+#ifndef MSP2_ESPFC_SET_ALT_FUSION_CONFIG
+#define MSP2_ESPFC_SET_ALT_FUSION_CONFIG      0x1F06
+#endif
+
+#ifndef MSP2_ESPFC_SENSOR_OFFSET
+#define MSP2_ESPFC_SENSOR_OFFSET              0x1F07
+#endif
+
+#ifndef MSP2_ESPFC_SET_SENSOR_OFFSET
+#define MSP2_ESPFC_SET_SENSOR_OFFSET          0x1F08
+#endif
+
+#ifndef MSP2_ESPFC_SENSOR_SCALE
+#define MSP2_ESPFC_SENSOR_SCALE               0x1F09
+#endif
+
+#ifndef MSP2_ESPFC_SET_SENSOR_SCALE
+#define MSP2_ESPFC_SET_SENSOR_SCALE           0x1F0A
+#endif
+
+#ifndef MSP2_ESPFC_CALIBRATION_DATA
+#define MSP2_ESPFC_CALIBRATION_DATA           0x1F0B
+#endif
+
+#ifndef MSP2_ESPFC_SENSOR_STATUS
+#define MSP2_ESPFC_SENSOR_STATUS              0x1F0C
+#endif
+
+#ifndef MSP2_ESPFC_OBSTACLE_AVOIDANCE_CONFIG
+#define MSP2_ESPFC_OBSTACLE_AVOIDANCE_CONFIG  0x1F0D
+#endif
+
+#ifndef MSP2_ESPFC_SET_OBSTACLE_AVOIDANCE_CONFIG
+#define MSP2_ESPFC_SET_OBSTACLE_AVOIDANCE_CONFIG 0x1F0E
+#endif
+
+#ifndef MSP2_ESPFC_SENSOR_RANGEFINDER_FRONT
+#define MSP2_ESPFC_SENSOR_RANGEFINDER_FRONT   0x1F0F
+#endif
+
+#ifndef MSP2_ESPFC_SENSOR_RANGEFINDER_STATUS
+#define MSP2_ESPFC_SENSOR_RANGEFINDER_STATUS  0x1F10
+#endif
+
+#ifndef MSP2_ESPFC_RANGEFINDER_CONFIG
+#define MSP2_ESPFC_RANGEFINDER_CONFIG         0x1F11
+#endif
+
+#ifndef MSP2_ESPFC_SET_RANGEFINDER_CONFIG
+#define MSP2_ESPFC_SET_RANGEFINDER_CONFIG     0x1F12
+#endif
+
+// Extended receiver protocol support - using standard Betaflight MSP commands only
+// Custom extensions disabled to maintain Betaflight configurator compatibility
+
 namespace {
 
 enum SerialSpeedIndex {
@@ -109,6 +184,83 @@ static uint8_t fromFilterTypeDerivative(uint8_t t)
   }
 }
 
+static char toUpperAscii(char c)
+{
+  return (c >= 'a' && c <= 'z') ? (char)(c - 'a' + 'A') : c;
+}
+
+static uint16_t vtxLookupFrequency(const Espfc::ModelConfig& config, uint8_t band, uint8_t channel)
+{
+  if(band < 1 || channel < 1) return 0;
+  if(band > config.vtxTable.bands || channel > config.vtxTable.channels) return 0;
+  return config.vtxTable.frequency[band - 1][channel - 1];
+}
+
+static void vtxApplyBandChannel(Espfc::ModelConfig& config, uint8_t band, uint8_t channel)
+{
+  config.vtx.band = band;
+  config.vtx.channel = channel;
+  config.vtx.freq = vtxLookupFrequency(config, band, channel);
+}
+
+struct ModeBoxMapEntry {
+  uint8_t mode;
+  uint8_t boxId;
+};
+
+static constexpr ModeBoxMapEntry MODE_BOX_MAP[] = {
+  { Espfc::MODE_ARMED, 0 },
+  { Espfc::MODE_AIRMODE, 27 },
+  { Espfc::MODE_ANGLE, 1 },
+  { Espfc::MODE_HORIZON, 2 },
+  { Espfc::MODE_ALTHOLD, 3 },
+  { Espfc::MODE_BUZZER, 13 },
+  { Espfc::MODE_FAILSAFE, 26 },
+  { Espfc::MODE_BLACKBOX, 22 },
+  { Espfc::MODE_BLACKBOX_ERASE, 30 },
+  { Espfc::MODE_MAG, 5 },
+  { Espfc::MODE_HEADFREE, 6 },
+  { Espfc::MODE_HEADADJ, 7 },
+  { Espfc::MODE_CALIB, 16 },
+  { Espfc::MODE_GPS_RESCUE, 44 },
+  { Espfc::MODE_PREARM, 35 },
+  { Espfc::MODE_FLIP_OVER_AFTER_CRASH, 28 },
+  { Espfc::MODE_USER1, 39 },
+  { Espfc::MODE_USER2, 40 },
+  { Espfc::MODE_USER3, 41 },
+  { Espfc::MODE_USER4, 42 },
+  { Espfc::MODE_ACRO_TRAINER, 45 },
+  { Espfc::MODE_LAUNCH_CONTROL, 47 },
+  { Espfc::MODE_MSP_OVERRIDE, 48 },
+  { Espfc::MODE_STICK_COMMANDS_DISABLE, 49 },
+  { Espfc::MODE_BEEPER_MUTE, 50 },
+  { Espfc::MODE_PARALYZE, 43 },
+};
+
+static constexpr const char * MODE_BOX_NAMES =
+  "ARM;AIRMODE;ANGLE;HORIZON;ALTHOLD;BEEPER;FAILSAFE;BLACKBOX;BLACKBOXERASE;"
+  "MAG;HEADFREE;HEADADJ;CALIB;GPS RESCUE;PREARM;FLIP OVER AFTER CRASH;"
+  "USER1;USER2;USER3;USER4;ACRO TRAINER;LAUNCH CONTROL;MSP OVERRIDE;"
+  "STICK COMMANDS DISABLE;BEEPER MUTE;PARALYZE;";
+
+static int16_t boxIdToMode(uint8_t boxId)
+{
+  for(size_t i = 0; i < sizeof(MODE_BOX_MAP) / sizeof(MODE_BOX_MAP[0]); i++)
+  {
+    if(MODE_BOX_MAP[i].boxId == boxId) return MODE_BOX_MAP[i].mode;
+  }
+  return -1;
+}
+
+static uint8_t modeToBoxId(uint8_t mode)
+{
+  for(size_t i = 0; i < sizeof(MODE_BOX_MAP) / sizeof(MODE_BOX_MAP[0]); i++)
+  {
+    if(MODE_BOX_MAP[i].mode == mode) return MODE_BOX_MAP[i].boxId;
+  }
+  return mode;
+}
+
 static uint8_t fromGyroDlpf(uint8_t t)
 {
   switch(t) {
@@ -177,52 +329,6 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
   r.result = 1;
   switch(m.cmd)
   {
-    case MSP_API_VERSION:
-      r.writeU8(MSP_PROTOCOL_VERSION);
-      r.writeU8(API_VERSION_MAJOR);
-      r.writeU8(API_VERSION_MINOR);
-      break;
-
-    case MSP_FC_VARIANT:
-      r.writeData(flightControllerIdentifier, FLIGHT_CONTROLLER_IDENTIFIER_LENGTH);
-      break;
-
-    case MSP_FC_VERSION:
-      r.writeU8(FC_VERSION_MAJOR);
-      r.writeU8(FC_VERSION_MINOR);
-      r.writeU8(FC_VERSION_PATCH_LEVEL);
-      break;
-
-    case MSP_BOARD_INFO:
-      r.writeData(boardIdentifier, BOARD_IDENTIFIER_LENGTH);
-      r.writeU16(0); // No other build targets currently have hardware revision detection.
-      r.writeU8(0);  // 0 == FC
-      r.writeU8(0);  // target capabilities
-      r.writeU8(strlen(targetName));  // target name
-      r.writeData(targetName, strlen(targetName));
-      r.writeU8(0);  // board name
-      r.writeU8(0);  // manufacturer name
-      for(size_t i = 0; i < 32; i++) r.writeU8(0); // signature
-      r.writeU8(255); // mcu id: unknown
-      // 1.42
-      r.writeU8(2);  // configuration state: configured
-      // 1.43
-      r.writeU16(_model.state.gyro.present ? _model.state.gyro.timer.rate : 0); // sample rate
-      {
-        uint32_t problems = 0;
-        if(_model.state.accel.bias.x == 0 && _model.state.accel.bias.y == 0 && _model.state.accel.bias.z == 0) {
-          problems |= 1 << 0; // acc calibration required
-        }
-        if(_model.config.output.protocol == ESC_PROTOCOL_DISABLED) {
-          problems |= 1 << 1; // no motor protocol
-        }
-        r.writeU32(problems); // configuration problems
-      }
-      // 1.44
-      r.writeU8(0);  // spi dev count
-      r.writeU8(0);  // i2c dev count
-      break;
-
     case MSP_BUILD_INFO:
       r.writeData(buildDate, BUILD_DATE_LENGTH);
       r.writeData(buildTime, BUILD_TIME_LENGTH);
@@ -275,24 +381,20 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_BOXNAMES:
-      r.writeString(F("ARM;AIRMODE;ANGLE;ALTHOLD;BEEPER;FAILSAFE;BLACKBOX;BLACKBOXERASE;"));
+      r.writeString(MODE_BOX_NAMES);
       break;
 
     case MSP_BOXIDS:
-      r.writeU8(MODE_ARMED);
-      r.writeU8(MODE_AIRMODE);
-      r.writeU8(MODE_ANGLE);
-      r.writeU8(MODE_ALTHOLD);
-      r.writeU8(MODE_BUZZER);
-      r.writeU8(MODE_FAILSAFE);
-      r.writeU8(MODE_BLACKBOX);
-      r.writeU8(MODE_BLACKBOX_ERASE);
+      for(size_t i = 0; i < sizeof(MODE_BOX_MAP) / sizeof(MODE_BOX_MAP[0]); i++)
+      {
+        r.writeU8(MODE_BOX_MAP[i].boxId);
+      }
       break;
 
     case MSP_MODE_RANGES:
       for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
       {
-        r.writeU8(_model.config.conditions[i].id);
+        r.writeU8(modeToBoxId(_model.config.conditions[i].id));
         r.writeU8(_model.config.conditions[i].ch - AXIS_AUX_1);
         r.writeU8((_model.config.conditions[i].min - 900) / 25);
         r.writeU8((_model.config.conditions[i].max - 900) / 25);
@@ -303,7 +405,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(ACTUATOR_CONDITIONS);
       for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
       {
-        r.writeU8(_model.config.conditions[i].id);
+        r.writeU8(modeToBoxId(_model.config.conditions[i].id));
         r.writeU8(_model.config.conditions[i].logicMode);
         r.writeU8(_model.config.conditions[i].linkId);
       }
@@ -315,7 +417,18 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         size_t i = m.readU8();
         if(i < ACTUATOR_CONDITIONS)
         {
-          _model.config.conditions[i].id = m.readU8();
+          const uint8_t boxId = m.readU8();
+          int16_t mappedMode = boxIdToMode(boxId);
+          if(mappedMode < 0 && boxId < MODE_COUNT)
+          {
+            mappedMode = boxId;
+          }
+          if(mappedMode < 0)
+          {
+            r.result = -1;
+            break;
+          }
+          _model.config.conditions[i].id = mappedMode;
           _model.config.conditions[i].ch = m.readU8() + AXIS_AUX_1;
           _model.config.conditions[i].min = m.readU8() * 25 + 900;
           _model.config.conditions[i].max = m.readU8() * 25 + 900;
@@ -407,53 +520,6 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       }
       break;
 
-    case MSP_VOLTAGE_METER_CONFIG:
-      r.writeU8(1); // num voltage sensors
-      for(int i = 0; i < 1; i++)
-      {
-        r.writeU8(5); // frame size (5)
-        r.writeU8(i + 10); // id (10-19 vbat adc)
-        r.writeU8(0); // type resistor divider
-        r.writeU8(_model.config.vbat.scale); // scale
-        r.writeU8(_model.config.vbat.resDiv);  // resdivval
-        r.writeU8(_model.config.vbat.resMult);  // resdivmultiplier
-      }
-      break;
-
-    case MSP_SET_VOLTAGE_METER_CONFIG:
-      {
-        int id = m.readU8();
-        if(id == 10 + 0) // id (10-19 vbat adc, allow only 10)
-        {
-          _model.config.vbat.scale = m.readU8();
-          _model.config.vbat.resDiv = m.readU8();
-          _model.config.vbat.resMult = m.readU8();
-        }
-      }
-      break;
-
-    case MSP_CURRENT_METER_CONFIG:
-      r.writeU8(1); // num voltage sensors
-      for(int i = 0; i < 1; i++)
-      {
-        r.writeU8(6); // frame size (6)
-        r.writeU8(i + 10); // id (10-19 ibat adc)
-        r.writeU8(1); // type adc
-        r.writeU16(_model.config.ibat.scale); // scale
-        r.writeU16(_model.config.ibat.offset);  // offset
-      }
-      break;
-
-    case MSP_SET_CURRENT_METER_CONFIG:
-      {
-        int id = m.readU8();
-        if(id == 10 + 0) // id (10-19 ibat adc, allow only 10)
-        {
-          _model.config.ibat.scale = m.readU16();
-          _model.config.ibat.offset = m.readU16();
-        }
-      }
-      break;
 
     case MSP_DATAFLASH_SUMMARY:
 #ifdef USE_FLASHFS   
@@ -528,12 +594,20 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(_model.config.accel.dev); // 3 acc mpu6050
       r.writeU8(_model.config.baro.dev);  // 2 baro bmp085
       r.writeU8(_model.config.mag.dev);   // 3 mag hmc5883l
+      r.writeU8(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev);  // Report bottom rangefinder device
+      r.writeU8(_model.config.opticalFlow.dev);
       break;
 
     case MSP_SET_SENSOR_CONFIG:
       _model.config.accel.dev = m.readU8(); // 3 acc mpu6050
       _model.config.baro.dev = m.readU8();  // 2 baro bmp085
       _model.config.mag.dev = m.readU8();   // 3 mag hmc5883l
+      if (m.remain() >= 1) 
+      {
+        uint8_t dev = m.readU8();
+        _model.config.rangefinder[RANGEFINDER_BOTTOM].dev = dev;
+      }
+      if (m.remain() >= 1) _model.config.opticalFlow.dev = m.readU8();
       _model.reload();
       break;
 
@@ -561,6 +635,111 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           m.readU8(); // gyro 2 align
         }
         _model.config.gyro.align = gyroAlign;
+      }
+      break;
+
+    case MSP2_ESPFC_SENSOR_OFFSET:
+      // Read gyro bias
+      r.writeU16(_model.config.gyro.bias[0]); // X
+      r.writeU16(_model.config.gyro.bias[1]); // Y
+      r.writeU16(_model.config.gyro.bias[2]); // Z
+      // Read accel bias
+      r.writeU16(_model.config.accel.bias[0]); // X
+      r.writeU16(_model.config.accel.bias[1]); // Y
+      r.writeU16(_model.config.accel.bias[2]); // Z
+      // Read mag offset
+      r.writeU16(_model.config.mag.offset[0]); // X
+      r.writeU16(_model.config.mag.offset[1]); // Y
+      r.writeU16(_model.config.mag.offset[2]); // Z
+      break;
+
+    case MSP2_ESPFC_SET_SENSOR_OFFSET:
+      // Write gyro bias
+      _model.config.gyro.bias[0] = std::clamp<int16_t>(m.readU16(), -1000, 1000);
+      _model.config.gyro.bias[1] = std::clamp<int16_t>(m.readU16(), -1000, 1000);
+      _model.config.gyro.bias[2] = std::clamp<int16_t>(m.readU16(), -1000, 1000);
+      // Write accel bias
+      if(m.remain() >= 6) {
+        _model.config.accel.bias[0] = std::clamp<int16_t>(m.readU16(), -500, 500);
+        _model.config.accel.bias[1] = std::clamp<int16_t>(m.readU16(), -500, 500);
+        _model.config.accel.bias[2] = std::clamp<int16_t>(m.readU16(), -500, 500);
+      }
+      // Write mag offset
+      if(m.remain() >= 6) {
+        _model.config.mag.offset[0] = std::clamp<int16_t>(m.readU16(), -1000, 1000);
+        _model.config.mag.offset[1] = std::clamp<int16_t>(m.readU16(), -1000, 1000);
+        _model.config.mag.offset[2] = std::clamp<int16_t>(m.readU16(), -1000, 1000);
+      }
+      _model.onAccChange();
+      break;
+
+    case MSP2_ESPFC_SENSOR_SCALE:
+      // Gyro doesn't have scale, read accel scale
+      r.writeU16(1000); // Gyro scale (fixed at 1000)
+      r.writeU16(1000); // Gyro scale Y
+      r.writeU16(1000); // Gyro scale Z
+      // Read accel scale
+      r.writeU16(1000); // Accel scale X (fixed for now)
+      r.writeU16(1000); // Accel scale Y
+      r.writeU16(1000); // Accel scale Z
+      // Read mag scale
+      r.writeU16(_model.config.mag.scale[0]); // X
+      r.writeU16(_model.config.mag.scale[1]); // Y
+      r.writeU16(_model.config.mag.scale[2]); // Z
+      break;
+
+    case MSP2_ESPFC_SET_SENSOR_SCALE:
+      // Gyro scale is not configurable (skip 3 values)
+      m.readU16();
+      m.readU16();
+      m.readU16();
+      // Accel scale not configurable (skip 3 values)
+      if(m.remain() >= 6) {
+        m.readU16();
+        m.readU16();
+        m.readU16();
+      }
+      // Write mag scale
+      if(m.remain() >= 6) {
+        _model.config.mag.scale[0] = std::clamp<int16_t>(m.readU16(), 500, 2000);
+        _model.config.mag.scale[1] = std::clamp<int16_t>(m.readU16(), 500, 2000);
+        _model.config.mag.scale[2] = std::clamp<int16_t>(m.readU16(), 500, 2000);
+      }
+      _model.onAccChange();
+      break;
+
+    case MSP2_SENSOR_RANGEFINDER:
+      // Response layout follows INAV MSPv2 rangefinder message: quality + int32 distance(mm).
+      // We map quality to 255 when present, otherwise 0.
+      // Report bottom rangefinder (altitude hold / landing)
+      r.writeU8(_model.state.rangefinder[RANGEFINDER_BOTTOM].present ? 255 : 0);
+      r.writeU32((uint32_t)(_model.state.rangefinder[RANGEFINDER_BOTTOM].present ? (int32_t)_model.state.rangefinder[RANGEFINDER_BOTTOM].distance : 0));
+      break;
+
+    case MSP2_SENSOR_OPTIC_FLOW:
+      // Request with empty payload: report current optical-flow telemetry.
+      if(m.remain() == 0)
+      {
+        r.writeU8(_model.state.opticalFlow.quality);
+        r.writeU32((uint32_t)_model.state.opticalFlow.motionX);
+        r.writeU32((uint32_t)_model.state.opticalFlow.motionY);
+      }
+      // Payload layout follows INAV MSPv2 sensor message: quality + int32 motionX + int32 motionY.
+      else if(m.remain() >= 9)
+      {
+        const uint8_t quality = m.readU8();
+        const int32_t motionX = (int32_t)m.readU32();
+        const int32_t motionY = (int32_t)m.readU32();
+
+        if(_model.config.opticalFlow.dev == Device::OPFLOW_DEFAULT || _model.config.opticalFlow.dev == Device::OPFLOW_MSP)
+        {
+          _model.state.opticalFlow.quality = quality;
+          _model.state.opticalFlow.motionX = motionX;
+          _model.state.opticalFlow.motionY = motionY;
+          _model.state.opticalFlow.lastUpdateUs = micros();
+          _model.state.opticalFlow.rate = _model.state.opticalFlow.rate ? _model.state.opticalFlow.rate : 100;
+          _model.state.opticalFlow.present = quality >= _model.config.opticalFlow.qualityThreshold;
+        }
       }
       break;
 
@@ -601,20 +780,21 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_SET_CF_SERIAL_CONFIG:
       {
-        const int packetSize = 1 + 2 + 4;
+        const int packetSize = 1 + 2 + 1 + 1 + 1 + 1; // id + functionMask + 4 baud indices
         while(m.remain() >= packetSize)
         {
           int id = m.readU8();
           int k = _model.getSerialIndex((SerialPortId)id);
+          if(k == -1)
           {
             m.advance(packetSize - 1);
             continue;
           }
           _model.config.serial[k].id = id;
-          _model.config.serial[k].functionMask = m.readU16();
+          _model.config.serial[k].functionMask = m.readU16(); // CFv1 supports up to 16-bit functions
           _model.config.serial[k].baud = fromBaudIndex((SerialSpeedIndex)m.readU8());
-          m.readU8();
-          m.readU8();
+          m.readU8(); // gps_baudrateIndex (unused)
+          m.readU8(); // telemetry_baudrateIndex (unused)
           _model.config.serial[k].blackboxBaud = fromBaudIndex((SerialSpeedIndex)m.readU8());
         }
       }
@@ -656,6 +836,15 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       //r.writeU32(~_model.config.blackbox.fieldsMask);
       break;
 
+    case MSP_SDCARD_SUMMARY:
+      // No SD card backend in this target; report not supported/not present.
+      r.writeU8(0); // flags
+      r.writeU8(0); // state
+      r.writeU8(0); // last error
+      r.writeU32(0); // free KB
+      r.writeU32(0); // total KB
+      break;
+
     case MSP_SET_BLACKBOX_CONFIG:
       // Don't allow config to be updated while Blackbox is logging
       if (true) {
@@ -693,6 +882,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_ALTITUDE:
       r.writeU32(lrintf(_model.state.altitude.height * 100.f));  // alt [cm]
       r.writeU16(lrintf(_model.state.altitude.vario * 100.f));   // vario [cm/s]
+      break;
+
+    case MSP_SONAR_ALTITUDE:
+      r.writeU32(_model.state.rangefinder[RANGEFINDER_BOTTOM].present ? (_model.state.rangefinder[RANGEFINDER_BOTTOM].distance / 10) : 0); // cm
       break;
 
     case MSP_BEEPER_CONFIG:
@@ -773,6 +966,16 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU16(1460); // neutral3d;
       break;
 
+    case MSP_SET_MOTOR_3D_CONFIG:
+      // Reversible ESC configuration is not used by this firmware yet; consume payload for compatibility.
+      if(m.remain() >= 6)
+      {
+        m.readU16(); // deadband3d_low
+        m.readU16(); // deadband3d_high
+        m.readU16(); // neutral3d
+      }
+      break;
+
     case MSP_ARMING_CONFIG:
       r.writeU8(5); // auto_disarm delay
       r.writeU8(0);  // disarm kill switch
@@ -825,6 +1028,72 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(_model.config.input.filterAutoFactor); // rc_smoothing_auto_factor
       break;
 
+    case MSP2_ESPFC_LANDING_ASSIST_CONFIG:
+      r.writeU8(_model.config.landingAssist.enabled);
+      r.writeU8(_model.config.landingAssist.throttleIntentMargin);
+      r.writeU16((uint16_t)_model.config.landingAssist.descentRateLimitCms);
+      r.writeU16(_model.config.landingAssist.descentCorrectivePermille);
+      r.writeU16(_model.config.landingAssist.descentCorrectiveMaxPermille);
+      r.writeU16(_model.config.landingAssist.baroHeightThresholdCm);
+      r.writeU16(_model.config.landingAssist.baroVarioThresholdCms);
+      r.writeU16(_model.config.landingAssist.gpsDownThresholdMms);
+      r.writeU16(_model.config.landingAssist.gpsGroundThresholdMms);
+      r.writeU8(_model.config.landingAssist.flowQualityThreshold);
+      r.writeU8(_model.config.landingAssist.flowHandQualityThreshold);
+      r.writeU16(_model.config.landingAssist.flowRateThresholdMrad);
+      r.writeU16(_model.config.landingAssist.flowRateHandThresholdMrad);
+      r.writeU16(_model.config.landingAssist.handVarioThresholdCms);
+      r.writeU16(_model.config.landingAssist.handHeightMinCm);
+      r.writeU16(_model.config.landingAssist.handHeightMaxCm);
+      r.writeU16(_model.config.landingAssist.touchdownHoldMs);
+      r.writeU16(_model.config.landingAssist.touchdownRampPermille);
+      break;
+
+    case MSP2_ESPFC_SET_LANDING_ASSIST_CONFIG:
+      if(m.remain() >= 1) _model.config.landingAssist.enabled = m.readU8();
+      if(m.remain() >= 1) _model.config.landingAssist.throttleIntentMargin = m.readU8();
+      if(m.remain() >= 2) _model.config.landingAssist.descentRateLimitCms = (int16_t)m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.descentCorrectivePermille = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.descentCorrectiveMaxPermille = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.baroHeightThresholdCm = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.baroVarioThresholdCms = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.gpsDownThresholdMms = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.gpsGroundThresholdMms = m.readU16();
+      if(m.remain() >= 1) _model.config.landingAssist.flowQualityThreshold = m.readU8();
+      if(m.remain() >= 1) _model.config.landingAssist.flowHandQualityThreshold = m.readU8();
+      if(m.remain() >= 2) _model.config.landingAssist.flowRateThresholdMrad = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.flowRateHandThresholdMrad = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.handVarioThresholdCms = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.handHeightMinCm = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.handHeightMaxCm = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.touchdownHoldMs = m.readU16();
+      if(m.remain() >= 2) _model.config.landingAssist.touchdownRampPermille = m.readU16();
+      break;
+
+    case MSP2_ESPFC_ALT_FUSION_CONFIG:
+      r.writeU8(_model.config.altitudeFusion.baroHeightWeight);
+      r.writeU8(_model.config.altitudeFusion.baroVarioWeight);
+      r.writeU8(_model.config.altitudeFusion.gpsHeightWeight);
+      r.writeU8(_model.config.altitudeFusion.gpsVarioWeight);
+      r.writeU8(_model.config.altitudeFusion.rangeHeightWeight);
+      r.writeU8(_model.config.altitudeFusion.flowVarioWeight);
+      r.writeU16(_model.config.altitudeFusion.flowStillRate);
+      r.writeU8(_model.config.altitudeFusion.gpsLossHysteresis);
+      r.writeU8(_model.config.altitudeFusion.flowLossHysteresis);
+      break;
+
+    case MSP2_ESPFC_SET_ALT_FUSION_CONFIG:
+      if(m.remain() >= 1) _model.config.altitudeFusion.baroHeightWeight = m.readU8();
+      if(m.remain() >= 1) _model.config.altitudeFusion.baroVarioWeight = m.readU8();
+      if(m.remain() >= 1) _model.config.altitudeFusion.gpsHeightWeight = m.readU8();
+      if(m.remain() >= 1) _model.config.altitudeFusion.gpsVarioWeight = m.readU8();
+      if(m.remain() >= 1) _model.config.altitudeFusion.rangeHeightWeight = m.readU8();
+      if(m.remain() >= 1) _model.config.altitudeFusion.flowVarioWeight = m.readU8();
+      if(m.remain() >= 2) _model.config.altitudeFusion.flowStillRate = (int16_t)m.readU16();
+      if(m.remain() >= 1) _model.config.altitudeFusion.gpsLossHysteresis = m.readU8();
+      if(m.remain() >= 1) _model.config.altitudeFusion.flowLossHysteresis = m.readU8();
+      break;
+
     case MSP_SET_RX_CONFIG:
       _model.config.input.serialRxProvider = m.readU8(); // serialrx_provider
       _model.config.input.maxCheck = m.readU16(); //maxcheck
@@ -869,20 +1138,20 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_FAILSAFE_CONFIG:
       r.writeU8(_model.config.failsafe.delay); // failsafe_delay
-      r.writeU8(0); // failsafe_off_delay
-      r.writeU16(1000); //failsafe_throttle
+      r.writeU8(_model.config.failsafe.offDelay); // failsafe_off_delay
+      r.writeU16(_model.config.failsafe.throttle); //failsafe_throttle
       r.writeU8(_model.config.failsafe.killSwitch); // failsafe_kill_switch
-      r.writeU16(0); // failsafe_throttle_low_delay
-      r.writeU8(1); //failsafe_procedure; default drop
+      r.writeU16(_model.config.failsafe.throttleLowDelay); // failsafe_throttle_low_delay
+      r.writeU8(_model.config.failsafe.procedure); //failsafe_procedure
       break;
 
     case MSP_SET_FAILSAFE_CONFIG:
       _model.config.failsafe.delay = m.readU8(); //failsafe_delay
-      m.readU8(); //failsafe_off_delay
-      m.readU16(); //failsafe_throttle
+      _model.config.failsafe.offDelay = m.readU8(); //failsafe_off_delay
+      _model.config.failsafe.throttle = m.readU16(); //failsafe_throttle
       _model.config.failsafe.killSwitch = m.readU8(); //failsafe_kill_switch
-      m.readU16(); //failsafe_throttle_low_delay
-      m.readU8(); //failsafe_procedure
+      _model.config.failsafe.throttleLowDelay = m.readU16(); //failsafe_throttle_low_delay
+      _model.config.failsafe.procedure = m.readU8(); //failsafe_procedure
       break;
 
     case MSP_RXFAIL_CONFIG:
@@ -1219,41 +1488,45 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SET_PID_ADVANCED:
+    {
       m.readU16();
       m.readU16();
       m.readU16(); // was pidProfile.yaw_p_limit
       m.readU8(); // reserved
       m.readU8();
       m.readU8();
-      _model.config.dterm.setpointWeight = m.readU8();
+      const uint8_t legacySetpointWeight = m.readU8();
       m.readU8(); // reserved
       m.readU8(); // reserved
       m.readU8(); // reserved
       m.readU16();
       m.readU16();
       if (m.remain() >= 2) {
-          _model.config.level.angleLimit = m.readU8();
-          m.readU8(); // was pidProfile.levelSensitivity
+        _model.config.level.angleLimit = m.readU8();
+        m.readU8(); // was pidProfile.levelSensitivity
       }
       if (m.remain() >= 4) {
-          m.readU16(); // itermThrottleThreshold;
-          m.readU16(); // itermAcceleratorGain; anti_gravity_gain
+        m.readU16(); // itermThrottleThreshold;
+        m.readU16(); // itermAcceleratorGain; anti_gravity_gain
       }
       if (m.remain() >= 2) {
         _model.config.dterm.setpointWeight = m.readU16();
       }
+      else {
+        _model.config.dterm.setpointWeight = legacySetpointWeight;
+      }
       if (m.remain() >= 14) {
-        m.readU8(); //iterm rotation
-        m.readU8(); //smart feed forward
-        _model.config.iterm.relax = m.readU8(); //iterm relax
-        m.readU8(); //iterm relax type
-        m.readU8(); //abs control gain
-        m.readU8(); //throttle boost
-        m.readU8(); //acro trainer max angle
+        m.readU8(); // iterm rotation
+        m.readU8(); // smart feed forward
+        _model.config.iterm.relax = m.readU8(); // iterm relax
+        m.readU8(); // iterm relax type
+        m.readU8(); // abs control gain
+        m.readU8(); // throttle boost
+        m.readU8(); // acro trainer max angle
         _model.config.pid[FC_PID_ROLL].F = m.readU16(); // pid roll f
         _model.config.pid[FC_PID_PITCH].F = m.readU16(); // pid pitch f
         _model.config.pid[FC_PID_YAW].F = m.readU16(); // pid yaw f
-        m.readU8(); //antigravity mode
+        m.readU8(); // antigravity mode
       }
       // 1.41+
       if (m.remain() >= 7) {
@@ -1277,6 +1550,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       }
       _model.reload();
       break;
+    }
 
     case MSP_RAW_IMU:
       for (int i = 0; i < AXIS_COUNT_RPY; i++)
@@ -1331,6 +1605,24 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         r.writeU16(escVoltage);
         r.writeU16(escCurrent);
         r.writeU16(escConsumption);
+      }
+      break;
+
+    case MSP_ESC_SENSOR_DATA:
+      // Legacy ESC telemetry command used by some clients (DJI/older tools).
+      if(_model.config.output.dshotTelemetry)
+      {
+        const uint8_t motorCount = (uint8_t)_model.state.currentMixer.count;
+        r.writeU8(motorCount);
+        for (size_t i = 0; i < motorCount; i++)
+        {
+          r.writeU8(_model.state.output.telemetry.temperature[i]);
+          r.writeU16((uint16_t)Utils::clamp<int32_t>(lrintf(_model.state.output.telemetry.rpm[i]), 0, 0xFFFF));
+        }
+      }
+      else
+      {
+        r.result = 0;
       }
       break;
 
@@ -1398,12 +1690,125 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_ACC_CALIBRATION:
-      if(!_model.isModeActive(MODE_ARMED)) _model.calibrateGyro();
+      if(!_model.isModeActive(MODE_ARMED)) _model.calibrateGyro(); // Triggers both gyro and accel calibration
       break;
 
     case MSP_MAG_CALIBRATION:
       if(!_model.isModeActive(MODE_ARMED)) _model.calibrateMag();
       break;
+
+    case MSP2_ESPFC_CALIBRATION_DATA:
+      // Gyro calibration data
+      r.writeU16(_model.state.gyro.bias.x * 100); // Roll bias (deg/s * 100)
+      r.writeU16(_model.state.gyro.bias.y * 100); // Pitch bias (deg/s * 100)
+      r.writeU16(_model.state.gyro.bias.z * 100); // Yaw bias (deg/s * 100)
+      // Accel calibration data
+      r.writeU16(_model.state.accel.bias.x); // Roll offset
+      r.writeU16(_model.state.accel.bias.y); // Pitch offset
+      r.writeU16(_model.state.accel.bias.z); // Yaw offset
+      // Mag calibration data (stored in config)
+      r.writeU16(_model.config.mag.offset[0]); // Roll offset
+      r.writeU16(_model.config.mag.offset[1]); // Pitch offset
+      r.writeU16(_model.config.mag.offset[2]); // Yaw offset
+      break;
+
+    case MSP2_ESPFC_SENSOR_STATUS:
+      // Report calibration status for each sensor
+      r.writeU8(_model.state.gyro.calibrationState); // Gyro: 0=idle, 1=start, 2=in_progress, 3=save, 4=done
+      r.writeU8(_model.state.accel.calibrationState); // Accel calibration state
+      r.writeU8(_model.state.mag.calibrationState); // Mag calibration state
+      r.writeU8((_model.state.gyro.calibrationState || _model.state.accel.calibrationState || _model.state.mag.calibrationState) ? 1 : 0); // Any calibration in progress
+      break;
+
+    case MSP2_ESPFC_OBSTACLE_AVOIDANCE_CONFIG:
+      // Report obstacle avoidance configuration
+      {
+        const auto& oac = _model.config.obstacleAvoidance;
+        r.writeU8(oac.enabled);
+        r.writeU16(oac.minSafeDistance);     // cm
+        r.writeU16(oac.avoidanceDistance);   // cm
+        r.writeU16(oac.maxAvoidanceDistance); // cm
+        r.writeU8(oac.slowdownPercent);
+        r.writeU8(oac.stopPercent);
+        r.writeU8(oac.avoidanceMode);
+        r.writeU8(oac.bypassAxis);
+        r.writeU8(oac.enableInAcro);
+        r.writeU8(oac.enableInHorizon);
+        r.writeU8(oac.enableInAngle);
+        r.writeU8(oac.enableInAltHold);
+      }
+      break;
+
+    case MSP2_ESPFC_SET_OBSTACLE_AVOIDANCE_CONFIG:
+      // Set obstacle avoidance configuration
+      if(m.remain() >= 15)
+      {
+        auto& oac = _model.config.obstacleAvoidance;
+        oac.enabled = m.readU8();
+        oac.minSafeDistance = m.readU16();
+        oac.avoidanceDistance = m.readU16();
+        oac.maxAvoidanceDistance = m.readU16();
+        oac.slowdownPercent = m.readU8();
+        oac.stopPercent = m.readU8();
+        oac.avoidanceMode = m.readU8();
+        oac.bypassAxis = m.readU8();
+        oac.enableInAcro = m.readU8();
+        oac.enableInHorizon = m.readU8();
+        oac.enableInAngle = m.readU8();
+        oac.enableInAltHold = m.readU8();
+        _model.onAccChange();
+      }
+      break;
+
+      case MSP2_ESPFC_SENSOR_RANGEFINDER_FRONT:
+        // Report front rangefinder telemetry for obstacle avoidance
+        r.writeU8(_model.state.rangefinder[RANGEFINDER_FRONT].present ? 255 : 0);
+        r.writeU32((uint32_t)(_model.state.rangefinder[RANGEFINDER_FRONT].present ? (int32_t)_model.state.rangefinder[RANGEFINDER_FRONT].distance : 0));
+        break;
+
+      case MSP2_ESPFC_SENSOR_RANGEFINDER_STATUS:
+        // Report status of both rangefinders (bottom and front)
+        r.writeU8(_model.state.rangefinder[RANGEFINDER_BOTTOM].present ? 1 : 0);  // Bottom sensor present
+        r.writeU32(_model.state.rangefinder[RANGEFINDER_BOTTOM].distance);         // Bottom distance (mm)
+        r.writeU8(_model.state.rangefinder[RANGEFINDER_FRONT].present ? 1 : 0);   // Front sensor present
+        r.writeU32(_model.state.rangefinder[RANGEFINDER_FRONT].distance);          // Front distance (mm)
+        break;
+
+      case MSP2_ESPFC_RANGEFINDER_CONFIG:
+        // Per-sensor config blocks: position, bus, dev, address, enabled
+        for(uint8_t i = 0; i < RANGEFINDER_COUNT; i++)
+        {
+          const auto& cfg = _model.config.rangefinder[i];
+          r.writeU8(i);
+          r.writeU8(cfg.bus);
+          r.writeU8(cfg.dev);
+          r.writeU8(cfg.address);
+          r.writeU8(cfg.enabled ? 1 : 0);
+        }
+        break;
+
+      case MSP2_ESPFC_SET_RANGEFINDER_CONFIG:
+        // Accept one or more config blocks: position, bus, dev, address, enabled
+        while(m.remain() >= 5)
+        {
+          const uint8_t position = m.readU8();
+          const uint8_t bus = m.readU8();
+          const uint8_t dev = m.readU8();
+          const uint8_t address = m.readU8();
+          const uint8_t enabled = m.readU8();
+
+          if(position < RANGEFINDER_COUNT)
+          {
+            auto& cfg = _model.config.rangefinder[position];
+            cfg.position = position;
+            cfg.bus = std::clamp<int>(bus, BUS_NONE, BUS_MAX - 1);
+            cfg.dev = std::clamp<int>(dev, Device::RANGEFINDER_DEFAULT, Device::RANGEFINDER_MAX - 1);
+            cfg.address = address;
+            cfg.enabled = enabled ? 1 : 0;
+          }
+        }
+        _model.reload();
+        break;
 
     case MSP_VTX_CONFIG:
       if (!_model.state.vtx.active) {
@@ -1421,24 +1826,31 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         r.writeU8(_model.config.vtx.channel); // channel
         r.writeU8(_model.config.vtx.power);   // power
         r.writeU8(0);    // status (looks like 1 means pit mode :shrug:)
-        r.writeU16(0);   // freq
+        r.writeU16(_model.config.vtx.freq);   // freq
         r.writeU8(1);    // ready
         r.writeU8(_model.config.vtx.lowPowerDisarm);    // low power disarm
       }
       // 1.42
-      r.writeU16(0);   // pit mode freq
-      r.writeU8(0);    // vtx table available (no)
-      r.writeU8(0);    // vtx table bands
-      r.writeU8(0);    // vtx table channels
-      r.writeU8(0);    // vtx power levels
+      r.writeU16(_model.config.vtx.pitModeFreq);  // pit mode freq
+      r.writeU8(1);    // vtx table available (yes)
+      r.writeU8(_model.config.vtxTable.bands);
+      r.writeU8(_model.config.vtxTable.channels);
+      r.writeU8(_model.config.vtxTable.powerLevels);
       break;
     
     case MSP_SET_VTX_CONFIG:
       {
-        uint16_t freq = m.readU16();
-        if (freq <= VTXCOMMON_MSP_BANDCHAN_CHKVAL) {  // Value is band and channel
-          //const uint8_t newBand = (freq / 8) + 1;
-          //const uint8_t newChannel = (freq % 8) + 1;
+        uint16_t newFrequency = m.readU16();
+        if(newFrequency <= VTXCOMMON_MSP_BANDCHAN_CHKVAL)
+        {
+          const uint8_t newBand = (newFrequency / 8) + 1;
+          const uint8_t newChannel = (newFrequency % 8) + 1;
+          vtxApplyBandChannel(_model.config, newBand, newChannel);
+        }
+        else if(newFrequency <= 5999)
+        {
+          _model.config.vtx.band = 0;
+          _model.config.vtx.freq = newFrequency;
         }
 
         if (m.remain() >= 2) {
@@ -1452,16 +1864,65 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
         // API version 1.42 - this parameter kept separate since clients may already be supplying
         if (m.remain() >= 2) {
-          /*const uint16_t pitModeFreq = */m.readU16();
+          _model.config.vtx.pitModeFreq = m.readU16();
         }
 
         // API version 1.42 - extensions for non-encoded versions of the band, channel or frequency
         if (m.remain() >= 4) {
           // Added standalone values for band, channel and frequency to move
           // away from the flawed encoded combined method originally implemented.
-          _model.config.vtx.band = m.readU8(); 
-          _model.config.vtx.channel = m.readU8();
-          /*uint16_t newFreq = */m.readU16();
+          uint8_t newBand = m.readU8();
+          uint8_t newChannel = m.readU8();
+          uint16_t newFreq = m.readU16();
+          if(newBand) newFreq = vtxLookupFrequency(_model.config, newBand, newChannel);
+          _model.config.vtx.band = newBand;
+          _model.config.vtx.channel = newChannel;
+          _model.config.vtx.freq = newFreq;
+        }
+
+        // API version 1.42 - vtx table support.
+        if (m.remain() >= 4) {
+          uint8_t newBandCount = m.readU8();
+          uint8_t newChannelCount = m.readU8();
+          uint8_t newPowerCount = m.readU8();
+          uint8_t clearTable = m.readU8();
+
+          if(newBandCount > VTX_TABLE_MAX_BANDS || newChannelCount > VTX_TABLE_MAX_CHANNELS || newPowerCount > VTX_TABLE_MAX_POWER_LEVELS)
+          {
+            r.result = 0;
+            break;
+          }
+
+          _model.config.vtxTable.bands = newBandCount;
+          _model.config.vtxTable.channels = newChannelCount;
+          _model.config.vtxTable.powerLevels = newPowerCount;
+
+          if(clearTable)
+          {
+            for(size_t band = 0; band < VTX_TABLE_MAX_BANDS; band++)
+            {
+              _model.config.vtxTable.bandLetters[band] = (char)('1' + band);
+              _model.config.vtxTable.isFactoryBand[band] = 0;
+              for(size_t i = 0; i < VTX_TABLE_BAND_NAME_LENGTH; i++)
+              {
+                _model.config.vtxTable.bandNames[band][i] = ' ';
+              }
+              _model.config.vtxTable.bandNames[band][VTX_TABLE_BAND_NAME_LENGTH] = '\0';
+              for(size_t channel = 0; channel < VTX_TABLE_MAX_CHANNELS; channel++)
+              {
+                _model.config.vtxTable.frequency[band][channel] = 0;
+              }
+            }
+
+            for(size_t i = 0; i < VTX_TABLE_MAX_POWER_LEVELS; i++)
+            {
+              _model.config.vtxTable.powerValues[i] = 0;
+              _model.config.vtxTable.powerLabels[i][0] = 'L';
+              _model.config.vtxTable.powerLabels[i][1] = 'V';
+              _model.config.vtxTable.powerLabels[i][2] = (char)('0' + (i % 10));
+              _model.config.vtxTable.powerLabels[i][VTX_TABLE_POWER_LABEL_LENGTH] = '\0';
+            }
+          }
         }
       }
       break;
@@ -1483,6 +1944,35 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 #endif
         if (_model.isModeActive(MODE_ARMED)) _model.disarm(DISARM_REASON_ARMING_DISABLED);
       }
+      break;
+
+    case MSP_SELECT_SETTING:
+      if(m.remain()) m.readU8();
+      break;
+
+    case MSP_COPY_PROFILE:
+      if(m.remain() >= 3)
+      {
+        m.readU8(); // type
+        m.readU8(); // destination index
+        m.readU8(); // source index
+      }
+      break;
+
+    case MSP_SET_HEADING:
+      if(m.remain() >= 2) m.readU16();
+      break;
+
+    case MSP_SET_RAW_RC:
+      while(m.remain() >= 2) m.readU16();
+      break;
+
+    case MSP_SET_PID_CONTROLLER:
+      if(m.remain()) m.readU8();
+      break;
+
+    case MSP_SET_RESET_CURR_PID:
+      // Keep current tuned values; command acknowledged for compatibility.
       break;
 
     case MSP_SET_PASSTHROUGH:
@@ -1508,6 +1998,226 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       }
       break;
 
+    case MSP_SET_ADJUSTMENT_RANGE:
+    case MSP_SET_BOARD_INFO:
+    case MSP_SET_NAV_CONFIG:
+    case MSP_SET_OSD_CONFIG:
+    case MSP_SET_OSD_VIDEO_CONFIG:
+    case MSP_SET_RAW_GPS:
+    case MSP_SET_SERVO_MIX_RULE:
+    case MSP_SET_SIGNATURE:
+    case MSP_SET_TRANSPONDER_CONFIG:
+    case MSP_SET_WP:
+      // Unsupported feature groups: consume payload and ACK for compatibility.
+      while(m.remain() > 0) m.readU8();
+      break;
+
+    case MSP_SET_RTC:
+      // RTC is not backed by hardware timekeeping in this firmware, but payload is accepted.
+      while(m.remain() > 0) m.readU8();
+      break;
+
+    case MSP_SET_LED_COLORS:
+      if(m.remain() < (int)(LED_CONFIGURABLE_COLOR_COUNT * 4))
+      {
+        r.result = 0;
+        break;
+      }
+      for(size_t i = 0; i < LED_CONFIGURABLE_COLOR_COUNT; i++)
+      {
+        _model.config.ledStrip.colors[i].h = m.readU16();
+        _model.config.ledStrip.colors[i].s = m.readU8();
+        _model.config.ledStrip.colors[i].v = m.readU8();
+      }
+      break;
+
+    case MSP_SET_LED_STRIP_CONFIG:
+      if(m.remain() < 5)
+      {
+        r.result = 0;
+        break;
+      }
+      {
+        uint8_t i = m.readU8();
+        if(i >= LED_STRIP_MAX_LENGTH)
+        {
+          r.result = 0;
+          break;
+        }
+        _model.config.ledStrip.ledConfig[i] = m.readU32();
+        if(m.remain() >= 1) _model.config.ledStrip.profile = m.readU8();
+      }
+      break;
+
+    case MSP_SET_LED_STRIP_MODECOLOR:
+      if(m.remain() < 3)
+      {
+        r.result = 0;
+        break;
+      }
+      {
+        uint8_t modeIdx = m.readU8();
+        uint8_t modeColorIdx = m.readU8();
+        uint8_t colorIdx = m.readU8();
+        if(colorIdx >= LED_CONFIGURABLE_COLOR_COUNT)
+        {
+          r.result = 0;
+          break;
+        }
+        if(modeIdx < LED_MODE_COUNT)
+        {
+          if(modeColorIdx >= LED_DIRECTION_COUNT)
+          {
+            r.result = 0;
+            break;
+          }
+          _model.config.ledStrip.modeColors[modeIdx][modeColorIdx] = colorIdx;
+        }
+        else if(modeIdx == LED_SPECIAL_MODE_INDEX)
+        {
+          if(modeColorIdx >= LED_SPECIAL_COLOR_COUNT)
+          {
+            r.result = 0;
+            break;
+          }
+          _model.config.ledStrip.specialColors[modeColorIdx] = colorIdx;
+        }
+        else if(modeIdx == LED_AUX_CHANNEL_MODE_INDEX)
+        {
+          if(modeColorIdx >= 1)
+          {
+            r.result = 0;
+            break;
+          }
+          _model.config.ledStrip.auxChannel = colorIdx;
+        }
+        else
+        {
+          r.result = 0;
+        }
+      }
+      break;
+
+    case MSP_SET_VTXTABLE_BAND:
+      {
+        if(m.remain() < 5)
+        {
+          r.result = 0;
+          break;
+        }
+
+        uint8_t band = m.readU8();
+        uint8_t bandNameLength = m.readU8();
+        char bandName[VTX_TABLE_BAND_NAME_LENGTH] = {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
+        for(size_t i = 0; i < bandNameLength && m.remain() > 0; i++)
+        {
+          char c = (char)m.readU8();
+          if(i < VTX_TABLE_BAND_NAME_LENGTH) bandName[i] = toUpperAscii(c);
+        }
+
+        if(m.remain() < 3)
+        {
+          r.result = 0;
+          break;
+        }
+
+        char bandLetter = toUpperAscii((char)m.readU8());
+        uint8_t isFactoryBand = m.readU8();
+        uint8_t channelCount = m.readU8();
+
+        if(band < 1 || band > _model.config.vtxTable.bands)
+        {
+          r.result = 0;
+          break;
+        }
+
+        for(size_t i = 0; i < VTX_TABLE_MAX_CHANNELS; i++)
+        {
+          _model.config.vtxTable.frequency[band - 1][i] = 0;
+        }
+
+        for(size_t i = 0; i < channelCount && m.remain() >= 2; i++)
+        {
+          uint16_t freq = m.readU16();
+          if(i < _model.config.vtxTable.channels)
+          {
+            _model.config.vtxTable.frequency[band - 1][i] = freq;
+          }
+        }
+
+        for(size_t i = 0; i < VTX_TABLE_BAND_NAME_LENGTH; i++)
+        {
+          _model.config.vtxTable.bandNames[band - 1][i] = bandName[i];
+        }
+        _model.config.vtxTable.bandNames[band - 1][VTX_TABLE_BAND_NAME_LENGTH] = '\0';
+        _model.config.vtxTable.bandLetters[band - 1] = bandLetter;
+        _model.config.vtxTable.isFactoryBand[band - 1] = isFactoryBand ? 1 : 0;
+
+        if(_model.config.vtx.band == band)
+        {
+          _model.config.vtx.freq = vtxLookupFrequency(_model.config, _model.config.vtx.band, _model.config.vtx.channel);
+        }
+      }
+      break;
+
+    case MSP_SET_VTXTABLE_POWERLEVEL:
+      {
+        if(m.remain() < 4)
+        {
+          r.result = 0;
+          break;
+        }
+
+        uint8_t powerLevel = m.readU8();
+        uint16_t powerValue = m.readU16();
+        uint8_t labelLength = m.readU8();
+        char label[VTX_TABLE_POWER_LABEL_LENGTH] = {' ', ' ', ' '};
+        for(size_t i = 0; i < labelLength && m.remain() > 0; i++)
+        {
+          char c = (char)m.readU8();
+          if(i < VTX_TABLE_POWER_LABEL_LENGTH) label[i] = toUpperAscii(c);
+        }
+
+        if(powerLevel < 1 || powerLevel > _model.config.vtxTable.powerLevels)
+        {
+          r.result = 0;
+          break;
+        }
+
+        _model.config.vtxTable.powerValues[powerLevel - 1] = powerValue;
+        for(size_t i = 0; i < VTX_TABLE_POWER_LABEL_LENGTH; i++)
+        {
+          _model.config.vtxTable.powerLabels[powerLevel - 1][i] = label[i];
+        }
+        _model.config.vtxTable.powerLabels[powerLevel - 1][VTX_TABLE_POWER_LABEL_LENGTH] = '\0';
+      }
+      break;
+
+    case MSP2_BETAFLIGHT_BIND:
+      // Binding is receiver-specific and handled externally. Keep command supported as no-op.
+      break;
+
+    case MSP2_MOTOR_OUTPUT_REORDERING:
+      // Return identity mapping (no custom output remap).
+      r.writeU8((uint8_t)_model.state.currentMixer.count);
+      for(size_t i = 0; i < _model.state.currentMixer.count; i++)
+      {
+        r.writeU8(i);
+      }
+      break;
+
+    case MSP2_SET_MOTOR_OUTPUT_REORDERING:
+      // Accept and ignore remap payload for compatibility with configurator save flow.
+      if(m.remain() > 0)
+      {
+        size_t count = m.readU8();
+        while(m.remain() > 0 && count--)
+        {
+          m.readU8();
+        }
+      }
+      break;
+
     case MSP_DEBUG:
       for (int i = 0; i < 8; i++) {
         r.writeU16(_model.state.debug[i]);
@@ -1526,6 +2236,38 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       }
       break;
 
+    case MSP_SET_GPS_RESCUE:
+      if(m.remain() >= 2) _model.config.gpsRescue.maxRescueAngle = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.returnAltitudeM = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.descentDistanceM = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.groundSpeedCmS = m.readU16();
+      if(m.remain() >= 2) _model.config.autopilot.throttleMin = m.readU16();
+      if(m.remain() >= 2) _model.config.autopilot.throttleMax = m.readU16();
+      if(m.remain() >= 2) _model.config.autopilot.hoverThrottle = m.readU16();
+      if(m.remain() >= 1) _model.config.gpsRescue.sanityChecks = m.readU8();
+      if(m.remain() >= 1) _model.config.gpsRescue.minSats = m.readU8();
+      if(m.remain() >= 2) _model.config.gpsRescue.ascendRate = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.descendRate = m.readU16();
+      if(m.remain() >= 1) _model.config.gpsRescue.allowArmingWithoutFix = m.readU8();
+      if(m.remain() >= 1) _model.config.gpsRescue.altitudeMode = m.readU8();
+      if(m.remain() >= 2) _model.config.gpsRescue.minStartDistM = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.initialClimbM = m.readU16();
+      break;
+
+    case MSP_SET_GPS_RESCUE_PIDS:
+      if(m.remain() >= 2) _model.config.autopilot.altitudeP = m.readU16();
+      if(m.remain() >= 2) _model.config.autopilot.altitudeI = m.readU16();
+      if(m.remain() >= 2) _model.config.autopilot.altitudeD = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.velP = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.velI = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.velD = m.readU16();
+      if(m.remain() >= 2) _model.config.gpsRescue.yawP = m.readU16();
+      break;
+
+    case MSP_SET_TX_INFO:
+      if(m.remain()) m.readU8();
+      break;
+
     case MSP_GPS_CONFIG:
       r.writeU8(1); // provider
       r.writeU8(0); // sbasMode, 0: auto
@@ -1534,6 +2276,300 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       // Added in API version 1.43
       r.writeU8(_model.config.gps.setHomeOnce); // gps_set_home_point_once
       r.writeU8(1); // gps_ublox_use_galileo
+      break;
+
+    case MSP_PROTOCOL_VERSION:
+      r.writeU8(MSP_PROTOCOL_VERSION);
+      break;
+
+    case MSP_MULTIPLE_MSP:
+      {
+        if(m.remain() == 0)
+        {
+          r.result = 0;
+          break;
+        }
+
+        const uint16_t startRead = m.read;
+        const uint16_t reqCount = m.remain();
+        int bytesRemaining = r.remain();
+        uint8_t maxMsps = 0;
+
+        for(uint16_t i = 0; i < reqCount && bytesRemaining > 0; i++)
+        {
+          const uint8_t newCmd = m.buffer[startRead + i];
+          if(newCmd == MSP_MULTIPLE_MSP)
+          {
+            r.result = 0;
+            break;
+          }
+
+          MspMessage req;
+          req.cmd = newCmd;
+          req.version = m.version;
+
+          MspResponse rsp;
+          processCommand(req, rsp, s);
+
+          if(rsp.result != 1)
+          {
+            r.result = 0;
+            break;
+          }
+
+          const int mspSize = (int)rsp.len + 1; // include 1-byte sub-payload length
+          if(bytesRemaining - mspSize >= 0)
+          {
+            bytesRemaining -= mspSize;
+            maxMsps++;
+          }
+        }
+
+        if(r.result != 1) break;
+
+        for(uint8_t i = 0; i < maxMsps; i++)
+        {
+          const uint8_t newCmd = m.buffer[startRead + i];
+
+          MspMessage req;
+          req.cmd = newCmd;
+          req.version = m.version;
+
+          MspResponse rsp;
+          processCommand(req, rsp, s);
+
+          r.writeU8((uint8_t)rsp.len);
+          for(size_t j = 0; j < rsp.len; j++)
+          {
+            r.writeU8(rsp.data[j]);
+          }
+        }
+      }
+      break;
+
+    case MSP_ADJUSTMENT_RANGES:
+      // Return empty/default adjustment slots in Betaflight-compatible record format.
+      for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+      {
+        r.writeU8(0);    // adjustmentIndex (legacy)
+        r.writeU8(0);    // auxChannelIndex
+        r.writeU8(0);    // range.startStep
+        r.writeU8(0);    // range.endStep
+        r.writeU8(0);    // adjustmentConfig
+        r.writeU8(0);    // auxSwitchChannelIndex
+        r.writeU16(1500); // adjustmentCenter
+        r.writeU16(100);  // adjustmentScale
+      }
+      break;
+
+    case MSP_OSD_CHAR_READ:
+      // No font storage/display hardware; return an empty character response instead of an error.
+      r.writeU8(0);
+      break;
+
+    case MSP_OSD_CONFIG:
+      // Return safe defaults so Betaflight Configurator's OSD tab can open.
+      r.writeU8(0); // flags: no OSD hardware/features advertised
+      r.writeU8(1); // video system placeholder (PAL/NTSC/HD not applicable here)
+      r.writeU8(0); // units
+      r.writeU8(0); // rssi alarm
+      r.writeU16(0); // cap alarm
+      r.writeU8(0); // reserved / OSD item count high-byte placeholder
+      r.writeU8(0); // OSD item count low-byte placeholder
+      r.writeU16(0); // alt alarm
+      break;
+
+    case MSP_OSD_VIDEO_CONFIG:
+      r.writeU8(1); // video system placeholder
+      break;
+
+    case MSP_CAMERA_CONTROL:
+    case MSP_GPSSTATISTICS:
+    case MSP_TRANSPONDER_CONFIG:
+    case MSP_V2_FRAME:
+    case MSP_WP:
+    case MSP_RESERVE_1:
+    case MSP_RESERVE_2:
+      // Not implemented in esp-fc: report unsupported instead of returning malformed payloads.
+      r.result = 0;
+      break;
+
+    case MSP_NAV_STATUS:
+      // Navigation status payload: empty/offline state (BF-compatible format)
+      r.writeU8(0);       // mode: NAV_MODE_NONE
+      r.writeU8(0);       // state: NAV_STATE_NONE
+      r.writeU8(0);       // activeWp
+      r.writeU16(0);      // flags
+      r.writeU16(0);      // error
+      r.writeU16(0);      // targetBearing (signed, but 0 is same as ±0)
+      r.writeU16(0);      // holdTime
+      break;
+
+    case MSP_NAV_CONFIG:
+      // Navigation configuration (BF-compatible format with safe defaults)
+      for(size_t i = 0; i < 18; i++) r.writeU8(0);   // 6 PID controllers (P,I,D each)
+      r.writeU16(300);    // max_speed
+      r.writeU16(50);     // max_climb_rate
+      r.writeU16(50);     // max_descent_rate
+      r.writeU16(100);    // max_manual_speed
+      r.writeU8(20);      // manual_baro_mode
+      r.writeU16(500);    // land_descent_rate
+      r.writeU16(100);    // land_slowdown_minalt
+      r.writeU16(500);    // land_slowdown_maxalt
+      r.writeU16(50);     // emerg_descent_rate
+      r.writeU16(0);      // min_rth_distance
+      r.writeU8(0);       // rth_allow_landing
+      r.writeU8(30);      // rth_altitude
+      r.writeU8(60);      // rth_allow_landing_after_alt_decrement
+      break;
+
+    case MSP_DEBUGMSG:
+      r.writeU8(0); // empty C-string
+      break;
+
+    case MSP_SERVO_MIX_RULES:
+      // Return zeroed rules in BF-compatible 7-byte-per-entry layout.
+      for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
+      {
+        r.writeU8(0); // targetChannel
+        r.writeU8(0); // inputSource
+        r.writeU8(0); // rate
+        r.writeU8(0); // speed
+        r.writeU8(0); // min
+        r.writeU8(0); // max
+        r.writeU8(0); // box
+      }
+      break;
+
+    case MSP_RTC:
+      // BF payload: year(u16), month, day, hour, minute, second, millis(u16)
+      r.writeU16(2000);
+      r.writeU8(1);
+      r.writeU8(1);
+      r.writeU8(0);
+      r.writeU8(0);
+      r.writeU8(0);
+      r.writeU16(0);
+      break;
+
+    case MSP_LED_COLORS:
+      for(size_t i = 0; i < LED_CONFIGURABLE_COLOR_COUNT; i++)
+      {
+        r.writeU16(_model.config.ledStrip.colors[i].h);
+        r.writeU8(_model.config.ledStrip.colors[i].s);
+        r.writeU8(_model.config.ledStrip.colors[i].v);
+      }
+      break;
+
+    case MSP_LED_STRIP_CONFIG:
+      for(size_t i = 0; i < LED_STRIP_MAX_LENGTH; i++)
+      {
+        r.writeU32(_model.config.ledStrip.ledConfig[i]);
+      }
+      r.writeU8(1); // advanced ledstrip available
+      r.writeU8(_model.config.ledStrip.profile);
+      break;
+
+    case MSP_LED_STRIP_MODECOLOR:
+      for(size_t i = 0; i < LED_MODE_COUNT; i++)
+      {
+        for(size_t j = 0; j < LED_DIRECTION_COUNT; j++)
+        {
+          r.writeU8(i);
+          r.writeU8(j);
+          r.writeU8(_model.config.ledStrip.modeColors[i][j]);
+        }
+      }
+      for(size_t j = 0; j < LED_SPECIAL_COLOR_COUNT; j++)
+      {
+        r.writeU8(LED_SPECIAL_MODE_INDEX);
+        r.writeU8(j);
+        r.writeU8(_model.config.ledStrip.specialColors[j]);
+      }
+      r.writeU8(LED_AUX_CHANNEL_MODE_INDEX);
+      r.writeU8(0);
+      r.writeU8(_model.config.ledStrip.auxChannel);
+      break;
+
+    case MSP_VTXTABLE_BAND:
+      {
+        uint8_t band = m.remain() ? m.readU8() : 0;
+        if(band < 1 || band > _model.config.vtxTable.bands)
+        {
+          r.result = 0;
+          break;
+        }
+        r.writeU8(band);
+        r.writeU8(VTX_TABLE_BAND_NAME_LENGTH);
+        for(size_t i = 0; i < VTX_TABLE_BAND_NAME_LENGTH; i++)
+        {
+          r.writeU8(_model.config.vtxTable.bandNames[band - 1][i]);
+        }
+        r.writeU8(_model.config.vtxTable.bandLetters[band - 1]);
+        r.writeU8(_model.config.vtxTable.isFactoryBand[band - 1]);
+        r.writeU8(_model.config.vtxTable.channels);
+        for(size_t i = 0; i < _model.config.vtxTable.channels; i++)
+        {
+          r.writeU16(_model.config.vtxTable.frequency[band - 1][i]);
+        }
+      }
+      break;
+
+    case MSP_VTXTABLE_POWERLEVEL:
+      {
+        uint8_t powerLevel = m.remain() ? m.readU8() : 0;
+        if(powerLevel < 1 || powerLevel > _model.config.vtxTable.powerLevels)
+        {
+          r.result = 0;
+          break;
+        }
+        r.writeU8(powerLevel);
+        r.writeU16(_model.config.vtxTable.powerValues[powerLevel - 1]);
+        r.writeU8(VTX_TABLE_POWER_LABEL_LENGTH);
+        for(size_t i = 0; i < VTX_TABLE_POWER_LABEL_LENGTH; i++)
+        {
+          r.writeU8(_model.config.vtxTable.powerLabels[powerLevel - 1][i]);
+        }
+      }
+      break;
+
+    case MSP_DISPLAYPORT:
+    case MSP_OSD_CHAR_WRITE:
+      // Displayport/OSD writes are accepted as no-op to avoid configurator transaction failures.
+      while(m.remain() > 0) m.readU8();
+      break;
+
+    case MSP_GPS_RESCUE:
+      r.writeU16(_model.config.gpsRescue.maxRescueAngle);
+      r.writeU16(_model.config.gpsRescue.returnAltitudeM);
+      r.writeU16(_model.config.gpsRescue.descentDistanceM);
+      r.writeU16(_model.config.gpsRescue.groundSpeedCmS);
+      r.writeU16(_model.config.autopilot.throttleMin);
+      r.writeU16(_model.config.autopilot.throttleMax);
+      r.writeU16(_model.config.autopilot.hoverThrottle);
+      r.writeU8(_model.config.gpsRescue.sanityChecks);
+      r.writeU8(_model.config.gpsRescue.minSats);
+      r.writeU16(_model.config.gpsRescue.ascendRate);
+      r.writeU16(_model.config.gpsRescue.descendRate);
+      r.writeU8(_model.config.gpsRescue.allowArmingWithoutFix);
+      r.writeU8(_model.config.gpsRescue.altitudeMode);
+      r.writeU16(_model.config.gpsRescue.minStartDistM);
+      r.writeU16(_model.config.gpsRescue.initialClimbM);
+      break;
+
+    case MSP_GPS_RESCUE_PIDS:
+      r.writeU16(_model.config.autopilot.altitudeP);
+      r.writeU16(_model.config.autopilot.altitudeI);
+      r.writeU16(_model.config.autopilot.altitudeD);
+      r.writeU16(_model.config.gpsRescue.velP);
+      r.writeU16(_model.config.gpsRescue.velI);
+      r.writeU16(_model.config.gpsRescue.velD);
+      r.writeU16(_model.config.gpsRescue.yawP);
+      break;
+
+    case MSP_TX_INFO:
+      r.writeU8(0);    // rssi source
+      r.writeU8(0xFF); // RTC not supported
       break;
 
   case MSP_RAW_GPS:

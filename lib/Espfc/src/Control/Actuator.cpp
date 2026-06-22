@@ -18,6 +18,7 @@ int Actuator::begin()
     const auto &c = _model.config.conditions[i];
     if(!(c.min < c.max)) continue; // inactive
     if(c.ch < AXIS_AUX_1 || c.ch >= AXIS_COUNT) continue; // invalid channel
+    if(c.id >= MODE_COUNT) continue;
     _model.state.mode.maskPresent |= 1 << c.id;
   }
   _model.state.mode.airmodeAllowed = false;
@@ -98,6 +99,9 @@ void Actuator::updateArmingDisabled()
   _model.setArmingDisabled(ARMING_DISABLED_CALIBRATING,     _model.calibrationActive());
   _model.setArmingDisabled(ARMING_DISABLED_MOTOR_PROTOCOL,  _model.config.output.protocol == ESC_PROTOCOL_DISABLED);
   _model.setArmingDisabled(ARMING_DISABLED_REBOOT_REQUIRED, _model.state.mode.rescueConfigMode == RESCUE_CONFIG_ACTIVE);
+  _model.setArmingDisabled(ARMING_DISABLED_NOPREARM,
+    (_model.state.mode.maskPresent & (1 << MODE_PREARM)) && !_model.isSwitchActive(MODE_PREARM));
+  _model.setArmingDisabled(ARMING_DISABLED_PARALYZE, _model.isSwitchActive(MODE_PARALYZE));
 
   // Check small angle - prevent arming if tilted beyond configured angle
   if(_model.config.arming.smallAngle < 180.0f && _model.accelActive())
@@ -130,6 +134,7 @@ void Actuator::updateModeMask()
     int16_t max = c->max; // * 25 + 900;
     size_t ch = c->ch;    // + AXIS_AUX_1;
     if(ch < AXIS_AUX_1 || ch >= AXIS_COUNT) continue; // invalid channel
+    if(c->id >= MODE_COUNT) continue;
 
     int16_t val = _model.state.input.us[ch];
     if(val > min && val < max)
@@ -170,11 +175,22 @@ bool Actuator::canActivateMode(FlightMode mode)
     case MODE_ARMED:
       return !_model.armingDisabled() && _model.isThrottleLow();
     case MODE_ANGLE:
+    case MODE_HORIZON:
       return _model.accelActive();
     case MODE_AIRMODE:
       return _model.state.mode.airmodeAllowed;
     case MODE_ALTHOLD:
       return _model.state.baro.dev;
+    case MODE_MAG:
+      return _model.magActive();
+    case MODE_HEADFREE:
+      return _model.accelActive() && _model.magActive();
+    case MODE_HEADADJ:
+      return _model.magActive();
+    case MODE_GPS_RESCUE:
+      return _model.gpsActive() && _model.state.gps.numSats >= _model.config.gps.minSats;
+    case MODE_FLIP_OVER_AFTER_CRASH:
+      return _model.isModeActive(MODE_ARMED);
     default:
       return true;
   }

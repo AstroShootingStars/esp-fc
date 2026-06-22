@@ -185,17 +185,48 @@ bool FAST_CODE_ATTR Input::failsafe(InputStatus status)
 {
   Utils::Stats::Measure readMeasure(_model.state.stats, COUNTER_FAILSAFE);
 
+  // Treat invalid RC ranges as a degraded RX state to avoid abrupt mode flapping.
+  if(status == INPUT_RECEIVED && !_model.state.input.channelsValid)
+  {
+    status = INPUT_LOST;
+  }
+
   if(_model.isSwitchActive(MODE_FAILSAFE))
   {
-    failsafeStage2();
-    return false; // not real failsafe, rx link is still valid
+    if(_model.config.failsafe.killSwitch)
+    {
+      failsafeStage2();
+    }
+    else
+    {
+      failsafeStage1();
+    }
+    return true;
   }
 
   if(status == INPUT_RECEIVED)
   {
-    failsafeIdle();
+    // Require a short burst of valid frames before we clear failsafe.
+    if(_model.state.failsafe.phase != FC_FAILSAFE_IDLE)
+    {
+      if(_failsafeRecoveryFrames < FAILSAFE_RECOVERY_FRAMES)
+      {
+        _failsafeRecoveryFrames++;
+      }
+      if(_failsafeRecoveryFrames >= FAILSAFE_RECOVERY_FRAMES)
+      {
+        _model.state.failsafe.phase = FC_FAILSAFE_RX_LOSS_RECOVERED;
+        failsafeIdle();
+      }
+    }
+    else
+    {
+      failsafeIdle();
+    }
     return false;
   }
+
+  _failsafeRecoveryFrames = 0;
 
   if(status == INPUT_FAILSAFE)
   {
@@ -205,7 +236,12 @@ bool FAST_CODE_ATTR Input::failsafe(InputStatus status)
 
   // stage 2 timeout
   _model.state.input.lossTime = micros() - _model.state.input.frameTime;
-  if(_model.state.input.lossTime > Utils::clamp((uint32_t)_model.config.failsafe.delay, (uint32_t)2u, (uint32_t)200u) * TENTH_TO_US)
+  uint32_t stage2DelayTenth = Utils::clamp((uint32_t)_model.config.failsafe.delay, (uint32_t)2u, (uint32_t)200u);
+  if(_model.state.input.us[AXIS_THRUST] <= _model.config.input.minCheck && _model.config.failsafe.throttleLowDelay > 0)
+  {
+    stage2DelayTenth = std::min(stage2DelayTenth, (uint32_t)_model.config.failsafe.throttleLowDelay);
+  }
+  if(_model.state.input.lossTime > stage2DelayTenth * TENTH_TO_US)
   {
     failsafeStage2();
     return true;
@@ -225,6 +261,8 @@ void FAST_CODE_ATTR Input::failsafeIdle()
 {
   _model.state.failsafe.phase = FC_FAILSAFE_IDLE;
   _model.state.input.lossTime = 0;
+  _model.state.input.rxLoss = false;
+  _model.state.input.rxFailSafe = false;
 }
 
 void FAST_CODE_ATTR Input::failsafeStage1()
@@ -242,7 +280,47 @@ void FAST_CODE_ATTR Input::failsafeStage2()
   _model.state.failsafe.phase = FC_FAILSAFE_RX_LOSS_DETECTED;
   _model.state.input.rxLoss = true;
   _model.state.input.rxFailSafe = true;
+
+  // Respect configured procedure: drop, land, or fallback to drop.
+  if(_model.config.failsafe.procedure == FAILSAFE_PROCEDURE_LAND)
+  {
+    failsafeLanding();
+    return;
+  }
+  if(_model.config.failsafe.procedure == FAILSAFE_PROCEDURE_GPS_RESCUE)
+  {
+    // GPS rescue flow is not implemented in this stack yet, so use LAND as a safe fallback.
+    failsafeLanding();
+    return;
+  }
+
   if(_model.isModeActive(MODE_ARMED))
+  {
+    _model.state.failsafe.phase = FC_FAILSAFE_LANDED;
+    _model.disarm(DISARM_REASON_FAILSAFE);
+  }
+}
+
+void FAST_CODE_ATTR Input::failsafeLanding()
+{
+  _model.state.failsafe.phase = FC_FAILSAFE_LANDING;
+
+  for(size_t i = 0; i < _model.state.input.channelCount; i++)
+  {
+    int16_t value = getFailsafeValue(i);
+    if(i == AXIS_THRUST)
+    {
+      value = _model.config.failsafe.throttle;
+    }
+    setInput((Axis)i, value, true, true);
+  }
+
+  // Disarm after configured landing timeout (delay + offDelay).
+  const uint32_t disarmTime =
+    (uint32_t)Utils::clamp((uint32_t)_model.config.failsafe.delay, (uint32_t)2u, (uint32_t)200u) * TENTH_TO_US +
+    (uint32_t)_model.config.failsafe.offDelay * TENTH_TO_US;
+
+  if(_model.isModeActive(MODE_ARMED) && _model.state.input.lossTime >= disarmTime)
   {
     _model.state.failsafe.phase = FC_FAILSAFE_LANDED;
     _model.disarm(DISARM_REASON_FAILSAFE);
@@ -358,6 +436,30 @@ Device::InputDevice * Input::getInputDevice()
         _crsf.begin(serial, _model.isFeatureActive(FEATURE_TELEMETRY) ? &_telemetry : nullptr);
         _model.logger.info().logln(F("RX CRSF"));
         return &_crsf;
+
+      case SERIALRX_SPEKTRUM1024:
+      case SERIALRX_SPEKTRUM2048:
+        _spektrum.begin(serial);
+        _model.logger.info().log(F("RX SPEKTRUM ")).logln(_model.config.input.serialRxProvider);
+        return &_spektrum;
+
+      case SERIALRX_SUMD:
+        _sumd.begin(serial);
+        _model.logger.info().logln(F("RX SUMD"));
+        return &_sumd;
+
+      case SERIALRX_SUMH:
+        _sumh.begin(serial);
+        _model.logger.info().logln(F("RX SUMH"));
+        return &_sumh;
+
+      case SERIALRX_FPORT:
+        _fport.begin(serial);
+        _model.logger.info().logln(F("RX FPORT"));
+        return &_fport;
+
+      default:
+        break;
     }
   }
   else if(_model.isFeatureActive(FEATURE_RX_PPM) && _model.config.pin[PIN_INPUT_RX] != -1)

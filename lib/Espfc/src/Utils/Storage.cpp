@@ -40,12 +40,16 @@ StorageResult Storage::load(ModelConfig& config) const
   uint16_t size = 0;
   size = EEPROM.read(addr++);
   size |= EEPROM.read(addr++) << 8;
-  if(size != sizeof(ModelConfig))
+  if(size > sizeof(ModelConfig))
   {
     return STORAGE_ERR_BAD_SIZE;
   }
 
-  EEPROM.get(addr, config);
+  config = ModelConfig();
+  for(uint16_t i = 0; i < size; i++)
+  {
+    reinterpret_cast<uint8_t*>(&config)[i] = EEPROM.read(addr + i);
+  }
   return STORAGE_LOAD_SUCCESS;
 }
 

@@ -13,6 +13,9 @@
 #include "Utils/Timer.h"
 #include "Utils/Stats.h"
 #include "Device/SerialDevice.h"
+#include "Device/RangefinderDevice.hpp"
+#include "Device/OpticalFlowDevice.hpp"
+#include "Device/OledDevice.hpp"
 #include "Connect/Msp.hpp"
 #include "Connect/StatusLed.hpp"
 
@@ -249,6 +252,46 @@ struct BaroState
   int32_t altitudeBiasSamples;
 };
 
+
+struct RangefinderState
+{
+  Device::RangefinderDevice* dev = nullptr;
+  bool present = false;
+  int32_t rate = 0;
+  
+  uint16_t distanceRaw = 0; // mm
+  uint16_t distance = 0;    // mm
+  uint8_t position = RANGEFINDER_BOTTOM; // Position: BOTTOM or FRONT
+};
+struct ObstacleAvoidanceState
+{
+  uint8_t active = 0;           // Obstacle avoidance is active
+  uint16_t detectedDistance = 0; // Current distance to obstacle in mm
+  float throttleCorrection = 0.0f; // Throttle adjustment factor (0.0-1.0)
+  uint8_t avoidanceFlag = 0;    // Obstacle detected: 0=clear, 1=warning, 2=danger
+  uint32_t lastUpdateMs = 0;    // Last update timestamp
+};
+
+struct OpticalFlowState
+{
+  Device::OpticalFlowDevice* dev = nullptr;
+  bool present = false;
+  int32_t rate = 0;
+
+  uint8_t quality = 0;
+  int32_t motionX = 0;
+  int32_t motionY = 0;
+  float flowRateX = 0.0f;
+  float flowRateY = 0.0f;
+  uint32_t lastUpdateUs = 0;
+};
+
+struct OledState
+{
+  Device::OledDevice* dev = nullptr;
+  bool present = false;
+};
+
 struct GyroState
 {
   Device::GyroDevice* dev;
@@ -478,6 +521,10 @@ struct ModelState
   AccelState accel;
   MagState mag;
   BaroState baro;
+  RangefinderState rangefinder[RANGEFINDER_COUNT];  // [BOTTOM] and [FRONT]
+  ObstacleAvoidanceState obstacleAvoidance;
+  OpticalFlowState opticalFlow;
+  OledState oled;
   GpsState gps;
 
   InputState input;

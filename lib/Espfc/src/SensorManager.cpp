@@ -4,7 +4,7 @@ namespace Espfc {
 
 SensorManager::SensorManager(Model& model):
   _model(model), _gyro(model), _accel(model), _mag(model), _baro(model),
-  _voltage(model), _fusion(model), _altitude(model), _fusionUpdate(false)
+  _opticalFlow(model), _voltage(model), _fusion(model), _altitude(model), _fusionUpdate(false)
 {
 }
 
@@ -14,6 +14,7 @@ int SensorManager::begin()
   _accel.begin();
   _mag.begin();
   _baro.begin();
+  _opticalFlow.begin();
   _voltage.begin();
   _fusion.begin();
   _altitude.begin();
@@ -42,6 +43,8 @@ int FAST_CODE_ATTR SensorManager::read()
   if(_mag.update()) return 1;
 
   if(_baro.update()) return 1;
+
+  if(_opticalFlow.update()) return 1;
 
   if(_voltage.update()) return 1;
 
@@ -106,6 +109,8 @@ int SensorManager::updateDelayed()
   if(_mag.update()) return 1;
 
   if(_baro.update()) return 1;
+
+  if(_opticalFlow.update()) return 1;
 
   if(_voltage.update()) return 0;
 

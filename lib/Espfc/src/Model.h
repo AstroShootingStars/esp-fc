@@ -116,6 +116,16 @@ class Model
       return state.baro.present && config.baro.dev != BARO_NONE;
     }
 
+    bool opticalFlowActive() const
+    {
+      return state.opticalFlow.present && config.opticalFlow.dev != Device::OPFLOW_NONE;
+    }
+
+    bool oledActive() const
+    {
+      return state.oled.present && config.oled.dev != Device::OLED_NONE;
+    }
+
     bool calibrationActive() const
     {
       return state.accel.calibrationState != CALIBRATION_IDLE || state.gyro.calibrationState != CALIBRATION_IDLE || state.mag.calibrationState != CALIBRATION_IDLE;
@@ -419,6 +429,12 @@ class Model
         1 << (BUZZER_DISARMING - 1) |
         1 << (BUZZER_ARMING - 1) |
         1 << (BUZZER_BAT_LOW - 1);
+
+      if(config.oled.height != 0 && config.oled.height != 32 && config.oled.height != 64)
+      {
+        config.oled.height = 0;
+      }
+      config.oled.pageInterval = constrain(config.oled.pageInterval, 500, 30000);
 
         if(config.gyro.dynamicFilter.count > DYN_NOTCH_COUNT_MAX)
         {

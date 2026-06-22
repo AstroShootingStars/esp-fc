@@ -82,6 +82,17 @@ int SerialManager::begin()
         case SERIALRX_CRSF:
           sdc.baud = 420000ul;
           break;
+        case SERIALRX_SPEKTRUM1024:
+        case SERIALRX_SPEKTRUM2048:
+          sdc.baud = 115200ul;
+          break;
+        case SERIALRX_SUMD:
+        case SERIALRX_SUMH:
+          sdc.baud = 115200ul;
+          break;
+        case SERIALRX_FPORT:
+          sdc.baud = 115200ul;
+          break;
         default:
           break;
       }

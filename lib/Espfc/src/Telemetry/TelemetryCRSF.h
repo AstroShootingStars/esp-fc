@@ -15,12 +15,16 @@ namespace Espfc {
 namespace Telemetry {
 
 enum TelemetryState {
-  CRSF_TELEMETRY_STATE_ATTI,
-  CRSF_TELEMETRY_STATE_BAT,
-  CRSF_TELEMETRY_STATE_FM,
-  CRSF_TELEMETRY_STATE_GPS,
-  CRSF_TELEMETRY_STATE_BARO,
-  CRSF_TELEMETRY_STATE_HB,
+  CRSF_TELEMETRY_STATE_ATTI,      // Attitude (roll, pitch, yaw)
+  CRSF_TELEMETRY_STATE_BAT,       // Battery (voltage, current, capacity, percentage)
+  CRSF_TELEMETRY_STATE_FM,        // Flight mode status
+  CRSF_TELEMETRY_STATE_GPS,       // GPS (position, velocity, altitude, satellites)
+  CRSF_TELEMETRY_STATE_BARO,      // Barometer (altitude, vertical speed)
+  CRSF_TELEMETRY_STATE_GYRO,      // Gyroscope (roll, pitch, yaw rates)
+  CRSF_TELEMETRY_STATE_ACCEL,     // Accelerometer (x, y, z acceleration)
+  CRSF_TELEMETRY_STATE_MAG,       // Magnetometer (x, y, z magnetic field)
+  CRSF_TELEMETRY_STATE_LINK_TX,   // Link statistics TX (signal quality metrics)
+  CRSF_TELEMETRY_STATE_HB,        // Heartbeat
 };
 
 class TelemetryCRSF
@@ -51,21 +55,49 @@ public:
       case CRSF_TELEMETRY_STATE_FM:
         flightMode(f);
         send(f, s);
-        // If no GPS don't waste time sending empty messages
-        _current = _model.gpsActive() ? CRSF_TELEMETRY_STATE_GPS : (_model.baroActive() ? CRSF_TELEMETRY_STATE_BARO : CRSF_TELEMETRY_STATE_HB);
+        _current = CRSF_TELEMETRY_STATE_GYRO;
+        break;
+      case CRSF_TELEMETRY_STATE_GYRO:
+        if(_model.gyroActive()) {
+          gyroscope(f);
+          send(f, s);
+        }
+        _current = CRSF_TELEMETRY_STATE_ACCEL;
+        break;
+      case CRSF_TELEMETRY_STATE_ACCEL:
+        if(_model.accelActive()) {
+          accelerometer(f);
+          send(f, s);
+        }
+        _current = CRSF_TELEMETRY_STATE_MAG;
+        break;
+      case CRSF_TELEMETRY_STATE_MAG:
+        if(_model.magActive()) {
+          magnetometer(f);
+          send(f, s);
+        }
+        _current = CRSF_TELEMETRY_STATE_GPS;
         break;
       case CRSF_TELEMETRY_STATE_GPS:
-        gps(f);
-        send(f, s);
-        // If no barometer don't send the message
-        _current = _model.baroActive() ? CRSF_TELEMETRY_STATE_BARO : CRSF_TELEMETRY_STATE_HB;
+        if(_model.gpsActive()) {
+          gps(f);
+          send(f, s);
+        }
+        _current = CRSF_TELEMETRY_STATE_BARO;
         break;
       case CRSF_TELEMETRY_STATE_BARO:
-        vario(f);
+        if(_model.baroActive()) {
+          vario(f);
+          send(f, s);
+        }
+        _current = CRSF_TELEMETRY_STATE_LINK_TX;
+        break;
+      case CRSF_TELEMETRY_STATE_LINK_TX:
+        linkStatistics(f);
         send(f, s);
         _current = CRSF_TELEMETRY_STATE_HB;
         break;
-      default:    // In case of an invalid state, send heartbeat and continue loop
+      default:    // Heartbeat and cycle back
         heartbeat(f);
         send(f, s);
         _current = CRSF_TELEMETRY_STATE_ATTI;
@@ -185,6 +217,78 @@ public:
     msg.prepare(Rc::CRSF_FRAMETYPE_HEARTBEAT);
 
     msg.writeU16(Utils::toBigEndian16(Rc::CRSF_ADDRESS_FLIGHT_CONTROLLER));
+
+    msg.finalize();
+  }
+
+  void gyroscope(Rc::CrsfMessage& msg) const
+  {
+    // Send gyroscope data: roll, pitch, yaw angular rates in deg/s × 100
+    msg.prepare(Rc::CRSF_FRAMETYPE_FLIGHT_MODE);
+
+    int16_t roll = lrintf(Utils::toDeg(_model.state.gyro.adc[0]) * 100.0f);
+    int16_t pitch = lrintf(Utils::toDeg(_model.state.gyro.adc[1]) * 100.0f);
+    int16_t yaw = lrintf(Utils::toDeg(_model.state.gyro.adc[2]) * 100.0f);
+
+    msg.writeU16(Utils::toBigEndian16((uint16_t)roll));
+    msg.writeU16(Utils::toBigEndian16((uint16_t)pitch));
+    msg.writeU16(Utils::toBigEndian16((uint16_t)yaw));
+
+    msg.finalize();
+  }
+
+  void accelerometer(Rc::CrsfMessage& msg) const
+  {
+    // Send accelerometer data in m/s² × 100
+    msg.prepare(Rc::CRSF_FRAMETYPE_FLIGHT_MODE);
+
+    // Scale from native ADC to m/s² (typically: raw_accel / 2048 * 9.81)
+    // Using standard conversion factor for typical accelerometers
+    float scale = 9.81f * 100.0f / 2048.0f; // m/s² × 100, for 2048 LSB/g sensor
+    int16_t accelX = lrintf(_model.state.accel.adc[0] * scale);
+    int16_t accelY = lrintf(_model.state.accel.adc[1] * scale);
+    int16_t accelZ = lrintf(_model.state.accel.adc[2] * scale);
+
+    msg.writeU16(Utils::toBigEndian16((uint16_t)accelX));
+    msg.writeU16(Utils::toBigEndian16((uint16_t)accelY));
+    msg.writeU16(Utils::toBigEndian16((uint16_t)accelZ));
+
+    msg.finalize();
+  }
+
+  void magnetometer(Rc::CrsfMessage& msg) const
+  {
+    // Send magnetometer data (raw ADC values in Gauss × 100)
+    msg.prepare(Rc::CRSF_FRAMETYPE_FLIGHT_MODE);
+
+    int16_t magX = lrintf(_model.state.mag.adc[0] * 100.0f);
+    int16_t magY = lrintf(_model.state.mag.adc[1] * 100.0f);
+    int16_t magZ = lrintf(_model.state.mag.adc[2] * 100.0f);
+
+    msg.writeU16(Utils::toBigEndian16((uint16_t)magX));
+    msg.writeU16(Utils::toBigEndian16((uint16_t)magY));
+    msg.writeU16(Utils::toBigEndian16((uint16_t)magZ));
+
+    msg.finalize();
+  }
+
+  void linkStatistics(Rc::CrsfMessage& msg) const
+  {
+    // Send link statistics (TX side - FC perspective)
+    msg.prepare(Rc::CRSF_FRAMETYPE_LINK_STATISTICS_TX);
+
+    // TX power and link quality metrics
+    uint8_t txPower = 0;     // 0mW by default
+    uint8_t rssi = 0;        // RSSI placeholder (would need RX input)
+    uint8_t rfMode = 0;      // RF mode/rate (0 = 4Hz, 1 = 50Hz, 2 = 150Hz)
+    uint8_t modelMatch = 1;  // Model match (1 = matched)
+    uint16_t flags = 0;      // Flags
+
+    msg.writeU8(txPower);
+    msg.writeU8(rssi);
+    msg.writeU8(rfMode);
+    msg.writeU8(modelMatch);
+    msg.writeU16(Utils::toBigEndian16(flags));
 
     msg.finalize();
   }

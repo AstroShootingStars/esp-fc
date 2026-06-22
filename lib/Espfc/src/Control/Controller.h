@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Control/Altitude.hpp"
+#include "Control/ObstacleAvoidance.hpp"
 #include "Control/Rates.h"
 #include "Model.h"
 
@@ -17,6 +18,7 @@ public:
   void innerLoopRobot();
   void outerLoop();
   void innerLoop();
+  void applyLandingAssist();
 
   inline float getTpaFactor() const;
   inline void resetIterm();
@@ -31,6 +33,10 @@ private:
   Model& _model;
   Rates _rates;
   Utils::Filter _speedFilter;
+  ObstacleAvoidance _obstacleAvoidance;
+
+  uint32_t _landingTouchdownStartMs = 0;
+  bool _landingTouchdownPending = false;
 };
 
 } // namespace Espfc::Control
