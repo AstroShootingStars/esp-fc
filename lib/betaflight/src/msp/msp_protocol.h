@@ -62,7 +62,7 @@
 #define MSP_PROTOCOL_VERSION                0
 
 #define API_VERSION_MAJOR                   1  // increment when major changes are made
-#define API_VERSION_MINOR                   46 // compatibility target for modern Betaflight Configurator
+#define API_VERSION_MINOR                   48 // adjustments tab center/scale support
 
 #define API_VERSION_LENGTH                  2
 

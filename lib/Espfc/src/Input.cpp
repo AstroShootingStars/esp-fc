@@ -66,7 +66,13 @@ void FAST_CODE_ATTR Input::setInput(Axis i, float v, bool newFrame, bool noFilte
   {
     const float nv = noFilter ? v : _model.state.input.filter[i].update(v);
     _model.state.input.us[i] = nv;
-    _model.state.input.ch[i] = Utils::map(nv, ich.min, ich.max, -1.f, 1.f);
+    float normalized = Utils::map(nv, ich.min, ich.max, -1.f, 1.f);
+    if(i == AXIS_THRUST && _model.config.input.throttleExpo > 0)
+    {
+      const float expo = _model.config.input.throttleExpo * 0.01f;
+      normalized = normalized * (1.0f - expo) + normalized * normalized * normalized * expo;
+    }
+    _model.state.input.ch[i] = normalized;
   }
   else if(newFrame)
   {

@@ -582,6 +582,10 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("alt_fuse_gps_hyst"), &c.altitudeFusion.gpsLossHysteresis),
     Param(PSTR("alt_fuse_flow_hyst"), &c.altitudeFusion.flowLossHysteresis),
 
+  #if ESPFC_EXTENDED_CONFIG_STORAGE > 0
+    Param(PSTR("arming_auto_disarm_delay"), &c.arming.autoDisarmDelay),
+    Param(PSTR("arming_disarm_kill_switch"), &c.arming.disarmKillSwitch),
+  #endif
     Param(PSTR("arming_small_angle"), &c.arming.smallAngle),
 
     Param(PSTR("vtx_power"), &c.vtx.power),
@@ -607,7 +611,9 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
 
     Param(PSTR("scaler_0"), &c.scaler[0]),
     Param(PSTR("scaler_1"), &c.scaler[1]),
+  #if SCALER_COUNT > 2
     Param(PSTR("scaler_2"), &c.scaler[2]),
+  #endif
 
     Param(PSTR("mode_0"), &c.conditions[0]),
     Param(PSTR("mode_1"), &c.conditions[1]),
@@ -649,6 +655,9 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("pid_level_f"), &c.pid[FC_PID_LEVEL].F),
 
     Param(PSTR("pid_level_angle_limit"), &c.level.angleLimit),
+    Param(PSTR("pid_level_horizon_strength"), &c.level.horizonStrength),
+    Param(PSTR("pid_level_integrated_yaw"), &c.level.integratedYaw),
+    Param(PSTR("pid_level_antigravity"), &c.level.antiGravityGain),
     Param(PSTR("pid_level_rate_limit"), &c.level.rateLimit),
     Param(PSTR("pid_level_lpf_type"), &c.level.ptermFilter.type, filterTypeChoices),
     Param(PSTR("pid_level_lpf_freq"), &c.level.ptermFilter.freq),
@@ -671,12 +680,18 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("pid_dterm_notch_cutoff"), &c.dterm.notchFilter.cutoff),
     Param(PSTR("pid_dterm_dyn_lpf_min"), &c.dterm.dynLpfFilter.cutoff),
     Param(PSTR("pid_dterm_dyn_lpf_max"), &c.dterm.dynLpfFilter.freq),
+    Param(PSTR("pid_feedforward_transition"), &c.dterm.feedForwardTransition),
+    Param(PSTR("pid_dmin_roll"), &c.dterm.dMinRoll),
+    Param(PSTR("pid_dmin_pitch"), &c.dterm.dMinPitch),
+    Param(PSTR("pid_dmin_yaw"), &c.dterm.dMinYaw),
+    Param(PSTR("pid_vbat_compensation"), &c.dterm.vbatPidCompensation),
 
     Param(PSTR("pid_dterm_weight"), &c.dterm.setpointWeight),
     Param(PSTR("pid_iterm_limit"), &c.iterm.limit),
     Param(PSTR("pid_iterm_zero"), &c.iterm.lowThrottleZeroIterm),
     Param(PSTR("pid_iterm_relax"), &c.iterm.relax, inputItermRelaxChoices),
     Param(PSTR("pid_iterm_relax_cutoff"), &c.iterm.relaxCutoff),
+    Param(PSTR("pid_iterm_rotation"), &c.iterm.itermRotation),
     Param(PSTR("pid_tpa_scale"), &c.controller.tpaScale),
     Param(PSTR("pid_tpa_breakpoint"), &c.controller.tpaBreakpoint),
 
@@ -690,15 +705,18 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("output_motor_protocol"), &c.output.protocol, protocolChoices),
     Param(PSTR("output_motor_async"), &c.output.async),
     Param(PSTR("output_motor_rate"), &c.output.rate),
-#ifdef ESPFC_DSHOT_TELEMETRY
     Param(PSTR("output_motor_poles"), &c.output.motorPoles),
-#endif
     Param(PSTR("output_servo_rate"), &c.output.servoRate),
 
     Param(PSTR("output_min_command"), &c.output.minCommand),
     Param(PSTR("output_min_throttle"), &c.output.minThrottle),
     Param(PSTR("output_max_throttle"), &c.output.maxThrottle),
     Param(PSTR("output_dshot_idle"), &c.output.dshotIdle),
+  #if ESPFC_EXTENDED_CONFIG_STORAGE > 0
+    Param(PSTR("output_3d_low"), &c.output.deadband3dLow),
+    Param(PSTR("output_3d_high"), &c.output.deadband3dHigh),
+    Param(PSTR("output_3d_neutral"), &c.output.neutral3d),
+  #endif
 #ifdef ESPFC_DSHOT_TELEMETRY
     Param(PSTR("output_dshot_telemetry"), &c.output.dshotTelemetry),
 #endif
@@ -813,6 +831,9 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
 #endif
 
     Param(PSTR("mix_outputs"), &c.customMixerCount),
+#if ESPFC_SERVO_MIX_RULES_STORAGE > 0
+  Param(PSTR("servo_mix_rules"), &c.servoMixRuleCount),
+#endif
     Param(PSTR("mix_0"), &c.customMixes[i++]),
     Param(PSTR("mix_1"), &c.customMixes[i++]),
     Param(PSTR("mix_2"), &c.customMixes[i++]),
@@ -882,8 +903,7 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
   };
   return params;
 }
-
-bool Cli::process(const char c, CliCmd& cmd, Stream& stream)
+  bool Cli::process(const char c, CliCmd& cmd, Stream& stream)
 {
   // configurator handshake
   if(!_active && c == '#')
@@ -1276,10 +1296,12 @@ void Cli::execute(CliCmd& cmd, Stream& s)
       _model.config.scaler[1].minScale = 25; //%
       _model.config.scaler[1].maxScale = 400;
 
+#if SCALER_COUNT > 2
       _model.config.scaler[2].dimension = (ScalerDimension)(ACT_INNER_D | ACT_AXIS_PITCH | ACT_AXIS_ROLL);
       _model.config.scaler[2].channel = 7;
       _model.config.scaler[2].minScale = 25; //%
       _model.config.scaler[2].maxScale = 400;
+#endif
 
       s.println(F("OK"));
     }

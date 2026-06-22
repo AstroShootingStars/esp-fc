@@ -80,7 +80,7 @@ int Blackbox::begin()
   cp->pidSumLimit = 660;
   cp->pidSumLimitYaw = 660;
   cp->ff_boost = 0;
-  cp->feedForwardTransition = 0;
+  cp->feedForwardTransition = _model.config.dterm.feedForwardTransition;
   cp->tpa_mode = 0; // PD
   cp->tpa_rate = _model.config.controller.tpaScale;
   cp->tpa_breakpoint = _model.config.controller.tpaBreakpoint;
@@ -93,7 +93,7 @@ int Blackbox::begin()
   cp->d_min_gain = 0;
   cp->d_min_advance = 0;
   cp->angle_limit = _model.config.level.angleLimit;
-  cp->angle_earth_ref = 100;
+  cp->angle_earth_ref = _model.config.level.horizonStrength;
   cp->horizon_limit_degrees = 135;
   cp->horizon_delay_ms = 500;
   cp->thrustLinearization = 0;

@@ -134,7 +134,11 @@ enum ScalerDimension {
   ACT_GYRO_THRUST = 1 << 12, // 4096
 };
 
+#if defined(ESP32S2)
+constexpr size_t SCALER_COUNT = 2;
+#else
 constexpr size_t SCALER_COUNT = 3;
+#endif
 
 struct ScalerConfig {
   uint32_t dimension = 0;
@@ -324,6 +328,7 @@ enum PinFunction {
 };
 
 constexpr size_t ACTUATOR_CONDITIONS = 16;
+constexpr size_t ADJUSTMENT_RANGES_COUNT = 16;
 
 struct ActuatorCondition
 {
@@ -333,6 +338,18 @@ struct ActuatorCondition
   int16_t max = 900;
   uint8_t logicMode = 0;
   uint8_t linkId = 0;
+};
+
+struct AdjustmentRangeConfig
+{
+  uint8_t stateIndex = 0;
+  uint8_t auxChannelIndex = 0;
+  uint8_t rangeStartStep = 0;
+  uint8_t rangeEndStep = 0;
+  uint8_t adjustmentFunction = 0;
+  uint8_t auxSwitchChannelIndex = 0;
+  int16_t adjustmentCenter = 0;
+  int16_t adjustmentScale = 0;
 };
 
 struct SerialPortConfig
@@ -456,6 +473,7 @@ struct PidConfig
   uint8_t I;
   uint8_t D;
   int16_t F;
+  uint8_t dMin = 0;  // D-term minimum value (percent of D)
 };
 
 struct InputChannelConfig
@@ -485,10 +503,15 @@ struct InputConfig
 
   int8_t filterType = INPUT_FILTER;
   int8_t filterAutoFactor = 50;
+  uint8_t rcSmoothing = 1;
+  uint8_t rxSpiProtocol = 0;
+  uint8_t elrsUid[6] = { 0, 0, 0, 0, 0, 0 };
+  uint8_t elrsModelId = 0;
   FilterConfig filter{FILTER_PT3, 0};
   FilterConfig filterDerivative{FILTER_PT3, 0};
 
   uint8_t expo[3] = { 0, 0, 0 };
+  uint8_t throttleExpo = 0;
   uint8_t rate[3] = { 20, 20, 30 };
   uint8_t superRate[3] = { 40, 40,  36 };
   int16_t rateLimit[3] = { 1998, 1998, 1998 };
@@ -497,6 +520,36 @@ struct InputConfig
   uint8_t rssiChannel = 0;
 
   InputChannelConfig channel[INPUT_CHANNELS];
+};
+
+constexpr size_t RATE_PROFILE_COUNT = 1;
+
+struct RateProfileConfig
+{
+  uint8_t expo[3] = { 0, 0, 0 };
+  uint8_t throttleExpo = 0;
+  uint8_t rate[3] = { 20, 20, 30 };
+  uint8_t superRate[3] = { 40, 40, 36 };
+  int16_t rateLimit[3] = { 1998, 1998, 1998 };
+  int8_t rateType = 3;
+};
+
+constexpr size_t PID_PROFILE_COUNT = 1;
+
+struct PidProfileConfig
+{
+  PidConfig pid[FC_PID_ITEM_COUNT] = {
+    [FC_PID_ROLL]  = { .P = 42, .I = 85, .D = 24, .F = 72 },  // ROLL
+    [FC_PID_PITCH] = { .P = 46, .I = 90, .D = 26, .F = 76 },  // PITCH
+    [FC_PID_YAW]   = { .P = 45, .I = 90, .D =  0, .F = 72 },  // YAW
+    [FC_PID_ALT]   = { .P =  0, .I =  0, .D =  0, .F =  0 },  // ALTHOLD POS
+    [FC_PID_POS]   = { .P =  0, .I =  0, .D =  0, .F =  0 },  // POSHOLD_P * 100, POSHOLD_I * 100,
+    [FC_PID_POSR]  = { .P =  0, .I =  0, .D =  0, .F =  0 },  // POSHOLD_RATE_P * 10, POSHOLD_RATE_I * 100, POSHOLD_RATE_D * 1000,
+    [FC_PID_NAVR]  = { .P =  0, .I =  0, .D =  0, .F =  0 },  // NAV_P * 10, NAV_I * 100, NAV_D * 1000
+    [FC_PID_LEVEL] = { .P = 45, .I =  0, .D =  0, .F =  0 },  // ANGLE/LEVEL
+    [FC_PID_MAG]   = { .P =  0, .I =  0, .D =  0, .F =  0 },  // MAG
+    [FC_PID_VEL]   = { .P = 80, .I = 60, .D = 40, .F = 20 },  // ALTHOLD VEL
+  };
 };
 
 struct OutputChannelConfig
@@ -521,10 +574,19 @@ struct OutputConfig
   int16_t minThrottle = 1070;
   int16_t maxThrottle = 2000;
   int16_t dshotIdle = 550;
+#if !defined(ESP32S2)
+  int16_t deadband3dLow = 1406;
+  int16_t deadband3dHigh = 1514;
+  int16_t neutral3d = 1460;
+#endif
 
   int8_t throttleLimitType = 0;
   int8_t throttleLimitPercent = 100;
   int8_t motorLimit = 100;
+
+#if !defined(ESP32S2)
+  uint8_t motorOutputReordering[OUTPUT_CHANNELS] = {0};
+#endif
 
   OutputChannelConfig channel[ESPFC_OUTPUT_COUNT];
 };
@@ -726,7 +788,7 @@ struct OledConfig
 constexpr uint8_t ESPFC_OSD_ITEM_COUNT = 32;
 constexpr uint8_t ESPFC_OSD_STAT_COUNT = 8;
 constexpr uint8_t ESPFC_OSD_TIMER_COUNT = 2;
-constexpr uint8_t ESPFC_OSD_PROFILE_COUNT = 3;
+constexpr uint8_t ESPFC_OSD_PROFILE_COUNT = 1;
 
 struct OsdConfig
 {
@@ -761,7 +823,14 @@ struct DtermConfig
   FilterConfig filter2{FILTER_PT1, 128};
   FilterConfig notchFilter{FILTER_NOTCH, 0, 0};
   FilterConfig dynLpfFilter{FILTER_PT1, 145, 60};
+  uint8_t feedForwardTransition = 0;
   int16_t setpointWeight = 30;
+  uint8_t dMinRoll = 0;  // D-min for roll axis (percent)
+  uint8_t dMinPitch = 0;  // D-min for pitch axis (percent)
+  uint8_t dMinYaw = 0;  // D-min for yaw axis (percent)
+  uint8_t dMinGain = 37;  // Gain applied when D-min reduces D-term
+  uint8_t dMinAdvance = 20;  // Advance time for D-min
+  uint8_t vbatPidCompensation = 0;  // Battery voltage PID compensation (0-100)
 };
 
 struct ItermConfig
@@ -770,6 +839,7 @@ struct ItermConfig
   int8_t relax = ITERM_RELAX_RP;
   int8_t relaxCutoff = 15;
   bool lowThrottleZeroIterm = true;
+  bool itermRotation = false;  // Enable iterm rotation
 };
 
 struct LevelConfig
@@ -777,6 +847,9 @@ struct LevelConfig
   FilterConfig ptermFilter{FILTER_PT1, 90};
   int8_t angleLimit = 55;
   int16_t rateLimit = 300;
+  uint8_t horizonStrength = 100;
+  bool integratedYaw = false;  // Use integrated yaw
+  uint8_t antiGravityGain = 0;  // Anti-gravity mode gain (0 = disabled)
 };
 
 struct AltHoldConfig
@@ -795,6 +868,32 @@ struct ControllerConfig
 {
   int8_t tpaScale = 10;
   int16_t tpaBreakpoint = 1650;
+};
+
+constexpr size_t SERVO_MIX_RULES_MAX = 16; // Protocol-visible rule slots
+
+#if defined(ESP32S2)
+#define ESPFC_SERVO_MIX_RULES_STORAGE 0
+#define ESPFC_EXTENDED_CONFIG_STORAGE 0
+#elif defined(ARDUINO_ARCH_ESP8266)
+#define ESPFC_SERVO_MIX_RULES_STORAGE 8
+#define ESPFC_EXTENDED_CONFIG_STORAGE 1
+#else
+#define ESPFC_SERVO_MIX_RULES_STORAGE SERVO_MIX_RULES_MAX
+#define ESPFC_EXTENDED_CONFIG_STORAGE 1
+#endif
+
+constexpr size_t SERVO_MIX_RULES_STORAGE = ESPFC_SERVO_MIX_RULES_STORAGE;
+
+struct ServoMixRule
+{
+  uint8_t targetChannel = 0;  // output channel
+  uint8_t inputSource = 0;    // input source (roll, pitch, yaw, thrust, etc.)
+  int8_t rate = 0;            // rate/scale (-127 to 127)
+  uint8_t speed = 0;          // servo speed
+  uint8_t min = 0;            // min value
+  uint8_t max = 255;          // max value
+  uint8_t box = 0;            // logic condition box index
 };
 
 constexpr size_t LED_STRIP_MAX_LENGTH = 32;
@@ -938,6 +1037,10 @@ struct LedConfig
 
 struct ArmingConfig
 {
+#if !defined(ESP32S2)
+  uint8_t autoDisarmDelay = 5;
+  uint8_t disarmKillSwitch = 0;
+#endif
   uint8_t smallAngle = 25;
 };
 
@@ -1051,7 +1154,12 @@ class ModelConfig
     GpsRescueConfig gpsRescue;
 
     ActuatorCondition conditions[ACTUATOR_CONDITIONS];
+    AdjustmentRangeConfig adjustmentRanges[ADJUSTMENT_RANGES_COUNT];
     ScalerConfig scaler[SCALER_COUNT];
+    uint8_t activeRateProfile = 0;
+    RateProfileConfig rateProfiles[RATE_PROFILE_COUNT];
+    uint8_t activePidProfile = 0;
+    PidProfileConfig pidProfiles[PID_PROFILE_COUNT];
 
     // pid controller
     PidConfig pid[FC_PID_ITEM_COUNT] = {
@@ -1154,6 +1262,10 @@ class ModelConfig
     int8_t customMixerCount = 0;
     MixerEntry customMixes[MIXER_RULE_MAX];
     MixerConfiguration mixer;
+  #if ESPFC_SERVO_MIX_RULES_STORAGE > 0
+    uint8_t servoMixRuleCount = 0;
+    ServoMixRule servoMixRules[SERVO_MIX_RULES_STORAGE];
+  #endif
     OutputConfig output;
     BlackboxConfig blackbox;
     DebugConfig debug;
@@ -1181,6 +1293,13 @@ class ModelConfig
       // swap yaw and throttle for AETR
       input.channel[2].map = 3; // replace input 2 with rx channel 3, yaw
       input.channel[3].map = 2; // replace input 3 with rx channel 2, throttle
+
+#if !defined(ESP32S2)
+      for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
+      {
+        output.motorOutputReordering[i] = i;
+      }
+#endif
 
       // PID controller config (BF default)
       //pid[FC_PID_ROLL]  = { .P = 42, .I = 85, .D = 30, .F = 90 };

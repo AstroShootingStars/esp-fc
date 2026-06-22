@@ -352,10 +352,13 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(API_VERSION_MINOR);
       break;
 
-    case MSP_FC_VARIANT:
+    case MSP_BOARD_INFO:
       r.writeData(flightControllerIdentifier, FLIGHT_CONTROLLER_IDENTIFIER_LENGTH);
       break;
 
+    case MSP_FC_VARIANT:
+      r.writeData(flightControllerIdentifier, FLIGHT_CONTROLLER_IDENTIFIER_LENGTH);
+      break;
     case MSP_FC_VERSION:
       r.writeU8(FC_VERSION_MAJOR);
       r.writeU8(FC_VERSION_MINOR);
@@ -385,8 +388,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(0); // pid profile
       r.writeU16(lrintf(_model.state.stats.getCpuLoad()));
       if (m.cmd == MSP_STATUS_EX) {
-        r.writeU8(1); // max profile count
-        r.writeU8(0); // current rate profile index
+        r.writeU8(RATE_PROFILE_COUNT); // max profile count
+        r.writeU8(_model.config.activeRateProfile); // current rate profile index
       } else {  // MSP_STATUS
         //r.writeU16(_model.state.gyro.timer.interval); // gyro cycle time
         r.writeU16(0);
@@ -462,9 +465,13 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
             break;
           }
           _model.config.conditions[i].id = mappedMode;
-          _model.config.conditions[i].ch = m.readU8() + AXIS_AUX_1;
-          _model.config.conditions[i].min = m.readU8() * 25 + 900;
-          _model.config.conditions[i].max = m.readU8() * 25 + 900;
+          _model.config.conditions[i].ch = constrain(m.readU8() + AXIS_AUX_1, AXIS_AUX_1, AXIS_AUX_1 + INPUT_CHANNELS - 4 - 1);
+          _model.config.conditions[i].min = constrain(m.readU8() * 25 + 900, 900, 2100);
+          _model.config.conditions[i].max = constrain(m.readU8() * 25 + 900, 900, 2100);
+          if(_model.config.conditions[i].min > _model.config.conditions[i].max)
+          {
+            std::swap(_model.config.conditions[i].min, _model.config.conditions[i].max);
+          }
           if(m.remain() >= 2) {
             _model.config.conditions[i].logicMode = m.readU8(); // mode logic
             _model.config.conditions[i].linkId = m.readU8(); // link to
@@ -474,6 +481,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         {
           r.result = -1;
         }
+        _model.reload();
       }
       break;
 
@@ -519,6 +527,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         m.readU16(); // vbatmaxcellvoltage
         _model.config.vbat.cellWarning = m.readU16();
       }
+      _model.reload();
       break;
 
     case MSP_BATTERY_STATE:
@@ -550,6 +559,45 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         r.writeU8(i + 10);  // meter id (10-19 ibat adc)
         r.writeU16(0); // mah drawn
         r.writeU16(constrain(toIbatCurrent(_model.state.battery.current) * 10, 0, 0xffff));  // meter value
+      }
+      break;
+
+    case MSP_VOLTAGE_METER_CONFIG:
+      // Legacy BF-compatible ADC voltage meter config payload.
+      r.writeU8(_model.config.vbat.scale);   // vbatscale
+      r.writeU8(_model.config.vbat.resDiv);  // vbatresdivval
+      r.writeU8(_model.config.vbat.resMult); // vbatresdivmultiplier
+      r.writeU8(0);                          // vbatresdivoffset (unused)
+      break;
+
+    case MSP_SET_VOLTAGE_METER_CONFIG:
+      if(m.remain() >= 3)
+      {
+        _model.config.vbat.scale = m.readU8();
+        _model.config.vbat.resDiv = m.readU8();
+        _model.config.vbat.resMult = m.readU8();
+      }
+      if(m.remain() >= 1) m.readU8(); // optional offset
+      _model.reload();
+      break;
+
+    case MSP_CURRENT_METER_CONFIG:
+      // Legacy BF-compatible ADC current meter config payload.
+      r.writeU16(_model.config.ibat.scale);  // currentMeterScale
+      r.writeU16(_model.config.ibat.offset); // currentMeterOffset
+      r.writeU8(_model.config.ibat.source);  // currentMeterType/source
+      break;
+
+    case MSP_SET_CURRENT_METER_CONFIG:
+      if(m.remain() >= 4)
+      {
+        _model.config.ibat.scale = m.readU16();
+        _model.config.ibat.offset = m.readU16();
+      }
+      if(m.remain() >= 1)
+      {
+        _model.config.ibat.source = toIbatSource(m.readU8());
+      _model.reload();
       }
       break;
 
@@ -611,6 +659,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       _model.config.accel.trim[0] = std::clamp<int16_t>(m.readU16(), -300, 300); // pitch
       _model.config.accel.trim[1] = std::clamp<int16_t>(m.readU16(), -300, 300); // roll
       _model.onAccChange();
+      _model.reload();
       break;
 
     case MSP_MIXER_CONFIG:
@@ -621,6 +670,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_SET_MIXER_CONFIG:
       _model.config.mixer.type = m.readU8(); // mixerMode, QUAD_X
       _model.config.mixer.yawReverse = m.readU8(); // yaw_motors_reversed
+      _model.reload();
       break;
 
     case MSP_SENSOR_CONFIG:
@@ -668,6 +718,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           m.readU8(); // gyro 2 align
         }
         _model.config.gyro.align = gyroAlign;
+        _model.reload();
       }
       break;
 
@@ -942,10 +993,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       _model.config.boardAlignment[0] = m.readU16();
       _model.config.boardAlignment[1] = m.readU16();
       _model.config.boardAlignment[2] = m.readU16();
+      _model.reload();
       break;
 
     case MSP_RX_MAP:
-      for(size_t i = 0; i < INPUT_CHANNELS; i++)
+      for(size_t i = 0; i < 8; i++)
       {
         r.writeU8(_model.config.input.channel[i].map);
       }
@@ -954,8 +1006,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_SET_RX_MAP:
       for(size_t i = 0; i < 8; i++)
       {
+        if(!m.remain()) break;
         _model.config.input.channel[i].map = m.readU8();
       }
+      _model.reload();
       break;
 
     case MSP_RSSI_CONFIG:
@@ -964,6 +1018,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_SET_RSSI_CONFIG:
       _model.config.input.rssiChannel = m.readU8();
+      _model.reload();
       break;
 
     case MSP_MOTOR_CONFIG:
@@ -983,13 +1038,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       _model.config.output.minCommand = m.readU16();  // mincommand
       if(m.remain() >= 2)
       {
-#ifdef ESPFC_DSHOT_TELEMETRY
         _model.config.output.motorPoles = m.readU8();
         _model.config.output.dshotTelemetry = m.readU8();
-#else
-        m.readU8();
-        m.readU8();
-#endif
       }
       _model.reload();
       break;
@@ -1008,6 +1058,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         m.readU16(); // deadband3d_high
         m.readU16(); // neutral3d
       }
+      _model.reload();
       break;
 
     case MSP_ARMING_CONFIG:
@@ -1020,20 +1071,37 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       m.readU8(); // auto_disarm delay
       m.readU8(); // disarm kill switch
       _model.config.arming.smallAngle = std::min<uint8_t>(180, m.readU8()); // small angle
+      _model.reload();
       break;
 
     case MSP_RC_DEADBAND:
       r.writeU8(_model.config.input.deadband);
-      r.writeU8(0); // yaw deadband
+      r.writeU8(_model.config.input.deadband); // yaw deadband
       r.writeU8(0); // alt hold deadband
+    #if !defined(ESP32S2)
+      r.writeU16((uint16_t)std::max<int16_t>(0, (_model.config.output.deadband3dHigh - _model.config.output.deadband3dLow) / 2)); // deadband 3d throttle
+    #else
       r.writeU16(0); // deadband 3d throttle
+    #endif
       break;
 
     case MSP_SET_RC_DEADBAND:
-      _model.config.input.deadband = m.readU8();
-      m.readU8(); // yaw deadband
-      m.readU8(); // alt hod deadband
-      m.readU16(); // deadband 3d throttle
+      if(m.remain() >= 1) _model.config.input.deadband = m.readU8();
+      if(m.remain() >= 1) _model.config.input.deadband = m.readU8(); // yaw deadband mapped to global deadband
+      if(m.remain() >= 1) m.readU8(); // alt hold deadband
+      if(m.remain() >= 2)
+      {
+        const uint16_t deadband3dThrottle = m.readU16();
+    #if !defined(ESP32S2)
+        const int16_t half = (int16_t)std::min<uint16_t>(deadband3dThrottle, 500);
+        const int16_t neutral = _model.config.output.neutral3d;
+        _model.config.output.deadband3dLow = std::max<int16_t>(1000, neutral - half);
+        _model.config.output.deadband3dHigh = std::min<int16_t>(2000, neutral + half);
+      #else
+        (void)deadband3dThrottle;
+    #endif
+      }
+      _model.reload();
       break;
 
     case MSP_RX_CONFIG:
@@ -1047,19 +1115,26 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(_model.config.input.interpolationMode); // rc interpolation
       r.writeU8(_model.config.input.interpolationInterval); // rc interpolation interval
       r.writeU16(1500); // airmode activate threshold
-      r.writeU8(0); // rx spi prot
+      r.writeU8(_model.config.input.rxSpiProtocol); // rx spi prot
       r.writeU32(0); // rx spi id
       r.writeU8(0); // rx spi chan count
       r.writeU8(0); // fpv camera angle
       r.writeU8(2); // rc iterpolation channels: RPYT
       r.writeU8(_model.config.input.filterType); // rc_smoothing_type
       r.writeU8(_model.config.input.filter.freq); // rc_smoothing_input_cutoff
-      r.writeU8(_model.config.input.filterDerivative.freq); // rc_smoothing_derivative_cutoff
-      r.writeU8(0);//_model.config.input.filter.type); // rc_smoothing_input_type
+      r.writeU8(_model.config.input.filterDerivative.freq); // rc_smoothing_throttle/feedforward_cutoff
+      // NOTE: field meaning changes at API 1.47 - before: derivative_cutoff, at 1.47+: throttle_cutoff
+      r.writeU8(0); // rc_smoothing_derivative_cutoff (deprecated) / rc_smoothing_throttle_cutoff (1.47+)
       r.writeU8(fromFilterTypeDerivative(_model.config.input.filterDerivative.type)); // rc_smoothing_derivative_type
       r.writeU8(0); // usb type
       // 1.42+
       r.writeU8(_model.config.input.filterAutoFactor); // rc_smoothing_auto_factor
+      // 1.44+
+      r.writeU8(_model.config.input.rcSmoothing); // rc_smoothing
+      // 1.45+
+      for(size_t i = 0; i < 6; i++) r.writeU8(_model.config.input.elrsUid[i]); // elrs uid bytes
+      // 1.47+
+      r.writeU8(_model.config.input.elrsModelId); // elrs model id
       break;
 
     case MSP2_ESPFC_LANDING_ASSIST_CONFIG:
@@ -1142,7 +1217,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         m.readU16(); // airmode activate threshold
       }
       if (m.remain() >= 6) {
-        m.readU8(); // rx spi prot
+        _model.config.input.rxSpiProtocol = m.readU8(); // rx spi prot
         m.readU32(); // rx spi id
         m.readU8(); // rx spi chan count
       }
@@ -1154,9 +1229,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         m.readU8(); // rc iterpolation channels
         _model.config.input.filterType = m.readU8(); // rc_smoothing_type
         _model.config.input.filter.freq = m.readU8(); // rc_smoothing_input_cutoff
-        _model.config.input.filterDerivative.freq = m.readU8(); // rc_smoothing_derivative_cutoff
-        //_model.config.input.filter.type = m.readU8() == 1 ? FILTER_BIQUAD : FILTER_PT1; // rc_smoothing_input_type
-        m.readU8();
+        _model.config.input.filterDerivative.freq = m.readU8(); // rc_smoothing_throttle/feedforward_cutoff
+        m.readU8(); // was rc_smoothing_derivative_cutoff (deprecated in 1.47), now throttle_cutoff unused here
         _model.config.input.filterDerivative.type = toFilterTypeDerivative(m.readU8()); // rc_smoothing_derivative_type
       }
       if (m.remain() >= 1) {
@@ -1165,6 +1239,15 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       // 1.42+
       if (m.remain() >= 1) {
         _model.config.input.filterAutoFactor = m.readU8(); // rc_smoothing_auto_factor
+      }
+      if (m.remain() >= 1) {
+        _model.config.input.rcSmoothing = m.readU8(); // rc_smoothing
+      }
+      if (m.remain() >= 6) {
+        for(size_t i = 0; i < 6; i++) _model.config.input.elrsUid[i] = m.readU8(); // elrs uid bytes
+      }
+      if (m.remain() >= 1) {
+        _model.config.input.elrsModelId = m.readU8(); // elrs model id
       }
 
       _model.reload();
@@ -1186,6 +1269,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       _model.config.failsafe.killSwitch = m.readU8(); //failsafe_kill_switch
       _model.config.failsafe.throttleLowDelay = m.readU16(); //failsafe_throttle_low_delay
       _model.config.failsafe.procedure = m.readU8(); //failsafe_procedure
+      _model.reload();
       break;
 
     case MSP_RXFAIL_CONFIG:
@@ -1208,6 +1292,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         {
           r.result = -1;
         }
+        _model.reload();
       }
       break;
 
@@ -1227,7 +1312,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       }
       r.writeU8(_model.config.controller.tpaScale); // dyn thr pid
       r.writeU8(50); // thrMid8
-      r.writeU8(0);  // thr expo
+      r.writeU8(_model.config.input.throttleExpo);  // thr expo
       r.writeU16(_model.config.controller.tpaBreakpoint); // tpa breakpoint
       r.writeU8(_model.config.input.expo[AXIS_YAW]); // yaw expo
       r.writeU8(_model.config.input.rate[AXIS_YAW]); // yaw rate
@@ -1268,7 +1353,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         }
         _model.config.controller.tpaScale = Utils::clamp(m.readU8(), (uint8_t)0, (uint8_t)90); // dyn thr pid
         m.readU8(); // thrMid8
-        m.readU8();  // thr expo
+        _model.config.input.throttleExpo = Utils::clamp(m.readU8(), (uint8_t)0, (uint8_t)100);  // thr expo
         _model.config.controller.tpaBreakpoint = Utils::clamp(m.readU16(), (uint16_t)1000, (uint16_t)2000); // tpa breakpoint
         if(m.remain() >= 1)
         {
@@ -1304,6 +1389,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         {
           _model.config.input.rateType = m.readU8();
         }
+        _model.syncActiveRateProfile();
+        _model.reload();
       }
       else
       {
@@ -1473,6 +1560,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         _model.config.pid[i].I = m.readU8();
         _model.config.pid[i].D = m.readU8();
       }
+      _model.syncActivePidProfile();  // Update active PID profile with new values
       _model.reload();
       break;
 
@@ -1481,8 +1569,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU16(0);
       r.writeU16(0); // was pidProfile.yaw_p_limit
       r.writeU8(0); // reserved
-      r.writeU8(0); // vbatPidCompensation;
-      r.writeU8(0); // feedForwardTransition;
+      r.writeU8(_model.config.dterm.vbatPidCompensation); // vbatPidCompensation;
+      r.writeU8(_model.config.dterm.feedForwardTransition); // feedForwardTransition;
       r.writeU8((uint8_t)std::min(_model.config.dterm.setpointWeight, (int16_t)255)); // was low byte of dtermSetpointWeight
       r.writeU8(0); // reserved
       r.writeU8(0); // reserved
@@ -1490,11 +1578,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU16(0); // rateAccelLimit;
       r.writeU16(0); // yawRateAccelLimit;
       r.writeU8(_model.config.level.angleLimit); // levelAngleLimit;
-      r.writeU8(0); // was pidProfile.levelSensitivity
+      r.writeU8(_model.config.level.horizonStrength); // horizon strength
       r.writeU16(0); // itermThrottleThreshold;
       r.writeU16(1000); // itermAcceleratorGain; anti_gravity_gain, 0 in 1.45+
       r.writeU16(_model.config.dterm.setpointWeight);
-      r.writeU8(0); // iterm rotation
+      r.writeU8(_model.config.iterm.itermRotation ? 1 : 0); // iterm rotation
       r.writeU8(0); // smart feed forward
       r.writeU8(_model.config.iterm.relax); // iterm relax
       r.writeU8(1); // iterm relax type (setpoint only)
@@ -1506,12 +1594,12 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU16(_model.config.pid[FC_PID_YAW].F); //pid yaw f
       r.writeU8(0); // antigravity mode
       // 1.41+
-      r.writeU8(0); // d min roll
-      r.writeU8(0); // d min pitch
-      r.writeU8(0); // d min yaw
-      r.writeU8(0); // d min gain
-      r.writeU8(0); // d min advance
-      r.writeU8(0); // use_integrated_yaw
+      r.writeU8(_model.config.dterm.dMinRoll); // d min roll
+      r.writeU8(_model.config.dterm.dMinPitch); // d min pitch
+      r.writeU8(_model.config.dterm.dMinYaw); // d min yaw
+      r.writeU8(37); // d min gain (default)
+      r.writeU8(20); // d min advance (default)
+      r.writeU8(_model.config.level.integratedYaw ? 1 : 0); // use_integrated_yaw
       r.writeU8(0); // integrated_yaw_relax
       // 1.42+
       r.writeU8(_model.config.iterm.relaxCutoff); // iterm_relax_cutoff
@@ -1528,7 +1616,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       m.readU16(); // was pidProfile.yaw_p_limit
       m.readU8(); // reserved
       m.readU8();
-      m.readU8();
+      _model.config.dterm.feedForwardTransition = m.readU8();
       const uint8_t legacySetpointWeight = m.readU8();
       m.readU8(); // reserved
       m.readU8(); // reserved
@@ -1537,7 +1625,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       m.readU16();
       if (m.remain() >= 2) {
         _model.config.level.angleLimit = m.readU8();
-        m.readU8(); // was pidProfile.levelSensitivity
+        _model.config.level.horizonStrength = m.readU8();
       }
       if (m.remain() >= 4) {
         m.readU16(); // itermThrottleThreshold;
@@ -1550,7 +1638,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         _model.config.dterm.setpointWeight = legacySetpointWeight;
       }
       if (m.remain() >= 14) {
-        m.readU8(); // iterm rotation
+        _model.config.iterm.itermRotation = m.readU8() != 0; // iterm rotation
         m.readU8(); // smart feed forward
         _model.config.iterm.relax = m.readU8(); // iterm relax
         m.readU8(); // iterm relax type
@@ -1564,12 +1652,12 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       }
       // 1.41+
       if (m.remain() >= 7) {
-        m.readU8(); // d min roll
-        m.readU8(); // d min pitch
-        m.readU8(); // d min yaw
-        m.readU8(); // d min gain
-        m.readU8(); // d min advance
-        m.readU8(); // use_integrated_yaw
+        _model.config.dterm.dMinRoll = m.readU8(); // d min roll
+        _model.config.dterm.dMinPitch = m.readU8(); // d min pitch
+        _model.config.dterm.dMinYaw = m.readU8(); // d min yaw
+        m.readU8(); // d min gain (per-item, not yet supported)
+        m.readU8(); // d min advance (per-item, not yet supported)
+        _model.config.level.integratedYaw = m.readU8() != 0; // use_integrated_yaw
         m.readU8(); // integrated_yaw_relax
       }
       // 1.42+
@@ -1582,6 +1670,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         m.readU8(); // auto_profile_cell_count
         m.readU8(); // idle_min_rpm
       }
+      _model.syncActivePidProfile();  // Update active PID profile with new values
       _model.reload();
       break;
     }
@@ -1709,17 +1798,20 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         uint8_t i = m.readU8();
         if(i < OUTPUT_CHANNELS)
         {
-          _model.config.output.channel[i].min = m.readU16();
-          _model.config.output.channel[i].max = m.readU16();
-          _model.config.output.channel[i].neutral = m.readU16();
+          _model.config.output.channel[i].min = constrain(m.readU16(), 500, 2500);
+          _model.config.output.channel[i].max = constrain(m.readU16(), 500, 2500);
+          _model.config.output.channel[i].neutral = constrain(m.readU16(), 500, 2500);
           m.readU8();
           m.readU8();
           m.readU32();
+          if(_model.config.output.channel[i].min > _model.config.output.channel[i].max)
+            std::swap(_model.config.output.channel[i].min, _model.config.output.channel[i].max);
         }
         else
         {
           r.result = -1;
         }
+        _model.reload();
       }
       break;
 
@@ -1981,15 +2073,46 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SELECT_SETTING:
-      if(m.remain()) m.readU8();
+      if(m.remain() >= 1)
+      {
+        const uint8_t profileIndex = m.readU8();
+        // Support extended format: if additional byte available, treat as [type, index]
+        // Otherwise, maintain backwards compatibility (rate profile selection)
+        if(m.remain() >= 1)
+        {
+          const uint8_t profileType = profileIndex;  // First byte is type
+          const uint8_t index = m.readU8();
+          if(profileType == 0)
+          {
+            _model.selectRateProfile(index);
+          }
+          else if(profileType == 1)
+          {
+            _model.selectPidProfile(index);
+          }
+        }
+        else
+        {
+          // Backwards compatible: single byte = rate profile index
+          _model.selectRateProfile(profileIndex);
+        }
+      }
       break;
 
     case MSP_COPY_PROFILE:
       if(m.remain() >= 3)
       {
-        m.readU8(); // type
-        m.readU8(); // destination index
-        m.readU8(); // source index
+        const uint8_t profileType = m.readU8(); // 0=rate, 1=pid
+        const uint8_t destIdx = m.readU8();
+        const uint8_t srcIdx = m.readU8();
+        if(profileType == 0 && srcIdx < RATE_PROFILE_COUNT && destIdx < RATE_PROFILE_COUNT)
+        {
+          _model.config.rateProfiles[destIdx] = _model.config.rateProfiles[srcIdx];
+        }
+        else if(profileType == 1 && srcIdx < PID_PROFILE_COUNT && destIdx < PID_PROFILE_COUNT)
+        {
+          _model.config.pidProfiles[destIdx] = _model.config.pidProfiles[srcIdx];
+        }
       }
       break;
 
@@ -2127,10 +2250,85 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SET_ADJUSTMENT_RANGE:
+      if(m.remain() >= 7)
+      {
+        const uint8_t slot = m.readU8();
+        if(slot >= ADJUSTMENT_RANGES_COUNT)
+        {
+          r.result = -1;
+          while(m.remain() > 0) m.readU8();
+          break;
+        }
+
+        auto& cfg = _model.config.adjustmentRanges[slot];
+        cfg.stateIndex = m.readU8();
+        cfg.auxChannelIndex = m.readU8();
+        cfg.rangeStartStep = m.readU8();
+        cfg.rangeEndStep = m.readU8();
+        cfg.adjustmentFunction = m.readU8();
+        cfg.auxSwitchChannelIndex = m.readU8();
+        if(m.remain() >= 4)
+        {
+          cfg.adjustmentCenter = (int16_t)m.readU16();
+          cfg.adjustmentScale = (int16_t)m.readU16();
+        }
+        else
+        {
+          cfg.adjustmentCenter = 0;
+          cfg.adjustmentScale = 0;
+        }
+      }
+      while(m.remain() > 0) m.readU8();
+      break;
+
+    case MSP_SET_SERVO_MIX_RULE:
+      if(m.remain() >= 8)
+      {
+#if ESPFC_SERVO_MIX_RULES_STORAGE > 0
+        uint8_t ruleIndex = m.readU8(); // rule slot index
+        if(ruleIndex < SERVO_MIX_RULES_STORAGE)
+        {
+          auto& rule = _model.config.servoMixRules[ruleIndex];
+          rule.targetChannel = m.readU8();
+          rule.inputSource = m.readU8();
+          rule.rate = (int8_t)m.readU8();
+          rule.speed = m.readU8();
+          rule.min = m.readU8();
+          rule.max = m.readU8();
+          rule.box = m.readU8();
+          if(ruleIndex >= _model.config.servoMixRuleCount)
+          {
+            _model.config.servoMixRuleCount = ruleIndex + 1;
+          }
+        }
+        else
+        {
+          // Rule index is outside persistent storage on constrained targets; consume payload and ignore.
+          m.readU8();
+          m.readU8();
+          m.readU8();
+          m.readU8();
+          m.readU8();
+          m.readU8();
+          m.readU8();
+        }
+#else
+        // No persistent servo mix storage on this target; consume payload for protocol compatibility.
+  m.readU8();
+        m.readU8();
+        m.readU8();
+        m.readU8();
+        m.readU8();
+        m.readU8();
+        m.readU8();
+#endif
+      }
+      while(m.remain() > 0) m.readU8();
+      break;
+
     case MSP_SET_BOARD_INFO:
     case MSP_SET_NAV_CONFIG:
     case MSP_SET_RAW_GPS:
-    case MSP_SET_SERVO_MIX_RULE:
     case MSP_SET_SIGNATURE:
     case MSP_SET_TRANSPONDER_CONFIG:
     case MSP_SET_WP:
@@ -2218,20 +2416,17 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           _model.config.ledStrip.auxChannel = colorIdx;
         }
         else
-        {
           r.result = 0;
-        }
       }
       break;
 
     case MSP_SET_VTXTABLE_BAND:
       {
-        if(m.remain() < 5)
+        if(m.remain() < 2)
         {
           r.result = 0;
           break;
         }
-
         uint8_t band = m.readU8();
         uint8_t bandNameLength = m.readU8();
         char bandName[VTX_TABLE_BAND_NAME_LENGTH] = {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
@@ -2324,23 +2519,56 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP2_MOTOR_OUTPUT_REORDERING:
-      // Return identity mapping (no custom output remap).
-      r.writeU8((uint8_t)_model.state.currentMixer.count);
-      for(size_t i = 0; i < _model.state.currentMixer.count; i++)
       {
-        r.writeU8(i);
+        const size_t motorCount = std::min<size_t>(_model.state.currentMixer.count, OUTPUT_CHANNELS);
+        r.writeU8((uint8_t)motorCount);
+        for(size_t i = 0; i < motorCount; i++)
+        {
+#if !defined(ESP32S2)
+          r.writeU8(_model.config.output.motorOutputReordering[i]);
+#else
+          r.writeU8(i);
+#endif
+        }
       }
       break;
 
     case MSP2_SET_MOTOR_OUTPUT_REORDERING:
-      // Accept and ignore remap payload for compatibility with configurator save flow.
       if(m.remain() > 0)
       {
-        size_t count = m.readU8();
-        while(m.remain() > 0 && count--)
+#if !defined(ESP32S2)
+        const size_t motorCount = std::min<size_t>(_model.state.currentMixer.count, OUTPUT_CHANNELS);
+        const size_t count = std::min<size_t>(m.readU8(), motorCount);
+        bool used[OUTPUT_CHANNELS] = { false };
+
+        for(size_t i = 0; i < count && m.remain() > 0; i++)
+        {
+          uint8_t mapped = m.readU8();
+          if(mapped >= motorCount || used[mapped])
+          {
+            r.result = 0;
+            continue;
+          }
+          used[mapped] = true;
+          _model.config.output.motorOutputReordering[i] = mapped;
+        }
+
+        while(m.remain() > 0)
         {
           m.readU8();
         }
+
+        // Keep remaining motor slots in identity order.
+        for(size_t i = count; i < motorCount; i++)
+        {
+          _model.config.output.motorOutputReordering[i] = i;
+        }
+
+        _model.reload();
+#else
+        m.readU8();
+        while(m.remain() > 0) m.readU8();
+#endif
       }
       break;
 
@@ -2474,17 +2702,17 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_ADJUSTMENT_RANGES:
-      // Return empty/default adjustment slots in Betaflight-compatible record format.
-      for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+      for(size_t i = 0; i < ADJUSTMENT_RANGES_COUNT; i++)
       {
-        r.writeU8(0);    // adjustmentIndex (legacy)
-        r.writeU8(0);    // auxChannelIndex
-        r.writeU8(0);    // range.startStep
-        r.writeU8(0);    // range.endStep
-        r.writeU8(0);    // adjustmentConfig
-        r.writeU8(0);    // auxSwitchChannelIndex
-        r.writeU16(1500); // adjustmentCenter
-        r.writeU16(100);  // adjustmentScale
+        const auto& cfg = _model.config.adjustmentRanges[i];
+        r.writeU8(cfg.stateIndex);
+        r.writeU8(cfg.auxChannelIndex);
+        r.writeU8(cfg.rangeStartStep);
+        r.writeU8(cfg.rangeEndStep);
+        r.writeU8(cfg.adjustmentFunction);
+        r.writeU8(cfg.auxSwitchChannelIndex);
+        r.writeU16((uint16_t)cfg.adjustmentCenter);
+        r.writeU16((uint16_t)cfg.adjustmentScale);
       }
       break;
 
@@ -2612,16 +2840,42 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SERVO_MIX_RULES:
-      // Return zeroed rules in BF-compatible 7-byte-per-entry layout.
-      for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
+      // Return servo mix rules in Betaflight-compatible 7-byte-per-entry format
+      for(size_t i = 0; i < SERVO_MIX_RULES_MAX; i++)
       {
-        r.writeU8(0); // targetChannel
-        r.writeU8(0); // inputSource
-        r.writeU8(0); // rate
-        r.writeU8(0); // speed
-        r.writeU8(0); // min
-        r.writeU8(0); // max
-        r.writeU8(0); // box
+#if ESPFC_SERVO_MIX_RULES_STORAGE > 0
+        if(i < _model.config.servoMixRuleCount && i < SERVO_MIX_RULES_STORAGE)
+        {
+          const auto& rule = _model.config.servoMixRules[i];
+          r.writeU8(rule.targetChannel);
+          r.writeU8(rule.inputSource);
+          r.writeU8(rule.rate & 0xFF);       // signed, written as u8
+          r.writeU8(rule.speed);
+          r.writeU8(rule.min);
+          r.writeU8(rule.max);
+          r.writeU8(rule.box);
+        }
+        else
+        {
+          // Write empty/zeroed rule for unused slots
+          r.writeU8(0);
+          r.writeU8(0);
+          r.writeU8(0);
+          r.writeU8(0);
+          r.writeU8(0);
+          r.writeU8(0);
+          r.writeU8(0);
+        }
+#else
+        // No persistent storage on constrained targets; report empty rules.
+        r.writeU8(0);
+        r.writeU8(0);
+        r.writeU8(0);
+        r.writeU8(0);
+        r.writeU8(0);
+        r.writeU8(0);
+        r.writeU8(0);
+#endif
       }
       break;
 

@@ -261,6 +261,7 @@ void FAST_CODE_ATTR Mixer::writeOutput(const MixerConfig& mixer, float * out)
     }
   }
 
+  size_t motorSlot = 0;
   for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
   {
     const OutputChannelConfig& och = _model.config.output.channel[i];
@@ -270,7 +271,13 @@ void FAST_CODE_ATTR Mixer::writeOutput(const MixerConfig& mixer, float * out)
     }
     else
     {
-      if(_motor) _motor->write(i, _model.state.output.us[i]);
+#if !defined(ESP32S2)
+  const size_t motorIndex = Utils::clamp<size_t>(_model.config.output.motorOutputReordering[motorSlot], 0, OUTPUT_CHANNELS - 1);
+#else
+  const size_t motorIndex = motorSlot;
+#endif
+      if(_motor) _motor->write(motorIndex, _model.state.output.us[i]);
+  motorSlot++;
     }
   }
 
@@ -283,10 +290,16 @@ void FAST_CODE_ATTR Mixer::readTelemetry()
   Utils::Stats::Measure mixerMeasure(_model.state.stats, COUNTER_MIXER_READ);
   if(!_model.config.output.dshotTelemetry || !_motor) return;
 
+  size_t motorSlot = 0;
   for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
   {
     if(_model.config.output.channel[i].servo) continue;
-    uint32_t value = _motor->telemetry(i);
+#if !defined(ESP32S2)
+    const size_t motorIndex = Utils::clamp<size_t>(_model.config.output.motorOutputReordering[motorSlot], 0, OUTPUT_CHANNELS - 1);
+#else
+    const size_t motorIndex = motorSlot;
+#endif
+    uint32_t value = _motor->telemetry(motorIndex);
     value = EscDriver::gcrToRawValue(value);
 
     _model.state.output.telemetry.errorsCount[i]++;
@@ -335,6 +348,8 @@ void FAST_CODE_ATTR Mixer::readTelemetry()
         _model.setDebug(DEBUG_DSHOT_RPM_TELEMETRY, i, _model.state.output.telemetry.erpm[i]);
         break;
     }
+
+      motorSlot++;
   }
 
   for(size_t i = 0; i < OUTPUT_CHANNELS; i++)

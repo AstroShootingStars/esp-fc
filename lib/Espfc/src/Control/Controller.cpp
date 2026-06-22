@@ -24,6 +24,12 @@ int Controller::begin()
 
 int FAST_CODE_ATTR Controller::update()
 {
+  if(_model.state.tuningUpdatePending)
+  {
+    refreshRuntimeTunings();
+    _model.state.tuningUpdatePending = false;
+  }
+
   uint32_t startTime = 0;
   if (_model.config.debug.mode == DEBUG_PIDLOOP)
   {
@@ -78,6 +84,27 @@ int FAST_CODE_ATTR Controller::update()
   }
 
   return 1;
+}
+
+void Controller::refreshRuntimeTunings()
+{
+  _rates.begin(_model.config.input);
+
+  const float pidScale[] = {
+    1.f,
+    _model.config.mixer.type == FC_MIXER_GIMBAL ? 20.f : 1.f,
+    _model.config.mixer.type == FC_MIXER_GIMBAL ? 0.2f : 1.f,
+  };
+
+  for(size_t axis = AXIS_ROLL; axis <= AXIS_YAW; axis++)
+  {
+    const auto& pc = _model.config.pid[axis];
+    auto& pid = _model.state.innerPid[axis];
+    pid.Kp = (float)pc.P * PTERM_SCALE * pidScale[axis];
+    pid.Ki = (float)pc.I * ITERM_SCALE * pidScale[axis];
+    pid.Kd = (float)pc.D * DTERM_SCALE * pidScale[axis];
+    pid.Kf = (float)pc.F * FTERM_SCALE * pidScale[axis];
+  }
 }
 
 void FAST_CODE_ATTR Controller::applyLandingAssist()
@@ -253,6 +280,12 @@ void Controller::innerLoopRobot()
 
 void FAST_CODE_ATTR Controller::outerLoop()
 {
+  const float ffFloor = 1.0f - (_model.config.dterm.feedForwardTransition * 0.01f);
+  auto updateFeedforwardFactor = [&](size_t axis, float stickInput, bool enabled) {
+    const float stick = std::clamp(std::fabs(stickInput), 0.0f, 1.0f);
+    _model.state.innerPid[axis].ffTransitionFactor = enabled ? std::max(stick, ffFloor) : 0.0f;
+  };
+
   // Roll/Pitch rates control
   if (_model.isModeActive(MODE_ANGLE))
   {
@@ -260,8 +293,7 @@ void FAST_CODE_ATTR Controller::outerLoop()
     {
       const float angleSetpoint = Utils::toRad(_model.config.level.angleLimit) * _model.state.input.ch[i];
       _model.state.setpoint.rate[i] = _model.state.outerPid[i].update(angleSetpoint, _model.state.attitude.euler[i]);
-      // disable fterm in angle mode
-      _model.state.innerPid[i].fScale = 0.f;
+      updateFeedforwardFactor(i, _model.state.input.ch[i], false);
     }
   }
   else if (_model.isModeActive(MODE_HORIZON))
@@ -272,8 +304,9 @@ void FAST_CODE_ATTR Controller::outerLoop()
       const float angleRate = _model.state.outerPid[i].update(angleSetpoint, _model.state.attitude.euler[i]);
       const float acroRate = calculateSetpointRate(i, _model.state.input.ch[i]);
       const float stick = std::fabs(_model.state.input.ch[i]);
-      const float angleWeight = 1.f - std::clamp(stick, 0.f, 1.f);
+      const float angleWeight = std::clamp((1.f - std::clamp(stick, 0.f, 1.f)) * (_model.config.level.horizonStrength * 0.01f), 0.0f, 1.0f);
       _model.state.setpoint.rate[i] = acroRate * (1.f - angleWeight) + angleRate * angleWeight;
+      updateFeedforwardFactor(i, _model.state.input.ch[i], true);
     }
   }
   else
@@ -281,11 +314,13 @@ void FAST_CODE_ATTR Controller::outerLoop()
     for (size_t i = 0; i < AXIS_COUNT_RP; i++)
     {
       _model.state.setpoint.rate[i] = calculateSetpointRate(i, _model.state.input.ch[i]);
+      updateFeedforwardFactor(i, _model.state.input.ch[i], true);
     }
   }
 
   // Yaw rates control
   _model.state.setpoint.rate[AXIS_YAW] = calculateSetpointRate(AXIS_YAW, _model.state.input.ch[AXIS_YAW]);
+  updateFeedforwardFactor(AXIS_YAW, _model.state.input.ch[AXIS_YAW], true);
 
   // thrust control
   if (_model.isModeActive(MODE_ALTHOLD))

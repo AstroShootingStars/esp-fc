@@ -45,11 +45,8 @@ private:
   }
 
 private:
+  const InputConfig* _config = nullptr;
   RateType rateType;
-  uint8_t rcExpo[3];
-  uint8_t rcRates[3];
-  uint8_t rates[3];
-  int16_t rateLimit[3];
 };
 
 } // namespace Control

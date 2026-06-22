@@ -64,6 +64,8 @@ public:
   float iScale;
   float dScale;
   float fScale;
+  float ffTransitionFactor;
+  float dMinFactor;  // D-min scaling factor (0-1)
 
   float error;
   float iTermError;

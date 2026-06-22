@@ -13,6 +13,7 @@ public:
   Controller(Model& model);
   int begin();
   int update();
+  void refreshRuntimeTunings();
 
   void outerLoopRobot();
   void innerLoopRobot();

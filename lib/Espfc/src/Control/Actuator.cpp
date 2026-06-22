@@ -1,7 +1,68 @@
 #include "Control/Actuator.h"
 #include "Utils/Math.hpp"
+#include <Arduino.h>
 #include <algorithm>
 #include <cmath>
+
+namespace {
+
+constexpr uint8_t ADJUSTMENT_FUNCTION_NONE = 0;
+constexpr uint8_t ADJUSTMENT_FUNCTION_RC_RATE = 1;
+constexpr uint8_t ADJUSTMENT_FUNCTION_RC_EXPO = 2;
+constexpr uint8_t ADJUSTMENT_FUNCTION_THROTTLE_EXPO = 3;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_ROLL_RATE = 4;
+constexpr uint8_t ADJUSTMENT_FUNCTION_YAW_RATE = 5;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_ROLL_P = 6;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_ROLL_I = 7;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_ROLL_D = 8;
+constexpr uint8_t ADJUSTMENT_FUNCTION_YAW_P = 9;
+constexpr uint8_t ADJUSTMENT_FUNCTION_YAW_I = 10;
+constexpr uint8_t ADJUSTMENT_FUNCTION_YAW_D = 11;
+constexpr uint8_t ADJUSTMENT_FUNCTION_RATE_PROFILE = 12;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_RATE = 13;
+constexpr uint8_t ADJUSTMENT_FUNCTION_ROLL_RATE = 14;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_P = 15;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_I = 16;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_D = 17;
+constexpr uint8_t ADJUSTMENT_FUNCTION_ROLL_P = 18;
+constexpr uint8_t ADJUSTMENT_FUNCTION_ROLL_I = 19;
+constexpr uint8_t ADJUSTMENT_FUNCTION_ROLL_D = 20;
+constexpr uint8_t ADJUSTMENT_FUNCTION_RC_RATE_YAW = 21;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_ROLL_F = 22;
+constexpr uint8_t ADJUSTMENT_FUNCTION_FEEDFORWARD_TRANSITION = 23;
+constexpr uint8_t ADJUSTMENT_FUNCTION_HORIZON_STRENGTH = 24;
+constexpr uint8_t ADJUSTMENT_FUNCTION_PITCH_F = 26;
+constexpr uint8_t ADJUSTMENT_FUNCTION_ROLL_F = 27;
+constexpr uint8_t ADJUSTMENT_FUNCTION_YAW_F = 28;
+constexpr uint8_t ADJUSTMENT_FUNCTION_OSD_PROFILE = 29;
+constexpr uint8_t ADJUSTMENT_FUNCTION_LED_PROFILE = 30;
+constexpr uint8_t ADJUSTMENT_FUNCTION_SLIDER_MASTER_MULTIPLIER = 31;
+
+constexpr uint32_t ADJUSTMENT_REPEAT_INTERVAL_MS = 500;
+
+template<typename T>
+bool adjustValue(T& value, int delta, T minValue, T maxValue)
+{
+  const T next = std::clamp<T>((T)(value + delta), minValue, maxValue);
+  if(next == value) return false;
+  value = next;
+  return true;
+}
+
+template<typename T>
+bool adjustPair(T& left, T& right, int delta, T minValue, T maxValue)
+{
+  bool changed = adjustValue(left, delta, minValue, maxValue);
+  changed = adjustValue(right, delta, minValue, maxValue) || changed;
+  return changed;
+}
+
+static uint16_t stepToUs(uint8_t step)
+{
+  return (uint16_t)(step * 25u + 900u);
+}
+
+}
 
 namespace Espfc::Control {
 
@@ -34,6 +95,7 @@ int Actuator::update()
   updateModeMask();
   updateArmed();
   updateAirMode();
+  updateAdjustments();
   updateScaler();
   updateBuzzer();
   updateDynLpf();
@@ -46,6 +108,280 @@ int Actuator::update()
   }
 
   return 1;
+}
+
+void Actuator::updateAdjustments()
+{
+  const uint32_t nowMs = millis();
+
+  for(size_t i = 0; i < ADJUSTMENT_RANGES_COUNT; i++)
+  {
+    const auto& cfg = _model.config.adjustmentRanges[i];
+    if(cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_NONE || cfg.rangeStartStep == cfg.rangeEndStep)
+    {
+      if(cfg.stateIndex < 4 && cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_SLIDER_MASTER_MULTIPLIER)
+      {
+        _sliderMasterSnapshot[cfg.stateIndex].valid = false;
+      }
+      _adjustmentPosition[i] = 0;
+      continue;
+    }
+
+    const size_t rangeChannel = AXIS_AUX_1 + cfg.auxChannelIndex;
+    const size_t adjustChannel = AXIS_AUX_1 + cfg.auxSwitchChannelIndex;
+    if(rangeChannel >= AXIS_COUNT || adjustChannel >= AXIS_COUNT)
+    {
+      if(cfg.stateIndex < 4 && cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_SLIDER_MASTER_MULTIPLIER)
+      {
+        _sliderMasterSnapshot[cfg.stateIndex].valid = false;
+      }
+      _adjustmentPosition[i] = 0;
+      continue;
+    }
+
+    const uint16_t rangeStartUs = stepToUs(cfg.rangeStartStep);
+    const uint16_t rangeEndUs = stepToUs(cfg.rangeEndStep);
+    const int16_t rangeValueUs = _model.state.input.us[rangeChannel];
+    if(!(rangeValueUs > (int16_t)rangeStartUs && rangeValueUs < (int16_t)rangeEndUs))
+    {
+      if(cfg.stateIndex < 4 && cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_SLIDER_MASTER_MULTIPLIER)
+      {
+        _sliderMasterSnapshot[cfg.stateIndex].valid = false;
+      }
+      _adjustmentPosition[i] = 0;
+      continue;
+    }
+
+    const int16_t adjustValueUs = _model.state.input.us[adjustChannel];
+    const int16_t mid = _model.config.input.midRc;
+    const int8_t position = adjustValueUs > mid + 200 ? 1 : (adjustValueUs < mid - 200 ? -1 : 0);
+
+    bool changed = false;
+    const bool absoluteMode = cfg.adjustmentCenter != 0 || cfg.adjustmentScale != 0;
+    if(absoluteMode)
+    {
+      changed = applyAdjustmentAbsolute(cfg.stateIndex, cfg.adjustmentFunction, _model.state.input.ch[adjustChannel], cfg.adjustmentCenter, cfg.adjustmentScale);
+      _adjustmentPosition[i] = position;
+    }
+    else if(cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_OSD_PROFILE || cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_LED_PROFILE || cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_RATE_PROFILE)
+    {
+      if(position != _adjustmentPosition[i])
+      {
+        changed = applyAdjustmentSelection(cfg.adjustmentFunction, position);
+        _adjustmentPosition[i] = position;
+      }
+    }
+    else if(position != 0)
+    {
+      if(position != _adjustmentPosition[i] || nowMs - _adjustmentRepeatMs[i] >= ADJUSTMENT_REPEAT_INTERVAL_MS)
+      {
+        changed = applyAdjustmentStep(cfg.adjustmentFunction, position);
+        _adjustmentRepeatMs[i] = nowMs;
+        _adjustmentPosition[i] = position;
+      }
+    }
+    else
+    {
+      _adjustmentPosition[i] = 0;
+    }
+
+    if(changed)
+    {
+      _model.syncActiveRateProfile();
+      _model.state.tuningUpdatePending = true;
+    }
+  }
+}
+
+bool Actuator::applyAdjustmentStep(uint8_t function, int8_t direction)
+{
+  switch(function)
+  {
+    case ADJUSTMENT_FUNCTION_RC_RATE:
+      return adjustPair(_model.config.input.rate[AXIS_ROLL], _model.config.input.rate[AXIS_PITCH], direction, (uint8_t)1, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_RC_EXPO:
+      return adjustPair(_model.config.input.expo[AXIS_ROLL], _model.config.input.expo[AXIS_PITCH], direction, (uint8_t)0, (uint8_t)100);
+    case ADJUSTMENT_FUNCTION_THROTTLE_EXPO:
+      return adjustValue(_model.config.input.throttleExpo, direction, (uint8_t)0, (uint8_t)100);
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_RATE:
+      return adjustPair(_model.config.input.superRate[AXIS_ROLL], _model.config.input.superRate[AXIS_PITCH], direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_YAW_RATE:
+      return adjustValue(_model.config.input.superRate[AXIS_YAW], direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_P:
+      return adjustPair(_model.config.pid[FC_PID_ROLL].P, _model.config.pid[FC_PID_PITCH].P, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_I:
+      return adjustPair(_model.config.pid[FC_PID_ROLL].I, _model.config.pid[FC_PID_PITCH].I, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_D:
+      return adjustPair(_model.config.pid[FC_PID_ROLL].D, _model.config.pid[FC_PID_PITCH].D, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_YAW_P:
+      return adjustValue(_model.config.pid[FC_PID_YAW].P, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_YAW_I:
+      return adjustValue(_model.config.pid[FC_PID_YAW].I, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_YAW_D:
+      return adjustValue(_model.config.pid[FC_PID_YAW].D, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_PITCH_RATE:
+      return adjustValue(_model.config.input.superRate[AXIS_PITCH], direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_ROLL_RATE:
+      return adjustValue(_model.config.input.superRate[AXIS_ROLL], direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_PITCH_P:
+      return adjustValue(_model.config.pid[FC_PID_PITCH].P, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_PITCH_I:
+      return adjustValue(_model.config.pid[FC_PID_PITCH].I, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_PITCH_D:
+      return adjustValue(_model.config.pid[FC_PID_PITCH].D, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_ROLL_P:
+      return adjustValue(_model.config.pid[FC_PID_ROLL].P, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_ROLL_I:
+      return adjustValue(_model.config.pid[FC_PID_ROLL].I, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_ROLL_D:
+      return adjustValue(_model.config.pid[FC_PID_ROLL].D, direction, (uint8_t)0, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_RC_RATE_YAW:
+      return adjustValue(_model.config.input.rate[AXIS_YAW], direction, (uint8_t)1, (uint8_t)255);
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_F:
+      return adjustPair(_model.config.pid[FC_PID_ROLL].F, _model.config.pid[FC_PID_PITCH].F, direction, (int16_t)0, (int16_t)2000);
+    case ADJUSTMENT_FUNCTION_FEEDFORWARD_TRANSITION:
+      return adjustValue(_model.config.dterm.feedForwardTransition, direction, (uint8_t)0, (uint8_t)100);
+    case ADJUSTMENT_FUNCTION_HORIZON_STRENGTH:
+      return adjustValue(_model.config.level.horizonStrength, direction, (uint8_t)0, (uint8_t)200);
+    case ADJUSTMENT_FUNCTION_PITCH_F:
+      return adjustValue(_model.config.pid[FC_PID_PITCH].F, direction, (int16_t)0, (int16_t)2000);
+    case ADJUSTMENT_FUNCTION_ROLL_F:
+      return adjustValue(_model.config.pid[FC_PID_ROLL].F, direction, (int16_t)0, (int16_t)2000);
+    case ADJUSTMENT_FUNCTION_YAW_F:
+      return adjustValue(_model.config.pid[FC_PID_YAW].F, direction, (int16_t)0, (int16_t)2000);
+    default:
+      return false;
+  }
+}
+
+bool Actuator::applyAdjustmentSelection(uint8_t function, int8_t position)
+{
+  switch(function)
+  {
+    case ADJUSTMENT_FUNCTION_OSD_PROFILE:
+    {
+      const uint8_t selected = std::clamp<int>(position + 2, 1, _model.config.osd.profileCount);
+      if(selected == _model.config.osd.profile) return false;
+      _model.config.osd.profile = selected;
+      return true;
+    }
+    case ADJUSTMENT_FUNCTION_RATE_PROFILE:
+    {
+      const uint8_t selected = std::clamp<int>(position + 1, 0, RATE_PROFILE_COUNT - 1);
+      return _model.selectRateProfile(selected);
+    }
+    case ADJUSTMENT_FUNCTION_LED_PROFILE:
+    {
+      const uint8_t selected = std::clamp<int>(position + 1, 0, 2);
+      if(selected == _model.config.ledStrip.profile) return false;
+      _model.config.ledStrip.profile = selected;
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+bool Actuator::applyAdjustmentAbsolute(uint8_t stateIndex, uint8_t function, float input, int16_t center, int16_t scale)
+{
+  const int value = lrintf((float)center + input * (float)scale);
+
+  switch(function)
+  {
+    case ADJUSTMENT_FUNCTION_RC_RATE:
+      return adjustPair(_model.config.input.rate[AXIS_ROLL], _model.config.input.rate[AXIS_PITCH], 0, (uint8_t)std::clamp(value, 1, 255), (uint8_t)std::clamp(value, 1, 255));
+    case ADJUSTMENT_FUNCTION_RC_EXPO:
+      return adjustPair(_model.config.input.expo[AXIS_ROLL], _model.config.input.expo[AXIS_PITCH], 0, (uint8_t)std::clamp(value, 0, 100), (uint8_t)std::clamp(value, 0, 100));
+    case ADJUSTMENT_FUNCTION_THROTTLE_EXPO:
+      return adjustValue(_model.config.input.throttleExpo, 0, (uint8_t)std::clamp(value, 0, 100), (uint8_t)std::clamp(value, 0, 100));
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_RATE:
+      return adjustPair(_model.config.input.superRate[AXIS_ROLL], _model.config.input.superRate[AXIS_PITCH], 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_YAW_RATE:
+      return adjustValue(_model.config.input.superRate[AXIS_YAW], 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_P:
+      return adjustPair(_model.config.pid[FC_PID_ROLL].P, _model.config.pid[FC_PID_PITCH].P, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_I:
+      return adjustPair(_model.config.pid[FC_PID_ROLL].I, _model.config.pid[FC_PID_PITCH].I, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_D:
+      return adjustPair(_model.config.pid[FC_PID_ROLL].D, _model.config.pid[FC_PID_PITCH].D, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_YAW_P:
+      return adjustValue(_model.config.pid[FC_PID_YAW].P, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_YAW_I:
+      return adjustValue(_model.config.pid[FC_PID_YAW].I, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_YAW_D:
+      return adjustValue(_model.config.pid[FC_PID_YAW].D, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_PITCH_RATE:
+      return adjustValue(_model.config.input.superRate[AXIS_PITCH], 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_ROLL_RATE:
+      return adjustValue(_model.config.input.superRate[AXIS_ROLL], 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_PITCH_P:
+      return adjustValue(_model.config.pid[FC_PID_PITCH].P, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_PITCH_I:
+      return adjustValue(_model.config.pid[FC_PID_PITCH].I, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_PITCH_D:
+      return adjustValue(_model.config.pid[FC_PID_PITCH].D, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_ROLL_P:
+      return adjustValue(_model.config.pid[FC_PID_ROLL].P, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_ROLL_I:
+      return adjustValue(_model.config.pid[FC_PID_ROLL].I, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_ROLL_D:
+      return adjustValue(_model.config.pid[FC_PID_ROLL].D, 0, (uint8_t)std::clamp(value, 0, 255), (uint8_t)std::clamp(value, 0, 255));
+    case ADJUSTMENT_FUNCTION_RC_RATE_YAW:
+      return adjustValue(_model.config.input.rate[AXIS_YAW], 0, (uint8_t)std::clamp(value, 1, 255), (uint8_t)std::clamp(value, 1, 255));
+    case ADJUSTMENT_FUNCTION_PITCH_ROLL_F:
+      return adjustPair(_model.config.pid[FC_PID_ROLL].F, _model.config.pid[FC_PID_PITCH].F, 0, (int16_t)std::clamp(value, 0, 2000), (int16_t)std::clamp(value, 0, 2000));
+    case ADJUSTMENT_FUNCTION_FEEDFORWARD_TRANSITION:
+      return adjustValue(_model.config.dterm.feedForwardTransition, 0, (uint8_t)std::clamp(value, 0, 100), (uint8_t)std::clamp(value, 0, 100));
+    case ADJUSTMENT_FUNCTION_HORIZON_STRENGTH:
+      return adjustValue(_model.config.level.horizonStrength, 0, (uint8_t)std::clamp(value, 0, 200), (uint8_t)std::clamp(value, 0, 200));
+    case ADJUSTMENT_FUNCTION_PITCH_F:
+      return adjustValue(_model.config.pid[FC_PID_PITCH].F, 0, (int16_t)std::clamp(value, 0, 2000), (int16_t)std::clamp(value, 0, 2000));
+    case ADJUSTMENT_FUNCTION_ROLL_F:
+      return adjustValue(_model.config.pid[FC_PID_ROLL].F, 0, (int16_t)std::clamp(value, 0, 2000), (int16_t)std::clamp(value, 0, 2000));
+    case ADJUSTMENT_FUNCTION_YAW_F:
+      return adjustValue(_model.config.pid[FC_PID_YAW].F, 0, (int16_t)std::clamp(value, 0, 2000), (int16_t)std::clamp(value, 0, 2000));
+    case ADJUSTMENT_FUNCTION_SLIDER_MASTER_MULTIPLIER:
+    {
+      if(stateIndex >= 4) return false;
+      auto& snapshot = _sliderMasterSnapshot[stateIndex];
+      if(!snapshot.valid)
+      {
+        for(size_t axis = 0; axis < AXIS_COUNT_RPY; axis++)
+        {
+          snapshot.rate[axis] = _model.config.input.rate[axis];
+          snapshot.superRate[axis] = _model.config.input.superRate[axis];
+          snapshot.pidP[axis] = _model.config.pid[axis].P;
+          snapshot.pidI[axis] = _model.config.pid[axis].I;
+          snapshot.pidD[axis] = _model.config.pid[axis].D;
+          snapshot.pidF[axis] = _model.config.pid[axis].F;
+        }
+        snapshot.throttleExpo = _model.config.input.throttleExpo;
+        snapshot.feedForwardTransition = _model.config.dterm.feedForwardTransition;
+        snapshot.horizonStrength = _model.config.level.horizonStrength;
+        snapshot.valid = true;
+      }
+
+      const int effectiveCenter = center != 0 ? center : 100;
+      const int effectiveScale = scale != 0 ? std::abs(scale) : 125;
+      const int multiplier = (int)std::clamp<long>(lrintf((float)effectiveCenter + input * (float)effectiveScale), 20l, 200l);
+      bool changed = false;
+      for(size_t axis = 0; axis < AXIS_COUNT_RPY; axis++)
+      {
+        changed = adjustValue(_model.config.input.rate[axis], 0, (uint8_t)std::clamp(lrintf(snapshot.rate[axis] * multiplier * 0.01f), 1l, 255l), (uint8_t)std::clamp(lrintf(snapshot.rate[axis] * multiplier * 0.01f), 1l, 255l)) || changed;
+        changed = adjustValue(_model.config.input.superRate[axis], 0, (uint8_t)std::clamp(lrintf(snapshot.superRate[axis] * multiplier * 0.01f), 0l, 255l), (uint8_t)std::clamp(lrintf(snapshot.superRate[axis] * multiplier * 0.01f), 0l, 255l)) || changed;
+        changed = adjustValue(_model.config.pid[axis].P, 0, (uint8_t)std::clamp(lrintf(snapshot.pidP[axis] * multiplier * 0.01f), 0l, 255l), (uint8_t)std::clamp(lrintf(snapshot.pidP[axis] * multiplier * 0.01f), 0l, 255l)) || changed;
+        changed = adjustValue(_model.config.pid[axis].I, 0, (uint8_t)std::clamp(lrintf(snapshot.pidI[axis] * multiplier * 0.01f), 0l, 255l), (uint8_t)std::clamp(lrintf(snapshot.pidI[axis] * multiplier * 0.01f), 0l, 255l)) || changed;
+        changed = adjustValue(_model.config.pid[axis].D, 0, (uint8_t)std::clamp(lrintf(snapshot.pidD[axis] * multiplier * 0.01f), 0l, 255l), (uint8_t)std::clamp(lrintf(snapshot.pidD[axis] * multiplier * 0.01f), 0l, 255l)) || changed;
+        changed = adjustValue(_model.config.pid[axis].F, 0, (int16_t)std::clamp(lrintf(snapshot.pidF[axis] * multiplier * 0.01f), 0l, 2000l), (int16_t)std::clamp(lrintf(snapshot.pidF[axis] * multiplier * 0.01f), 0l, 2000l)) || changed;
+      }
+      changed = adjustValue(_model.config.input.throttleExpo, 0, (uint8_t)std::clamp(lrintf(snapshot.throttleExpo * multiplier * 0.01f), 0l, 100l), (uint8_t)std::clamp(lrintf(snapshot.throttleExpo * multiplier * 0.01f), 0l, 100l)) || changed;
+      changed = adjustValue(_model.config.dterm.feedForwardTransition, 0, (uint8_t)std::clamp(lrintf(snapshot.feedForwardTransition * multiplier * 0.01f), 0l, 100l), (uint8_t)std::clamp(lrintf(snapshot.feedForwardTransition * multiplier * 0.01f), 0l, 100l)) || changed;
+      changed = adjustValue(_model.config.level.horizonStrength, 0, (uint8_t)std::clamp(lrintf(snapshot.horizonStrength * multiplier * 0.01f), 0l, 200l), (uint8_t)std::clamp(lrintf(snapshot.horizonStrength * multiplier * 0.01f), 0l, 200l)) || changed;
+      return changed;
+    }
+    default:
+      return false;
+  }
 }
 
 void Actuator::updateScaler()

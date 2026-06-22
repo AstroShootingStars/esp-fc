@@ -62,6 +62,68 @@ class Model
       state.mode.maskSwitch = mask;
     }
 
+    void syncActiveRateProfile()
+    {
+      const size_t idx = std::min<size_t>(config.activeRateProfile, RATE_PROFILE_COUNT - 1);
+      auto& profile = config.rateProfiles[idx];
+      for(size_t axis = 0; axis < AXIS_COUNT_RPY; axis++)
+      {
+        profile.expo[axis] = config.input.expo[axis];
+        profile.rate[axis] = config.input.rate[axis];
+        profile.superRate[axis] = config.input.superRate[axis];
+        profile.rateLimit[axis] = config.input.rateLimit[axis];
+      }
+      profile.throttleExpo = config.input.throttleExpo;
+      profile.rateType = config.input.rateType;
+    }
+
+    bool selectRateProfile(uint8_t index)
+    {
+      if(index >= RATE_PROFILE_COUNT) return false;
+      if(config.activeRateProfile == index) return false;
+
+      syncActiveRateProfile();
+      config.activeRateProfile = index;
+
+      const auto& profile = config.rateProfiles[index];
+      for(size_t axis = 0; axis < AXIS_COUNT_RPY; axis++)
+      {
+        config.input.expo[axis] = profile.expo[axis];
+        config.input.rate[axis] = profile.rate[axis];
+        config.input.superRate[axis] = profile.superRate[axis];
+        config.input.rateLimit[axis] = profile.rateLimit[axis];
+      }
+      config.input.throttleExpo = profile.throttleExpo;
+      config.input.rateType = profile.rateType;
+      return true;
+    }
+
+    void syncActivePidProfile()
+    {
+      const size_t idx = std::min<size_t>(config.activePidProfile, PID_PROFILE_COUNT - 1);
+      auto& profile = config.pidProfiles[idx];
+      for(size_t i = 0; i < FC_PID_ITEM_COUNT; i++)
+      {
+        profile.pid[i] = config.pid[i];
+      }
+    }
+
+    bool selectPidProfile(uint8_t index)
+    {
+      if(index >= PID_PROFILE_COUNT) return false;
+      if(config.activePidProfile == index) return false;
+
+      syncActivePidProfile();
+      config.activePidProfile = index;
+
+      const auto& profile = config.pidProfiles[index];
+      for(size_t i = 0; i < FC_PID_ITEM_COUNT; i++)
+      {
+        config.pid[i] = profile.pid[i];
+      }
+      return true;
+    }
+
     void disarm(DisarmReason r)
     {
       state.mode.disarmReason = r;
@@ -674,6 +736,43 @@ class Model
       config.osd.cameraFrameHeight = constrain(config.osd.cameraFrameHeight, 0, 30);
       config.osd.linkQualityAlarm = constrain(config.osd.linkQualityAlarm, 0, 1000);
       config.osd.rssiDbmAlarm = constrain(config.osd.rssiDbmAlarm, 0, 1000);
+      config.dterm.feedForwardTransition = constrain(config.dterm.feedForwardTransition, 0, 100);
+      config.level.horizonStrength = constrain(config.level.horizonStrength, 0, 200);
+      config.input.throttleExpo = constrain(config.input.throttleExpo, 0, 100);
+      // receiver config validation
+      config.input.rcSmoothing = constrain(config.input.rcSmoothing, 0, 1);
+      config.input.rxSpiProtocol = std::min(config.input.rxSpiProtocol, (uint8_t)31); // ensure valid protocol index
+      for(size_t i = 0; i < 6; i++)
+      {
+        // elrsUid bounds check (0-255 per byte)
+        if(config.input.elrsUid[i] > 255) config.input.elrsUid[i] = 0;
+      }
+      config.input.elrsModelId = constrain(config.input.elrsModelId, 0, 255);
+      // mode range validation
+      for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+      {
+        auto& cond = config.conditions[i];
+        cond.ch = constrain(cond.ch, AXIS_AUX_1, AXIS_AUX_1 + INPUT_CHANNELS - 4 - 1);
+        cond.min = constrain(cond.min, 900, 2100);
+        cond.max = constrain(cond.max, 900, 2100);
+        if(cond.min > cond.max) std::swap(cond.min, cond.max);
+        cond.logicMode = constrain(cond.logicMode, 0, 1);
+        cond.linkId = constrain(cond.linkId, 0, (uint8_t)(ACTUATOR_CONDITIONS - 1));
+      }
+      config.activeRateProfile = constrain(config.activeRateProfile, 0, RATE_PROFILE_COUNT - 1);
+      for(size_t profileIndex = 0; profileIndex < RATE_PROFILE_COUNT; profileIndex++)
+      {
+        auto& profile = config.rateProfiles[profileIndex];
+        profile.throttleExpo = constrain(profile.throttleExpo, 0, 100);
+        profile.rateType = constrain(profile.rateType, 0, 4);
+        for(size_t axis = 0; axis < AXIS_COUNT_RPY; axis++)
+        {
+          profile.expo[axis] = constrain(profile.expo[axis], 0, 100);
+          profile.rate[axis] = constrain(profile.rate[axis], 1, 255);
+          profile.superRate[axis] = constrain(profile.superRate[axis], 0, 255);
+          profile.rateLimit[axis] = constrain(profile.rateLimit[axis], 0, 2500);
+        }
+      }
       for(size_t i = 0; i < ESPFC_OSD_ITEM_COUNT; i++)
       {
         config.osd.itemPos[i] = constrain(config.osd.itemPos[i], 0, 0x07FF);

@@ -568,6 +568,7 @@ struct ModelState
 
   SerialPortState serial[SERIAL_UART_COUNT];
   Utils::Timer serialTimer;
+  bool tuningUpdatePending = false;
 
   Target::Queue appQueue;
 
