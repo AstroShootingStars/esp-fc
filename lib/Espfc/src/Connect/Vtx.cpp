@@ -38,10 +38,32 @@ static uint8_t crc8(const uint8_t * ptr, uint8_t len)
 
 namespace Espfc::Connect {
 
+bool Vtx::needsSync() const
+{
+  return _appliedBand != _model.config.vtx.band ||
+         _appliedChannel != _model.config.vtx.channel ||
+         _appliedPower != _model.config.vtx.power ||
+         _appliedLowPowerDisarm != _model.config.vtx.lowPowerDisarm;
+}
+
+void Vtx::markApplied()
+{
+  _appliedBand = _model.config.vtx.band;
+  _appliedChannel = _model.config.vtx.channel;
+  _appliedPower = _model.config.vtx.power;
+  _appliedLowPowerDisarm = _model.config.vtx.lowPowerDisarm;
+}
+
 int Vtx::begin(Device::SerialDevice * serial)
 {
   _serial = serial;
   _timer.setRate(300);
+  type = VTXDEV_SMARTAUDIO;
+  _model.state.vtx.active = true;
+  _appliedBand = 0;
+  _appliedChannel = 0;
+  _appliedPower = 0;
+  _appliedLowPowerDisarm = 0;
 
   _state = State::INIT;
   return 1;
@@ -54,10 +76,10 @@ int Vtx::update()
   {
     case State::INIT:
       _state = State::SET_CHANNEL;
-      _model.state.vtx.active = true;
       break;
     case State::SET_POWER:
       setPower();
+      markApplied();
       _state = State::IDLE;
       break;
     case State::SET_CHANNEL:
@@ -65,6 +87,11 @@ int Vtx::update()
       _state = State::SET_POWER;
       break;
     case State::IDLE:
+      if (needsSync())
+      {
+        _state = State::SET_CHANNEL;
+        break;
+      }
       if (_model.isModeActive(MODE_ARMED) != _armed)
       {
         _armed = !_armed;

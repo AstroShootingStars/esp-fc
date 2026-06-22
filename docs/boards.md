@@ -17,13 +17,26 @@ Source of truth: target headers in `lib/Espfc/src/Target/Target*.h`, applied to 
 
 Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 
+## Default VTX Control Port Map
+
+SmartAudio is the default VTX control protocol. Wire the VTX control line to the listed TX pin.
+
+| Board | Default serial function | TX pin | RX pin | Notes |
+|---|---|---:|---:|---|
+| ESP32 | UART1 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO33 | GPIO32 | Dedicated hardware UART by default |
+| ESP32-S2 | UART0 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO43 | GPIO44 | USB CDC remains default MSP link |
+| ESP32-S3 | UART0 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO43 | GPIO44 | USB CDC remains default MSP link |
+| ESP32-C3 | UART0 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO21 | GPIO20 | USB CDC remains default MSP link |
+| ESP8266 | UART1 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO2 (D4) | -1 | TX-only, suitable for SmartAudio |
+| RP2040 / RP2350 | UART0 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO0 | GPIO1 | USB CDC remains default MSP link |
+
 ## ESP32 (Classic)
 
 **Overview**: Full-featured classic ESP32 with dual-core, WiFi, Bluetooth, and comprehensive I/O.
 
 ### Serial Ports
 - **UART0**: TX=GPIO1, RX=GPIO3 (default: MSP/Betaflight)
-- **UART1**: TX=GPIO33, RX=GPIO32 (default: MSP)
+- **UART1**: TX=GPIO33, RX=GPIO32 (default: SmartAudio VTX control)
 - **UART2**: TX=GPIO17, RX=GPIO16 (default: RX_SERIAL for receiver)
 - **Soft-Serial 0**: Virtual UART via GPIO pins (WiFi bridge enabled, MSP capable)
 - **USB CDC**: Not available on classic ESP32
@@ -48,6 +61,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 ### Features
 - ✅ Receiver input: Serial RX_SERIAL via UART2
 - ✅ PPM receiver: GPIO35 (analog input pin)
+- ✅ Default VTX control: SmartAudio on UART1 TX=GPIO33
 - ✅ Dynamic filter: Supported
 - ✅ WiFi OTA update: Yes (soft-serial bridge)
 - ✅ Bluetooth OTA: Yes (if `ESPFC_BT_OTA` build flag enabled and BT stack present)
@@ -65,7 +79,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 **Overview**: Single-core variant with reduced RAM (320 KB), no Bluetooth, optimized for power efficiency.
 
 ### Serial Ports
-- **UART0**: TX=GPIO43, RX=GPIO44 (default: MSP/Betaflight)
+- **UART0**: TX=GPIO43, RX=GPIO44 (default: SmartAudio VTX control)
 - **UART1**: TX=GPIO17, RX=GPIO16 (default: RX_SERIAL for receiver)
 - **USB CDC**: Native USB support for MSP and debugging
 - **Soft-Serial 0**: WiFi bridge **disabled** on this target (RAM optimization)
@@ -90,6 +104,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 ### Features
 - ✅ Receiver input: Serial RX_SERIAL via UART1
 - ✅ PPM receiver: Not configured
+- ✅ Default VTX control: SmartAudio on UART0 TX=GPIO43
 - ✅ Dynamic filter: Supported
 - ❌ WiFi OTA: No soft-serial bridge (use USB for configuration)
 - ❌ Bluetooth OTA: Not available (no BT on S2)
@@ -108,7 +123,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 **Overview**: Dual-core variant with 512 KB RAM, WiFi, USB-C, and most ESP32-like capabilities.
 
 ### Serial Ports
-- **UART0**: TX=GPIO43, RX=GPIO44 (default: MSP/Betaflight)
+- **UART0**: TX=GPIO43, RX=GPIO44 (default: SmartAudio VTX control)
 - **UART1**: TX=GPIO16, RX=GPIO15 (default: GPS)
 - **UART2**: TX=GPIO18, RX=GPIO17 (default: RX_SERIAL for receiver)
 - **USB CDC**: Native USB support for MSP (optional, depends on Arduino build config)
@@ -133,6 +148,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 
 ### Features
 - ✅ Receiver input: Serial RX_SERIAL via UART2 or PPM via GPIO6
+- ✅ Default VTX control: SmartAudio on UART0 TX=GPIO43
 - ✅ Dynamic filter: Supported
 - ✅ WiFi OTA update: Yes (soft-serial bridge)
 - ❌ Bluetooth OTA: Not available on S3
@@ -150,7 +166,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 **Overview**: Ultra-compact RISC-V single-core with 320 KB RAM, WiFi, USB-C.
 
 ### Serial Ports
-- **UART0**: TX=GPIO21, RX=GPIO20 (default: MSP/Betaflight)
+- **UART0**: TX=GPIO21, RX=GPIO20 (default: SmartAudio VTX control)
 - **UART1**: TX, RX disabled (pins reserved for flash/USB; not usable)
 - **USB CDC**: Native USB for MSP and debugging
 - **Soft-Serial 0**: Virtual UART with WiFi bridge (MSP capable)
@@ -175,6 +191,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 ### Features
 - ✅ Receiver input: Limited (no RX_SERIAL port available; consider soft-serial or PPM)
 - ❌ PPM receiver: Not configured
+- ✅ Default VTX control: SmartAudio on UART0 TX=GPIO21
 - ✅ Dynamic filter: Supported
 - ✅ WiFi OTA update: Yes (soft-serial bridge)
 - ❌ Bluetooth OTA: Not available
@@ -193,7 +210,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 
 ### Serial Ports
 - **UART0**: TX=GPIO1, RX=GPIO3 (default: MSP/Betaflight)
-- **UART1**: TX=GPIO2 (TX-only, no RX; TX-only output capability, default: none)
+- **UART1**: TX=GPIO2 (TX-only, no RX; default: SmartAudio VTX control)
 - **Soft-Serial 0**: Virtual UART with WiFi bridge (MSP capable)
 
 ### Communication Buses
@@ -216,6 +233,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 ### Features
 - ✅ Receiver input: PPM via GPIO13 (D7) or soft-serial
 - ✅ PPM receiver: Supported (GPIO13)
+- ✅ Default VTX control: SmartAudio on UART1 TX=GPIO2 (D4)
 - ✅ Dynamic filter: Supported
 - ✅ WiFi OTA update: Yes (soft-serial bridge)
 - ❌ Bluetooth: Not available
@@ -233,7 +251,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 **Overview**: Dual-core ARM Cortex-M0+ with 264 KB RAM, USB, and excellent SPI support.
 
 ### Serial Ports
-- **UART0** (Serial1): TX=GPIO0, RX=GPIO1 (default: MSP/Betaflight)
+- **UART0** (Serial1): TX=GPIO0, RX=GPIO1 (default: SmartAudio VTX control)
 - **UART1** (Serial2): TX=GPIO8, RX=GPIO9 (default: RX_SERIAL for receiver)
 - **USB CDC**: Native USB for MSP and debugging
 - **Soft-Serial**: Not available on RP2040
@@ -258,6 +276,7 @@ Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
 ### Features
 - ✅ Receiver input: Serial RX_SERIAL via UART1
 - ❌ PPM receiver: Not configured
+- ✅ Default VTX control: SmartAudio on UART0 TX=GPIO0
 - ✅ Dynamic filter: Supported
 - ❌ WiFi OTA: Not available
 - ❌ Bluetooth OTA: Not available

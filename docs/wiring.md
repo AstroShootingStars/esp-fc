@@ -48,6 +48,19 @@ Tu unmap pin function use -1 as pin number
 > [!NOTE]
 > ESP32 and RP2040 targets expose `pin_output_4` to `pin_output_7`, but those extra slots default to `-1` (unmapped).
 
+## Default VTX control wiring
+
+SmartAudio is the default VTX control protocol. Connect the VTX control wire to the TX pin below.
+
+| Board | CLI serial function | TX pin | RX pin | Notes |
+|---|---|---:|---:|---|
+| ESP32 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART1 | 33 | 32 | RX is unused by SmartAudio but remains mapped |
+| ESP32-S2 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART0 | 43 | 44 | USB remains the default Betaflight/MSP port |
+| ESP32-S3 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART0 | 43 | 44 | USB remains the default Betaflight/MSP port |
+| ESP32-C3 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART0 | 21 | 20 | USB remains the default Betaflight/MSP port |
+| ESP8266 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART1 | 2 (D4) | -1 | TX-only default, suitable for SmartAudio |
+| RP2040/RP2350 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART0 | 0 | 1 | USB remains the default Betaflight/MSP port |
+
 ## Default Uart/Serial pin mapping
 
 | Uart | CLI name          | ESP32 | ESP32-S3 |

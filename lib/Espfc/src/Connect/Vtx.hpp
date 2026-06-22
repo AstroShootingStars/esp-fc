@@ -36,11 +36,18 @@ class Vtx
     Connect::VtxDeviceType type;
 
   private:
+    bool needsSync() const;
+    void markApplied();
+
     Device::SerialDevice* _serial;
     Model& _model;
     State _state = State::INACTIVE;
     bool _armed = false;
     Utils::Timer _timer;
+    uint8_t _appliedBand = 0;
+    uint8_t _appliedChannel = 0;
+    uint8_t _appliedPower = 0;
+    uint8_t _appliedLowPowerDisarm = 0;
 };
 
 }
