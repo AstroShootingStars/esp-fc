@@ -1,6 +1,11 @@
 #include "SerialManager.h"
 #include "Device/SerialDeviceAdapter.h"
 #include "Debug_Espfc.h"
+#include <algorithm>
+
+extern "C" {
+  #include "msp/msp_protocol.h"
+}
 
 // TODO: move to target
 #ifdef ESPFC_SERIAL_0
@@ -26,7 +31,9 @@ SerialManager::SerialManager(Model& model, TelemetryManager& telemetry): _model(
 #ifdef ESPFC_SERIAL_SOFT_0_WIFI
   , _wireless(model)
 #endif
-{}
+{
+  std::fill_n(_bfApiHandshakeState, SERIAL_UART_COUNT, 0);
+}
 
 int SerialManager::begin()
 {
@@ -211,7 +218,18 @@ void SerialManager::processMsp(SerialPortState& ss)
   char * c = (char*)&buff[0];
   while(len--)
   {
+    const uint8_t byte = static_cast<uint8_t>(*c);
     bool consumed = _msp.parse(*c, ss.mspRequest);
+
+    if(detectBetaflightApiRequest(byte, _current) && !consumed)
+    {
+      sendBetaflightApiVersion(*ss.stream);
+      ss.mspRequest = Connect::MspMessage();
+      ss.mspResponse = Connect::MspResponse();
+      c++;
+      continue;
+    }
+
     if(consumed)
     {
       if(ss.mspRequest.isReady() && ss.mspRequest.isCmd())
@@ -229,6 +247,60 @@ void SerialManager::processMsp(SerialPortState& ss)
     }
     c++;
   }
+}
+
+bool SerialManager::detectBetaflightApiRequest(uint8_t byte, size_t portIndex)
+{
+  uint8_t& state = _bfApiHandshakeState[portIndex];
+
+  switch(state)
+  {
+    case 0: // '$'
+      state = byte == '$' ? 1 : 0;
+      break;
+    case 1: // 'M'
+      state = byte == 'M' ? 2 : (byte == '$' ? 1 : 0);
+      break;
+    case 2: // '<'
+      state = byte == '<' ? 3 : (byte == '$' ? 1 : 0);
+      break;
+    case 3: // payload size = 0
+      state = byte == 0x00 ? 4 : (byte == '$' ? 1 : 0);
+      break;
+    case 4: // command = MSP_API_VERSION (1)
+      state = byte == MSP_API_VERSION ? 5 : (byte == '$' ? 1 : 0);
+      break;
+    case 5: // checksum = 0x01
+      state = 0;
+      return byte == 0x01;
+    default:
+      state = 0;
+      break;
+  }
+
+  return false;
+}
+
+void SerialManager::sendBetaflightApiVersion(Device::SerialDevice& stream) const
+{
+  const uint8_t payloadSize = 3;
+  const uint8_t cmd = MSP_API_VERSION;
+  const uint8_t protocolVersion = MSP_PROTOCOL_VERSION;
+  const uint8_t apiMajor = API_VERSION_MAJOR;
+  const uint8_t apiMinor = API_VERSION_MINOR;
+  const uint8_t checksum = payloadSize ^ cmd ^ protocolVersion ^ apiMajor ^ apiMinor;
+
+  const uint8_t response[9] = {
+    '$', 'M', '>',
+    payloadSize,
+    cmd,
+    protocolVersion,
+    apiMajor,
+    apiMinor,
+    checksum
+  };
+
+  stream.write(response, sizeof(response));
 }
 
 Device::SerialDevice * SerialManager::getSerialPortById(SerialPort portId)

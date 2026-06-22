@@ -346,6 +346,22 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
   r.result = 1;
   switch(m.cmd)
   {
+    case MSP_API_VERSION:
+      r.writeU8(MSP_PROTOCOL_VERSION);
+      r.writeU8(API_VERSION_MAJOR);
+      r.writeU8(API_VERSION_MINOR);
+      break;
+
+    case MSP_FC_VARIANT:
+      r.writeData(flightControllerIdentifier, FLIGHT_CONTROLLER_IDENTIFIER_LENGTH);
+      break;
+
+    case MSP_FC_VERSION:
+      r.writeU8(FC_VERSION_MAJOR);
+      r.writeU8(FC_VERSION_MINOR);
+      r.writeU8(FC_VERSION_PATCH_LEVEL);
+      break;
+
     case MSP_BUILD_INFO:
       r.writeData(buildDate, BUILD_DATE_LENGTH);
       r.writeData(buildTime, BUILD_TIME_LENGTH);
