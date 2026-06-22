@@ -38,12 +38,15 @@ Tu unmap pin function use -1 as pin number
 
 ## Default Servo/Motor output mapping
 
-| Motor  | CLI name       | ESP32 | ESP32-S3 |
-|-------:|----------------|------:|---------:|
-| 1      | `pin_output_0` | 27    | 39       |
-| 2      | `pin_output_1` | 25    | 40       |
-| 3      | `pin_output_2` | 4     | 41       |
-| 4      | `pin_output_3` | 12    | 42       |
+| Motor | CLI name | ESP32 | ESP32-S2 | ESP32-S3 | ESP32-C3 | ESP8266 | RP2040/RP2350 |
+|------:|----------|------:|---------:|---------:|---------:|--------:|--------------:|
+| 1 | `pin_output_0` | 27 | 39 | 39 | 2 | 16 (D0) | 2 |
+| 2 | `pin_output_1` | 25 | 40 | 40 | 3 | 14 (D5) | 3 |
+| 3 | `pin_output_2` | 4 | 41 | 41 | 4 | 12 (D6) | 4 |
+| 4 | `pin_output_3` | 12 | 42 | 42 | 5 | 15 (D8) | 5 |
+
+> [!NOTE]
+> ESP32 and RP2040 targets expose `pin_output_4` to `pin_output_7`, but those extra slots default to `-1` (unmapped).
 
 ## Default Uart/Serial pin mapping
 

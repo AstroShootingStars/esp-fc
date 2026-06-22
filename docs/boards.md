@@ -2,6 +2,21 @@
 
 This page provides detailed hardware specifications for all supported targets, including serial ports, communication buses, sensors, and available features.
 
+## Default Motor Control Port Map
+
+Source of truth: target headers in `lib/Espfc/src/Target/Target*.h`, applied to runtime defaults via `ModelConfig::pin[PIN_OUTPUT_n]`.
+
+| Board | pin_output_0 (Motor 1) | pin_output_1 (Motor 2) | pin_output_2 (Motor 3) | pin_output_3 (Motor 4) | Extra output slots |
+|---|---:|---:|---:|---:|---|
+| ESP32 | GPIO27 | GPIO25 | GPIO4 | GPIO12 | pin_output_4..7 exist, default `-1` |
+| ESP32-S2 | GPIO39 | GPIO40 | GPIO41 | GPIO42 | None |
+| ESP32-S3 | GPIO39 | GPIO40 | GPIO41 | GPIO42 | None |
+| ESP32-C3 | GPIO2 | GPIO3 | GPIO4 | GPIO5 | None |
+| ESP8266 | GPIO16 (D0) | GPIO14 (D5) | GPIO12 (D6) | GPIO15 (D8) | None |
+| RP2040 / RP2350 | GPIO2 | GPIO3 | GPIO4 | GPIO5 | pin_output_4..7 exist, default `-1` |
+
+Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
+
 ## ESP32 (Classic)
 
 **Overview**: Full-featured classic ESP32 with dual-core, WiFi, Bluetooth, and comprehensive I/O.
