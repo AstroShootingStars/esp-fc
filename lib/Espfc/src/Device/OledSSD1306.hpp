@@ -12,6 +12,7 @@ public:
   int begin(BusDevice* bus, uint8_t addr) final;
   void setHeight(uint8_t h);
   void setPageInterval(int32_t intervalMs);
+  void setStartupDuration(int32_t durationMs);
   void update(const Model& model);
 
   DeviceType getType() const final { return OLED_SSD1306; }
@@ -31,6 +32,7 @@ private:
   void clearDisplay();
   void drawTextLine(uint8_t page, const char* text);
   void composeLines(const Model& model, char lines[OLED_MAX_LINES][OLED_MAX_CHARS], uint8_t& lineCount) const;
+  void renderStartupPage(uint8_t totalPages);
   void renderPage(const char lines[OLED_MAX_LINES][OLED_MAX_CHARS], uint8_t lineCount, uint8_t pageIndex);
   void getGlyph(char c, uint8_t glyph[5]) const;
   void initDisplay();
@@ -38,8 +40,10 @@ private:
   uint8_t _height = 64;
   uint8_t _pages = 8;
   uint16_t _pageIntervalMs = 3000;
+  uint16_t _startupDurationMs = 1500;
   uint32_t _lastRenderUs = 0;
   uint32_t _lastPageSwitchMs = 0;
+  uint32_t _startupUntilMs = 0;
   uint8_t _currentPage = 0;
 };
 

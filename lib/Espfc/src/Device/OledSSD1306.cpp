@@ -32,6 +32,7 @@ int OledSSD1306::begin(BusDevice* bus, uint8_t addr)
   clearDisplay();
   _lastRenderUs = 0;
   _lastPageSwitchMs = millis();
+  _startupUntilMs = millis() + _startupDurationMs;
   _currentPage = 0;
   return 1;
 }
@@ -54,6 +55,11 @@ void OledSSD1306::setPageInterval(int32_t intervalMs)
   _pageIntervalMs = (uint16_t)constrain(intervalMs, 500l, 30000l);
 }
 
+void OledSSD1306::setStartupDuration(int32_t durationMs)
+{
+  _startupDurationMs = (uint16_t)constrain(durationMs, 0l, 10000l);
+}
+
 void OledSSD1306::update(const Model& model)
 {
   if(!_bus) return;
@@ -70,6 +76,12 @@ void OledSSD1306::update(const Model& model)
   const uint8_t totalPages = std::max<uint8_t>(1u, (lineCount + visibleLines - 1u) / visibleLines);
 
   const uint32_t nowMs = millis();
+  if((int32_t)(_startupUntilMs - nowMs) > 0)
+  {
+    renderStartupPage(totalPages);
+    return;
+  }
+
   if(totalPages > 1 && (nowMs - _lastPageSwitchMs) >= _pageIntervalMs)
   {
     _currentPage = (_currentPage + 1u) % totalPages;
@@ -164,6 +176,22 @@ void OledSSD1306::composeLines(const Model& model, char lines[OLED_MAX_LINES][OL
   for(uint8_t i = 0; i < lineCount && i < OLED_MAX_LINES; i++)
   {
     lines[i][OLED_MAX_CHARS - 1] = '\0';
+  }
+}
+
+void OledSSD1306::renderStartupPage(uint8_t totalPages)
+{
+  char line0[OLED_MAX_CHARS] = {0};
+  char line1[OLED_MAX_CHARS] = {0};
+
+  std::snprintf(line0, OLED_MAX_CHARS, "DEVICE SSD1306");
+  std::snprintf(line1, OLED_MAX_CHARS, "OLED 128X%u P1/%u", (unsigned)_height, (unsigned)totalPages);
+
+  drawTextLine(0, line0);
+  drawTextLine(1, line1);
+  for(uint8_t p = 2; p < _pages; p++)
+  {
+    drawTextLine(p, "");
   }
 }
 

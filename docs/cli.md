@@ -1,5 +1,18 @@
 # ESP-FC CLI Reference
 
+## CLI vs GUI (Betaflight Configurator)
+
+**Most features are configurable via Betaflight Configurator GUI** (see [Board Reference — Configuration Methods](boards.md#configuration-methods-gui-vs-cli)). The CLI is used for:
+- **Advanced configuration**: Pin remapping, sensor offset, motor poles (DShot telemetry)
+- **Preset tuning**: Landing assist, altitude fusion, receiver smoothing
+- **Diagnostics**: Real-time CPU load, memory usage, FreeRTOS task monitoring
+- **Backup/Export**: `dump` exports all settings as CLI commands
+- **Board-specific setup**: WiFi config, rangefinder, optical flow
+
+**To access CLI**: Open Betaflight Configurator → **CLI tab** (or press Ctrl+L) → Type commands below.
+
+---
+
 ## Help
 ```
 help
@@ -149,6 +162,8 @@ Note that you don't have to enter all values, you can ommit last values if they 
 
 ### Pin functions
 
+For complete pin assignments for all boards (ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP8266, RP2040), see [Board Reference — Pin Assignments](boards.md).
+
 Default pin assignments for ESP32-S3 is listed below
 ```
 set pin_input_rx 6
@@ -242,6 +257,102 @@ Serial Functions:
  - 0: none
  - 1: msp
  - 128: blackbox
+ - 65536: frsky_osd (external OSD)
+
+For per-board port and capability limits, see [Board capability matrix](setup.md#board-capability-matrix).
+
+### OLED configuration
+```
+set oled_bus AUTO
+set oled_dev SSD1306
+set oled_height 32
+set oled_page_ms 3000
+set oled_startup_ms 1500
+```
+
+ - `oled_height`: display height, use `0` for auto or fixed `32`/`64`
+ - `oled_page_ms`: telemetry page auto-scroll interval in milliseconds (`500` to `30000`)
+ - `oled_startup_ms`: startup info page duration in milliseconds (`0` disables startup page, max `10000`)
+
+### External OSD configuration
+```
+set osd_enabled 1
+set osd_msp_displayport 1
+set osd_video_system 2
+set osd_profiles 3
+set osd_profile 1
+set osd_units 0
+set osd_rssi_alarm 20
+```
+
+ - `osd_enabled`: global OSD feature bit for MSP OSD config (`0`/`1`)
+ - `osd_msp_displayport`: report MSP displayport-style external OSD support (`0`/`1`)
+ - `osd_video_system`: `0=AUTO`, `1=PAL`, `2=NTSC`, `3=HD`
+ - `osd_profiles`: number of available OSD profiles (`1` to `3`)
+ - `osd_profile`: active OSD profile (`1` to `osd_profiles`)
+ - current firmware uses compact profile mapping: profile selection is fully MSP/CLI compatible while sharing one stored element layout bank to keep EEPROM usage within target limits
+ - `osd_units`: `0=metric`, `1=imperial`
+ - `osd_rssi_alarm`: RSSI warning threshold
+
+For wiring, Betaflight Configurator validation, and troubleshooting steps, see [External OSD checklist](setup.md#osd).
+
+### Wireless OTA configuration
+```
+set wifi_ssid
+set wifi_pass
+set wifi_tcp_port 1111
+set wifi_ota 1
+set wifi_ota_port 3232
+set wifi_ota_pass
+set bt_ota 0
+```
+
+ - `wifi_ota`: enable WiFi OTA flashing (`0`/`1`)
+ - `wifi_ota_port`: OTA service port (`1` to `65535`, default `3232`)
+ - `wifi_ota_pass`: optional OTA password
+ - `bt_ota`: enable Bluetooth OTA stream mode (`0`/`1`, classic ESP32 builds with `ESPFC_BT_OTA` only)
+
+Use [Board capability matrix](setup.md#board-capability-matrix) to verify whether WiFi OTA / BT OTA is available on your target.
+
+### Buzzer and beeper modes
+
+ESP-FC now follows Betaflight-style beeper mode sequencing and priorities.
+
+- GPIO polarity is controlled by `pin_buzzer_invert`
+- Beeper mode mask follows the Betaflight rule: `bit = 1 << (mode_id - 1)`
+- Mode `0` is silence and has no bit
+- `BUZZER_ALL` and `BUZZER_PREFERENCE` are control IDs and are not part of the allowed beeper mask
+
+Mode IDs:
+- 1: `GYRO_CALIBRATED`
+- 2: `RX_LOST`
+- 3: `RX_LOST_LANDING`
+- 4: `DISARMING`
+- 5: `ARMING`
+- 6: `ARMING_GPS_FIX`
+- 7: `BAT_CRIT_LOW`
+- 8: `BAT_LOW`
+- 9: `GPS_STATUS`
+- 10: `RX_SET`
+- 11: `ACC_CALIBRATION`
+- 12: `ACC_CALIBRATION_FAIL`
+- 13: `READY_BEEP`
+- 14: `MULTI_BEEPS`
+- 15: `DISARM_REPEAT`
+- 16: `ARMED`
+- 17: `SYSTEM_INIT`
+- 18: `USB`
+- 19: `BLACKBOX_ERASE`
+- 20: `CRASH_FLIP_MODE`
+- 21: `CAM_CONNECTION_OPEN`
+- 22: `CAM_CONNECTION_CLOSE`
+- 23: `ARMING_GPS_NO_FIX`
+- 24: `ALL` (control ID)
+- 25: `PREFERENCE` (control ID)
+
+Common examples:
+- `RX_SET` bit: `1 << (10 - 1)` = `0x00000200`
+- `ARMING_GPS_NO_FIX` bit: `1 << (23 - 1)` = `0x00400000`
 
 ### Scaler configuration
 
@@ -604,6 +715,10 @@ set model_name
 set wifi_ssid
 set wifi_pass
 set wifi_tcp_port 1111
+set wifi_ota 1
+set wifi_ota_port 3232
+set wifi_ota_pass
+set bt_ota 0
 set mix_outputs 0
 set mix_0 0 0 0
 set mix_1 0 0 0

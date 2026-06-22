@@ -2,6 +2,68 @@
 
 Espressif modules have a built-in WiFi module that can be used for configuration and control.
 
+## Wireless firmware flashing
+
+ESP-FC supports firmware flashing over WiFi OTA on ESP boards with WiFi.
+
+CLI parameters:
+```
+set wifi_ota 1
+set wifi_ota_port 3232
+set wifi_ota_pass
+```
+
+- `wifi_ota`: enable or disable WiFi OTA server (`0`/`1`)
+- `wifi_ota_port`: OTA UDP/TCP service port (default `3232`)
+- `wifi_ota_pass`: optional OTA password (empty means no password)
+
+After changing parameters:
+```
+save
+reboot
+```
+
+### Flashing over WiFi (PlatformIO)
+
+Once FC is connected to WiFi or its AP is reachable, you can upload OTA firmware by IP:
+
+```
+platformio run -e esp32s3_devkitc -t upload --upload-port 192.168.4.1
+```
+
+or for station mode IP:
+
+```
+platformio run -e esp32s3_devkitc -t upload --upload-port <fc_sta_ip>
+```
+
+> [!NOTE]
+> OTA requires an OTA-capable partition table and enough free flash space for staging.
+
+### Flashing over Bluetooth (supported boards)
+
+Bluetooth OTA is available only on classic ESP32 targets when firmware is built with `-DESPFC_BT_OTA`.
+
+Runtime switch:
+```
+set bt_ota 1
+save
+reboot
+```
+
+Bluetooth OTA transport protocol (SPP):
+1. Connect to `<model_name>-OTA` (or `ESP-FC-OTA` when model name is empty)
+2. Send ASCII header line: `OTA <size>\n`
+3. Wait for `OK`
+4. Stream exactly `<size>` bytes of firmware image
+5. Device replies `OK reboot` on success and reboots
+
+> [!NOTE]
+> ESP8266 defaults are OTA-safe: motor output 0 now uses GPIO16 (D0) and GPIO0 (D3) is not used as default motor output, reducing reboot-to-flash conflicts.
+
+> [!NOTE]
+> When `wifi_ota` is enabled, ESP-FC sanitizes unsafe target-specific boot/flash pins from configurable port mappings. Unsafe pins are restored to target defaults when possible, otherwise the mapping is disabled (`-1`).
+
 ## WiFi configuration
 
 > [!NOTE]

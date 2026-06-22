@@ -21,7 +21,7 @@
 
 namespace Espfc {
 
-SerialManager::SerialManager(Model& model, TelemetryManager& telemetry): _model(model), _current(0), _msp(model), _cli(model), _vtx(model),
+SerialManager::SerialManager(Model& model, TelemetryManager& telemetry): _model(model), _current(0), _msp(model), _osd(model), _cli(model), _vtx(model),
   _telemetry(telemetry), _gps(model)
 #ifdef ESPFC_SERIAL_SOFT_0_WIFI
   , _wireless(model)
@@ -30,6 +30,8 @@ SerialManager::SerialManager(Model& model, TelemetryManager& telemetry): _model(
 
 int SerialManager::begin()
 {
+  _osd.begin();
+
   for(int i = 0; i < SERIAL_UART_COUNT; i++)
   {
     Device::SerialDevice * port = getSerialPortById((SerialPort)i);
@@ -179,6 +181,10 @@ int FAST_CODE_ATTR SerialManager::update()
     if(sc.functionMask & SERIAL_FUNCTION_GPS)
     {
       _gps.update();
+    }
+    if(sc.functionMask & SERIAL_FUNCTION_FRSKY_OSD)
+    {
+      _osd.update(*ss.stream);
     }
   }
 

@@ -369,15 +369,46 @@ enum BuzzerEvent {
   BUZZER_CRASH_FLIP_MODE,         // Crash flip mode is active
   BUZZER_CAM_CONNECTION_OPEN,     // When the 5 key simulation stated
   BUZZER_CAM_CONNECTION_CLOSE,    // When the 5 key simulation stop
+  BUZZER_ARMING_GPS_NO_FIX,       // Beep a special tone when arming and GPS has no fix
   BUZZER_ALL,                     // Turn ON or OFF all beeper conditions
   BUZZER_PREFERENCE,              // Save preferred beeper configuration
   // BUZZER_ALL and BUZZER_PREFERENCE must remain at the bottom of this enum
 };
 
+constexpr uint32_t buzzerEventFlag(BuzzerEvent mode)
+{
+  return mode > BUZZER_SILENCE ? (1u << (mode - 1)) : 0u;
+}
+
+constexpr uint32_t BUZZER_ALLOWED_MASK =
+  buzzerEventFlag(BUZZER_GYRO_CALIBRATED) |
+  buzzerEventFlag(BUZZER_RX_LOST) |
+  buzzerEventFlag(BUZZER_RX_LOST_LANDING) |
+  buzzerEventFlag(BUZZER_DISARMING) |
+  buzzerEventFlag(BUZZER_ARMING) |
+  buzzerEventFlag(BUZZER_ARMING_GPS_FIX) |
+  buzzerEventFlag(BUZZER_BAT_CRIT_LOW) |
+  buzzerEventFlag(BUZZER_BAT_LOW) |
+  buzzerEventFlag(BUZZER_GPS_STATUS) |
+  buzzerEventFlag(BUZZER_RX_SET) |
+  buzzerEventFlag(BUZZER_ACC_CALIBRATION) |
+  buzzerEventFlag(BUZZER_ACC_CALIBRATION_FAIL) |
+  buzzerEventFlag(BUZZER_READY_BEEP) |
+  buzzerEventFlag(BUZZER_MULTI_BEEPS) |
+  buzzerEventFlag(BUZZER_DISARM_REPEAT) |
+  buzzerEventFlag(BUZZER_ARMED) |
+  buzzerEventFlag(BUZZER_SYSTEM_INIT) |
+  buzzerEventFlag(BUZZER_USB) |
+  buzzerEventFlag(BUZZER_BLACKBOX_ERASE) |
+  buzzerEventFlag(BUZZER_CRASH_FLIP_MODE) |
+  buzzerEventFlag(BUZZER_CAM_CONNECTION_OPEN) |
+  buzzerEventFlag(BUZZER_CAM_CONNECTION_CLOSE) |
+  buzzerEventFlag(BUZZER_ARMING_GPS_NO_FIX);
+
 struct BuzzerConfig
 {
   int8_t inverted = true;
-  int32_t beeperMask;
+  int32_t beeperMask = (int32_t)BUZZER_ALLOWED_MASK;
 };
 
 enum PidIndex {
@@ -548,6 +579,10 @@ struct WirelessConfig
   int16_t port = 1111;
   char ssid[MAX_LEN + 1];
   char pass[MAX_LEN + 1];
+  uint8_t otaEnabled = 1;
+  int16_t otaPort = 3232;
+  char otaPass[MAX_LEN + 1];
+  uint8_t btOtaEnabled = 0;
 };
 
 struct FailsafeConfig
@@ -685,6 +720,34 @@ struct OledConfig
   int8_t dev = Device::OLED_DEFAULT;
   uint8_t height = 0;      // 0=auto, 32 or 64
   int16_t pageInterval = 3000; // ms between page auto-scroll
+  int16_t startupMs = 1500; // ms startup info page duration (0 disables)
+};
+
+constexpr uint8_t ESPFC_OSD_ITEM_COUNT = 32;
+constexpr uint8_t ESPFC_OSD_STAT_COUNT = 8;
+constexpr uint8_t ESPFC_OSD_TIMER_COUNT = 2;
+constexpr uint8_t ESPFC_OSD_PROFILE_COUNT = 3;
+
+struct OsdConfig
+{
+  uint8_t enabled = 1;
+  uint8_t mspDisplayport = 1;
+  uint8_t videoSystem = 2; // 0=AUTO, 1=PAL, 2=NTSC, 3=HD
+  uint8_t units = 0;
+  uint8_t rssiAlarm = 20;
+  uint16_t capAlarm = 2200;
+  uint16_t altAlarm = 100;
+  uint16_t itemPos[ESPFC_OSD_ITEM_COUNT] = {0};
+  uint8_t statEnabled[ESPFC_OSD_STAT_COUNT] = {0};
+  uint16_t timers[ESPFC_OSD_TIMER_COUNT] = {0};
+  uint32_t enabledWarnings = 0;
+  uint8_t profileCount = ESPFC_OSD_PROFILE_COUNT;
+  uint8_t profile = 1;
+  uint8_t overlayRadioMode = 0;
+  uint8_t cameraFrameWidth = 24;
+  uint8_t cameraFrameHeight = 11;
+  uint16_t linkQualityAlarm = 70;
+  uint16_t rssiDbmAlarm = 60;
 };
 
 struct YawConfig
@@ -972,6 +1035,7 @@ class ModelConfig
     ObstacleAvoidanceConfig obstacleAvoidance;
     OpticalFlowConfig opticalFlow;
     OledConfig oled;
+    OsdConfig osd;
     InputConfig input;
     FailsafeConfig failsafe;
     FusionConfig fusion;

@@ -243,7 +243,19 @@ void Actuator::updateBuzzer()
   }
   if((_model.hasChanged(MODE_ARMED)))
   {
-    _model.state.buzzer.push(_model.isModeActive(MODE_ARMED) ? BUZZER_ARMING : BUZZER_DISARMING);
+    if(_model.isModeActive(MODE_ARMED))
+    {
+      BuzzerEvent event = BUZZER_ARMING;
+      if(_model.isFeatureActive(FEATURE_GPS))
+      {
+        event = _model.state.gps.fix ? BUZZER_ARMING_GPS_FIX : BUZZER_ARMING_GPS_NO_FIX;
+      }
+      _model.state.buzzer.push(event);
+    }
+    else
+    {
+      _model.state.buzzer.push(BUZZER_DISARMING);
+    }
   }
   if(!_model.state.gps.wasLocked && _model.state.gps.numSats >= _model.config.gps.minSats)
   {

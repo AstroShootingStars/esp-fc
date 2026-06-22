@@ -454,6 +454,15 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("oled_dev"), &c.oled.dev, oledDevChoices),
     Param(PSTR("oled_height"), &c.oled.height),
     Param(PSTR("oled_page_ms"), &c.oled.pageInterval),
+    Param(PSTR("oled_startup_ms"), &c.oled.startupMs),
+
+    Param(PSTR("osd_enabled"), &c.osd.enabled),
+    Param(PSTR("osd_msp_displayport"), &c.osd.mspDisplayport),
+    Param(PSTR("osd_video_system"), &c.osd.videoSystem),
+    Param(PSTR("osd_profiles"), &c.osd.profileCount),
+    Param(PSTR("osd_profile"), &c.osd.profile),
+    Param(PSTR("osd_units"), &c.osd.units),
+    Param(PSTR("osd_rssi_alarm"), &c.osd.rssiAlarm),
 
     Param(PSTR("gps_min_sats"), &c.gps.minSats),
     Param(PSTR("gps_set_home_once"), &c.gps.setHomeOnce),
@@ -797,6 +806,10 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("wifi_ssid"), PARAM_STRING, &c.wireless.ssid[0], NULL, WirelessConfig::MAX_LEN),
     Param(PSTR("wifi_pass"), PARAM_STRING, &c.wireless.pass[0], NULL, WirelessConfig::MAX_LEN),
     Param(PSTR("wifi_tcp_port"), &c.wireless.port),
+  Param(PSTR("wifi_ota"), &c.wireless.otaEnabled),
+  Param(PSTR("wifi_ota_port"), &c.wireless.otaPort),
+  Param(PSTR("wifi_ota_pass"), PARAM_STRING, &c.wireless.otaPass[0], NULL, WirelessConfig::MAX_LEN),
+  Param(PSTR("bt_ota"), &c.wireless.btOtaEnabled),
 #endif
 
     Param(PSTR("mix_outputs"), &c.customMixerCount),

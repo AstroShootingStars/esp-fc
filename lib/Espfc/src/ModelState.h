@@ -59,7 +59,7 @@ class BuzzerState
     void push(BuzzerEvent e) // play once
     {
       if(full()) return;
-      if(beeperMask & (1 << (e - 1)))
+      if(e != BUZZER_SILENCE && ((uint32_t)beeperMask & buzzerEventFlag(e)))
       {
         events[idx++] = e;
       }

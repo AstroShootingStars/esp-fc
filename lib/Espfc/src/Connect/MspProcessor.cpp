@@ -98,6 +98,23 @@ extern "C" {
 
 namespace {
 
+constexpr uint8_t OSD_FLAGS_OSD_FEATURE = (1 << 0);
+constexpr uint8_t OSD_FLAGS_OSD_HARDWARE_FRSKYOSD = (1 << 3);
+constexpr uint8_t OSD_FLAGS_OSD_HARDWARE_MAX_7456 = (1 << 4);
+constexpr uint8_t OSD_FLAGS_OSD_DEVICE_DETECTED = (1 << 5);
+constexpr uint8_t OSD_FLAGS_OSD_MSP_DEVICE = (1 << 6);
+
+constexpr uint8_t MSP_DP_HEARTBEAT = 0;
+constexpr uint8_t MSP_DP_RELEASE = 1;
+constexpr uint8_t MSP_DP_CLEAR_SCREEN = 2;
+constexpr uint8_t MSP_DP_WRITE_STRING = 3;
+constexpr uint8_t MSP_DP_DRAW_SCREEN = 4;
+constexpr uint8_t MSP_DP_OPTIONS = 5;
+constexpr uint8_t MSP_DP_SYS = 6;
+constexpr uint8_t MSP_DP_FONTCHAR_WRITE = 7;
+
+constexpr uint8_t ESPFC_OSD_WARNING_COUNT = 16;
+
 enum SerialSpeedIndex {
   SERIAL_SPEED_INDEX_AUTO = 0,
   SERIAL_SPEED_INDEX_9600,
@@ -791,7 +808,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
             continue;
           }
           _model.config.serial[k].id = id;
-          _model.config.serial[k].functionMask = m.readU16(); // CFv1 supports up to 16-bit functions
+          const uint32_t preservedHighBits = _model.config.serial[k].functionMask & 0xFFFF0000u;
+          _model.config.serial[k].functionMask = preservedHighBits | (uint32_t)m.readU16(); // CFv1 supports up to 16-bit functions
           _model.config.serial[k].baud = fromBaudIndex((SerialSpeedIndex)m.readU8());
           m.readU8(); // gps_baudrateIndex (unused)
           m.readU8(); // telemetry_baudrateIndex (unused)
@@ -1998,11 +2016,103 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       }
       break;
 
+    case MSP_SET_OSD_CONFIG:
+      {
+        if(m.remain() < 1)
+        {
+          r.result = 0;
+          break;
+        }
+
+        const int8_t addr = (int8_t)m.readU8();
+        if(addr == -1)
+        {
+          if(m.remain() < 2)
+          {
+            r.result = 0;
+            break;
+          }
+
+          _model.config.osd.enabled = 1;
+          _model.config.osd.videoSystem = constrain((int)m.readU8(), 0, 3);
+          _model.config.osd.units = m.readU8();
+
+          if(m.remain() >= 1) _model.config.osd.rssiAlarm = m.readU8();
+          if(m.remain() >= 2) _model.config.osd.capAlarm = m.readU16();
+          if(m.remain() >= 2) m.readU16(); // legacy flight timer field
+          if(m.remain() >= 2) _model.config.osd.altAlarm = m.readU16();
+
+          if(m.remain() >= 2) _model.config.osd.enabledWarnings = m.readU16();
+          if(m.remain() >= 4) _model.config.osd.enabledWarnings = m.readU32();
+          if(m.remain() >= 1) _model.config.osd.profile = constrain((int)m.readU8(), 1, (int)_model.config.osd.profileCount);
+          if(m.remain() >= 1) _model.config.osd.overlayRadioMode = m.readU8();
+          if(m.remain() >= 2)
+          {
+            _model.config.osd.cameraFrameWidth = m.readU8();
+            _model.config.osd.cameraFrameHeight = m.readU8();
+          }
+          if(m.remain() >= 2) _model.config.osd.linkQualityAlarm = m.readU16();
+          if(m.remain() >= 2) _model.config.osd.rssiDbmAlarm = m.readU16();
+        }
+        else if(addr == -2)
+        {
+          if(m.remain() < 3)
+          {
+            r.result = 0;
+            break;
+          }
+          const uint8_t index = m.readU8();
+          const uint16_t timerValue = m.readU16();
+          if(index >= ESPFC_OSD_TIMER_COUNT)
+          {
+            r.result = 0;
+            break;
+          }
+          _model.config.osd.timers[index] = timerValue;
+        }
+        else
+        {
+          if(m.remain() < 2)
+          {
+            r.result = 0;
+            break;
+          }
+
+          const uint16_t value = m.readU16();
+          const uint8_t screen = m.remain() >= 1 ? m.readU8() : 1;
+          if(screen == 0)
+          {
+            if((uint8_t)addr >= ESPFC_OSD_STAT_COUNT)
+            {
+              r.result = 0;
+              break;
+            }
+            _model.config.osd.statEnabled[(uint8_t)addr] = value ? 1 : 0;
+          }
+          else
+          {
+            if((uint8_t)addr >= ESPFC_OSD_ITEM_COUNT)
+            {
+              r.result = 0;
+              break;
+            }
+            _model.config.osd.itemPos[(uint8_t)addr] = value;
+          }
+        }
+      }
+      break;
+
+    case MSP_SET_OSD_VIDEO_CONFIG:
+      if(m.remain() >= 1)
+      {
+        _model.config.osd.videoSystem = constrain((int)m.readU8(), 0, 3);
+      }
+      while(m.remain() > 0) m.readU8();
+      break;
+
     case MSP_SET_ADJUSTMENT_RANGE:
     case MSP_SET_BOARD_INFO:
     case MSP_SET_NAV_CONFIG:
-    case MSP_SET_OSD_CONFIG:
-    case MSP_SET_OSD_VIDEO_CONFIG:
     case MSP_SET_RAW_GPS:
     case MSP_SET_SERVO_MIX_RULE:
     case MSP_SET_SIGNATURE:
@@ -2368,19 +2478,77 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_OSD_CONFIG:
-      // Return safe defaults so Betaflight Configurator's OSD tab can open.
-      r.writeU8(0); // flags: no OSD hardware/features advertised
-      r.writeU8(1); // video system placeholder (PAL/NTSC/HD not applicable here)
-      r.writeU8(0); // units
-      r.writeU8(0); // rssi alarm
-      r.writeU16(0); // cap alarm
-      r.writeU8(0); // reserved / OSD item count high-byte placeholder
-      r.writeU8(0); // OSD item count low-byte placeholder
-      r.writeU16(0); // alt alarm
+      {
+        uint8_t osdFlags = 0;
+        if(_model.config.osd.enabled)
+        {
+          osdFlags |= OSD_FLAGS_OSD_FEATURE;
+        }
+
+        bool hasFrskyOsdSerial = false;
+        for(size_t i = 0; i < SERIAL_UART_COUNT; i++)
+        {
+          if(_model.config.serial[i].functionMask & SERIAL_FUNCTION_FRSKY_OSD)
+          {
+            hasFrskyOsdSerial = true;
+            break;
+          }
+        }
+
+        if(hasFrskyOsdSerial)
+        {
+          osdFlags |= OSD_FLAGS_OSD_HARDWARE_FRSKYOSD | OSD_FLAGS_OSD_DEVICE_DETECTED;
+        }
+        else if(_model.config.osd.mspDisplayport)
+        {
+          osdFlags |= OSD_FLAGS_OSD_MSP_DEVICE | OSD_FLAGS_OSD_DEVICE_DETECTED;
+        }
+        else
+        {
+          (void)OSD_FLAGS_OSD_HARDWARE_MAX_7456;
+        }
+
+        r.writeU8(osdFlags);
+        r.writeU8(_model.config.osd.videoSystem);
+        r.writeU8(_model.config.osd.units);
+        r.writeU8(_model.config.osd.rssiAlarm);
+        r.writeU16(_model.config.osd.capAlarm);
+        r.writeU8(0);
+        r.writeU8(ESPFC_OSD_ITEM_COUNT);
+        r.writeU16(_model.config.osd.altAlarm);
+
+        for(size_t i = 0; i < ESPFC_OSD_ITEM_COUNT; i++)
+        {
+          r.writeU16(_model.config.osd.itemPos[i]);
+        }
+
+        r.writeU8(ESPFC_OSD_STAT_COUNT);
+        for(size_t i = 0; i < ESPFC_OSD_STAT_COUNT; i++)
+        {
+          r.writeU8(_model.config.osd.statEnabled[i]);
+        }
+
+        r.writeU8(ESPFC_OSD_TIMER_COUNT);
+        for(size_t i = 0; i < ESPFC_OSD_TIMER_COUNT; i++)
+        {
+          r.writeU16(_model.config.osd.timers[i]);
+        }
+
+        r.writeU16((uint16_t)(_model.config.osd.enabledWarnings & 0xFFFF));
+        r.writeU8(ESPFC_OSD_WARNING_COUNT);
+        r.writeU32(_model.config.osd.enabledWarnings);
+        r.writeU8(_model.config.osd.profileCount);
+        r.writeU8(_model.config.osd.profile);
+        r.writeU8(_model.config.osd.overlayRadioMode);
+        r.writeU8(_model.config.osd.cameraFrameWidth);
+        r.writeU8(_model.config.osd.cameraFrameHeight);
+        r.writeU16(_model.config.osd.linkQualityAlarm);
+        r.writeU16(_model.config.osd.rssiDbmAlarm);
+      }
       break;
 
     case MSP_OSD_VIDEO_CONFIG:
-      r.writeU8(1); // video system placeholder
+      r.writeU8(_model.config.osd.videoSystem);
       break;
 
     case MSP_CAMERA_CONTROL:
@@ -2534,8 +2702,30 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_DISPLAYPORT:
+      if(m.remain() > 0)
+      {
+        const uint8_t subcmd = m.readU8();
+        switch(subcmd)
+        {
+          case MSP_DP_HEARTBEAT:
+          case MSP_DP_RELEASE:
+          case MSP_DP_CLEAR_SCREEN:
+          case MSP_DP_WRITE_STRING:
+          case MSP_DP_DRAW_SCREEN:
+          case MSP_DP_OPTIONS:
+          case MSP_DP_SYS:
+          case MSP_DP_FONTCHAR_WRITE:
+            _model.config.osd.enabled = 1;
+            break;
+          default:
+            break;
+        }
+      }
+      while(m.remain() > 0) m.readU8();
+      break;
+
     case MSP_OSD_CHAR_WRITE:
-      // Displayport/OSD writes are accepted as no-op to avoid configurator transaction failures.
+      _model.config.osd.enabled = 1;
       while(m.remain() > 0) m.readU8();
       break;
 

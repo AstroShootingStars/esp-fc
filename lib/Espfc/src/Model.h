@@ -403,10 +403,22 @@ class Model
       }
 
       // configure serial ports
-      constexpr uint32_t serialFunctionAllowedMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_RX_SERIAL | SERIAL_FUNCTION_BLACKBOX | 
-        SERIAL_FUNCTION_GPS | SERIAL_FUNCTION_TELEMETRY_FRSKY | SERIAL_FUNCTION_TELEMETRY_HOTT | SERIAL_FUNCTION_TELEMETRY_IBUS | SERIAL_FUNCTION_VTX_SMARTAUDIO;
-      uint32_t featureAllowMask =  FEATURE_RX_PPM | FEATURE_RX_SERIAL | FEATURE_MOTOR_STOP | FEATURE_SOFTSERIAL | FEATURE_GPS |
+      constexpr uint32_t serialFunctionAllowedMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_RX_SERIAL | SERIAL_FUNCTION_BLACKBOX |
+        SERIAL_FUNCTION_GPS | SERIAL_FUNCTION_TELEMETRY_FRSKY | SERIAL_FUNCTION_TELEMETRY_HOTT | SERIAL_FUNCTION_TELEMETRY_IBUS |
+        SERIAL_FUNCTION_VTX_SMARTAUDIO | SERIAL_FUNCTION_FRSKY_OSD;
+      constexpr uint32_t serialNeedsRxMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_RX_SERIAL;
+      constexpr uint32_t serialNeedsTxMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_BLACKBOX | SERIAL_FUNCTION_TELEMETRY_FRSKY |
+        SERIAL_FUNCTION_TELEMETRY_HOTT | SERIAL_FUNCTION_TELEMETRY_IBUS | SERIAL_FUNCTION_VTX_SMARTAUDIO | SERIAL_FUNCTION_FRSKY_OSD;
+      constexpr uint32_t serialExclusiveMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_RX_SERIAL | SERIAL_FUNCTION_GPS |
+        SERIAL_FUNCTION_BLACKBOX | SERIAL_FUNCTION_TELEMETRY_FRSKY | SERIAL_FUNCTION_TELEMETRY_HOTT |
+        SERIAL_FUNCTION_TELEMETRY_IBUS | SERIAL_FUNCTION_VTX_SMARTAUDIO | SERIAL_FUNCTION_FRSKY_OSD;
+
+      uint32_t featureAllowMask = FEATURE_RX_PPM | FEATURE_RX_SERIAL | FEATURE_MOTOR_STOP | FEATURE_GPS |
         FEATURE_TELEMETRY | FEATURE_RX_SPI;// | FEATURE_AIRMODE;
+
+#ifdef ESPFC_SERIAL_SOFT_0
+      featureAllowMask |= FEATURE_SOFTSERIAL;
+#endif
 
       // allow dynamic filter only above 1k sampling rate
       if(state.loopRate >= DynamicFilterConfig::MIN_FREQ)
@@ -416,25 +428,260 @@ class Model
 
       config.featureMask &= featureAllowMask;
 
+      auto getPortPins = [this](size_t port, int8_t& tx, int8_t& rx) -> bool {
+        tx = -1;
+        rx = -1;
+        switch(port)
+        {
+#ifdef ESPFC_SERIAL_0
+          case SERIAL_UART_0:
+            tx = config.pin[PIN_SERIAL_0_TX];
+            rx = config.pin[PIN_SERIAL_0_RX];
+            return true;
+#endif
+#ifdef ESPFC_SERIAL_1
+          case SERIAL_UART_1:
+            tx = config.pin[PIN_SERIAL_1_TX];
+            rx = config.pin[PIN_SERIAL_1_RX];
+            return true;
+#endif
+#ifdef ESPFC_SERIAL_2
+          case SERIAL_UART_2:
+            tx = config.pin[PIN_SERIAL_2_TX];
+            rx = config.pin[PIN_SERIAL_2_RX];
+            return true;
+#endif
+          default:
+            return false;
+        }
+      };
+
+      auto selectExclusiveMask = [&](uint32_t mask) -> uint32_t {
+        if(mask & SERIAL_FUNCTION_MSP) return SERIAL_FUNCTION_MSP;
+        if(mask & SERIAL_FUNCTION_RX_SERIAL) return SERIAL_FUNCTION_RX_SERIAL;
+        if(mask & SERIAL_FUNCTION_GPS) return SERIAL_FUNCTION_GPS;
+        if(mask & SERIAL_FUNCTION_FRSKY_OSD) return SERIAL_FUNCTION_FRSKY_OSD;
+        if(mask & SERIAL_FUNCTION_BLACKBOX) return SERIAL_FUNCTION_BLACKBOX;
+        if(mask & SERIAL_FUNCTION_VTX_SMARTAUDIO) return SERIAL_FUNCTION_VTX_SMARTAUDIO;
+        if(mask & SERIAL_FUNCTION_TELEMETRY_IBUS) return SERIAL_FUNCTION_TELEMETRY_IBUS;
+        if(mask & SERIAL_FUNCTION_TELEMETRY_FRSKY) return SERIAL_FUNCTION_TELEMETRY_FRSKY;
+        if(mask & SERIAL_FUNCTION_TELEMETRY_HOTT) return SERIAL_FUNCTION_TELEMETRY_HOTT;
+        return 0;
+      };
+
+      bool rxSerialAssigned = false;
+      bool gpsAssigned = false;
+      bool osdAssigned = false;
+      bool hasMspPort = false;
+
       for(int i = 0; i < SERIAL_UART_COUNT; i++) {
-        config.serial[i].functionMask &= serialFunctionAllowedMask;
+        uint32_t mask = config.serial[i].functionMask & serialFunctionAllowedMask;
+
+        if(mask & serialExclusiveMask)
+        {
+          mask = (mask & ~serialExclusiveMask) | selectExclusiveMask(mask & serialExclusiveMask);
+        }
+
+#ifdef ESPFC_SERIAL_SOFT_0
+        const bool isSoftPort = (i == SERIAL_SOFT_0);
+#else
+        const bool isSoftPort = false;
+#endif
+        if(isSoftPort && !isFeatureActive(FEATURE_SOFTSERIAL))
+        {
+          mask = 0;
+        }
+
+        int8_t tx = -1;
+        int8_t rx = -1;
+        const bool hasMappedPins = getPortPins(i, tx, rx);
+        if(hasMappedPins)
+        {
+          if(tx < 0 && rx < 0)
+          {
+            mask = 0;
+          }
+          else
+          {
+            if(rx < 0) mask &= ~serialNeedsRxMask;
+            if(tx < 0) mask &= ~serialNeedsTxMask;
+          }
+        }
+
+        if(!config.osd.enabled || !config.osd.mspDisplayport)
+        {
+          mask &= ~SERIAL_FUNCTION_FRSKY_OSD;
+        }
+
+        if(mask & SERIAL_FUNCTION_RX_SERIAL)
+        {
+          if(rxSerialAssigned) mask &= ~SERIAL_FUNCTION_RX_SERIAL;
+          else rxSerialAssigned = true;
+        }
+
+        if(mask & SERIAL_FUNCTION_GPS)
+        {
+          if(gpsAssigned) mask &= ~SERIAL_FUNCTION_GPS;
+          else gpsAssigned = true;
+        }
+
+        if(mask & SERIAL_FUNCTION_FRSKY_OSD)
+        {
+          if(osdAssigned) mask &= ~SERIAL_FUNCTION_FRSKY_OSD;
+          else osdAssigned = true;
+        }
+
+        if(mask & SERIAL_FUNCTION_MSP)
+        {
+          hasMspPort = true;
+        }
+
+        config.serial[i].functionMask = mask;
       }
 
-      // only few beeper modes allowed
-      config.buzzer.beeperMask &=
-        1 << (BUZZER_GYRO_CALIBRATED - 1) |
-        1 << (BUZZER_SYSTEM_INIT - 1) |
-        1 << (BUZZER_RX_LOST - 1) |
-        1 << (BUZZER_RX_SET - 1) |
-        1 << (BUZZER_DISARMING - 1) |
-        1 << (BUZZER_ARMING - 1) |
-        1 << (BUZZER_BAT_LOW - 1);
+      if(!hasMspPort)
+      {
+#ifdef ESPFC_SERIAL_USB
+        config.serial[SERIAL_USB].functionMask = SERIAL_FUNCTION_MSP;
+#elif defined(ESPFC_SERIAL_0)
+        config.serial[SERIAL_UART_0].functionMask = SERIAL_FUNCTION_MSP;
+#elif defined(ESPFC_SERIAL_1)
+        config.serial[SERIAL_UART_1].functionMask = SERIAL_FUNCTION_MSP;
+#endif
+      }
+
+      config.buzzer.beeperMask &= BUZZER_ALLOWED_MASK;
+
+      config.wireless.port = constrain(config.wireless.port, 1, 65535);
+      config.wireless.otaEnabled = constrain(config.wireless.otaEnabled, 0, 1);
+      config.wireless.otaPort = constrain(config.wireless.otaPort, 1, 65535);
+      config.wireless.btOtaEnabled = constrain(config.wireless.btOtaEnabled, 0, 1);
+
+    #if !defined(ESPFC_SERIAL_SOFT_0_WIFI)
+      config.wireless.otaEnabled = 0;
+    #endif
+
+    #if !(defined(ESPFC_BT_OTA) && defined(ESP32) && !defined(ESP32S2) && !defined(ESP32S3) && !defined(ESP32C3) && defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED))
+      config.wireless.btOtaEnabled = 0;
+    #endif
+
+            auto otaUnsafePin = [](int8_t pin) -> bool {
+        if(pin < 0) return false;
+      #if defined(ESP8266)
+        return pin == 0; // GPIO0 is a boot strap pin.
+      #elif defined(ESP32C3)
+        return pin == 2 || pin == 8 || pin == 9 || (pin >= 12 && pin <= 17);
+      #elif defined(ESP32S3)
+        return pin == 0 || pin == 3 || pin == 45 || pin == 46 || (pin >= 26 && pin <= 37);
+      #elif defined(ESP32S2)
+        return pin == 0;
+      #elif defined(ESP32)
+        return pin == 0;
+      #else
+        return false;
+      #endif
+            };
+
+            auto defaultPinForFunction = [](size_t idx) -> int8_t {
+        switch(idx)
+        {
+      #ifdef ESPFC_INPUT
+          case PIN_INPUT_RX: return ESPFC_INPUT_PIN;
+      #endif
+          case PIN_OUTPUT_0: return ESPFC_OUTPUT_0;
+          case PIN_OUTPUT_1: return ESPFC_OUTPUT_1;
+          case PIN_OUTPUT_2: return ESPFC_OUTPUT_2;
+          case PIN_OUTPUT_3: return ESPFC_OUTPUT_3;
+      #if ESPFC_OUTPUT_COUNT > 4
+          case PIN_OUTPUT_4: return ESPFC_OUTPUT_4;
+      #endif
+      #if ESPFC_OUTPUT_COUNT > 5
+          case PIN_OUTPUT_5: return ESPFC_OUTPUT_5;
+      #endif
+      #if ESPFC_OUTPUT_COUNT > 6
+          case PIN_OUTPUT_6: return ESPFC_OUTPUT_6;
+      #endif
+      #if ESPFC_OUTPUT_COUNT > 7
+          case PIN_OUTPUT_7: return ESPFC_OUTPUT_7;
+      #endif
+          case PIN_BUTTON: return ESPFC_BUTTON_PIN;
+          case PIN_BUZZER: return ESPFC_BUZZER_PIN;
+          case PIN_LED_BLINK: return ESPFC_LED_PIN;
+      #ifdef ESPFC_SERIAL_0
+          case PIN_SERIAL_0_TX: return ESPFC_SERIAL_0_TX;
+          case PIN_SERIAL_0_RX: return ESPFC_SERIAL_0_RX;
+      #endif
+      #ifdef ESPFC_SERIAL_1
+          case PIN_SERIAL_1_TX: return ESPFC_SERIAL_1_TX;
+          case PIN_SERIAL_1_RX: return ESPFC_SERIAL_1_RX;
+      #endif
+      #ifdef ESPFC_SERIAL_2
+          case PIN_SERIAL_2_TX: return ESPFC_SERIAL_2_TX;
+          case PIN_SERIAL_2_RX: return ESPFC_SERIAL_2_RX;
+      #endif
+      #ifdef ESPFC_I2C_0
+          case PIN_I2C_0_SCL: return ESPFC_I2C_0_SCL;
+          case PIN_I2C_0_SDA: return ESPFC_I2C_0_SDA;
+      #endif
+      #ifdef ESPFC_ADC_0
+          case PIN_INPUT_ADC_0: return ESPFC_ADC_0_PIN;
+      #endif
+      #ifdef ESPFC_ADC_1
+          case PIN_INPUT_ADC_1: return ESPFC_ADC_1_PIN;
+      #endif
+      #ifdef ESPFC_SPI_0
+          case PIN_SPI_0_SCK: return ESPFC_SPI_0_SCK;
+          case PIN_SPI_0_MOSI: return ESPFC_SPI_0_MOSI;
+          case PIN_SPI_0_MISO: return ESPFC_SPI_0_MISO;
+          case PIN_SPI_CS0: return ESPFC_SPI_CS_GYRO;
+          case PIN_SPI_CS1: return ESPFC_SPI_CS_BARO;
+          case PIN_SPI_CS2: return -1;
+      #endif
+          default: return -1;
+        }
+            };
+
+            if(config.wireless.otaEnabled)
+      {
+        for(size_t i = 0; i < PIN_COUNT; i++)
+        {
+          if(!otaUnsafePin(config.pin[i])) continue;
+
+          const int8_t fallback = defaultPinForFunction(i);
+          config.pin[i] = otaUnsafePin(fallback) ? -1 : fallback;
+        }
+      }
 
       if(config.oled.height != 0 && config.oled.height != 32 && config.oled.height != 64)
       {
         config.oled.height = 0;
       }
       config.oled.pageInterval = constrain(config.oled.pageInterval, 500, 30000);
+      config.oled.startupMs = constrain(config.oled.startupMs, 0, 10000);
+
+      config.osd.enabled = constrain(config.osd.enabled, 0, 1);
+      config.osd.mspDisplayport = constrain(config.osd.mspDisplayport, 0, 1);
+      config.osd.videoSystem = constrain(config.osd.videoSystem, 0, 3);
+      config.osd.units = constrain(config.osd.units, 0, 1);
+      config.osd.rssiAlarm = constrain(config.osd.rssiAlarm, 0, 100);
+      config.osd.capAlarm = constrain(config.osd.capAlarm, 0, 65000);
+      config.osd.altAlarm = constrain(config.osd.altAlarm, 0, 20000);
+      config.osd.enabledWarnings &= 0xFFFFFFFFu;
+      config.osd.profileCount = constrain(config.osd.profileCount, 1, ESPFC_OSD_PROFILE_COUNT);
+      config.osd.profile = constrain(config.osd.profile, 1, config.osd.profileCount);
+      config.osd.overlayRadioMode = constrain(config.osd.overlayRadioMode, 0, 2);
+      config.osd.cameraFrameWidth = constrain(config.osd.cameraFrameWidth, 0, 60);
+      config.osd.cameraFrameHeight = constrain(config.osd.cameraFrameHeight, 0, 30);
+      config.osd.linkQualityAlarm = constrain(config.osd.linkQualityAlarm, 0, 1000);
+      config.osd.rssiDbmAlarm = constrain(config.osd.rssiDbmAlarm, 0, 1000);
+      for(size_t i = 0; i < ESPFC_OSD_ITEM_COUNT; i++)
+      {
+        config.osd.itemPos[i] = constrain(config.osd.itemPos[i], 0, 0x07FF);
+      }
+      for(size_t i = 0; i < ESPFC_OSD_STAT_COUNT; i++)
+      {
+        config.osd.statEnabled[i] = constrain(config.osd.statEnabled[i], 0, 1);
+      }
 
         if(config.gyro.dynamicFilter.count > DYN_NOTCH_COUNT_MAX)
         {

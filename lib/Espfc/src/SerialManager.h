@@ -3,6 +3,7 @@
 #include "Model.h"
 #include "Device/SerialDevice.h"
 #include "Connect/MspProcessor.hpp"
+#include "Connect/OsdDisplayport.hpp"
 #include "Connect/Vtx.hpp"
 #include "Connect/Cli.hpp"
 #include "TelemetryManager.h"
@@ -36,6 +37,7 @@ private:
   size_t _current;
 
   Connect::MspProcessor _msp;
+  Connect::OsdDisplayport _osd;
   Connect::Cli _cli;
   Connect::Vtx _vtx;
   TelemetryManager& _telemetry;

@@ -6,7 +6,7 @@
 #define ESPFC_INPUT_PIN 13  // D7 - ppm
 
 #define ESPFC_OUTPUT_COUNT 4 // 4 is minimum
-#define ESPFC_OUTPUT_0 0   // D3
+#define ESPFC_OUTPUT_0 16  // D0
 #define ESPFC_OUTPUT_1 14  // D5
 #define ESPFC_OUTPUT_2 12  // D6
 #define ESPFC_OUTPUT_3 15  // D8
@@ -41,7 +41,7 @@
 #define ESPFC_I2C_0_SDA 4  // D2
 #define ESPFC_I2C_0_SOFT
 
-#define ESPFC_BUZZER_PIN 16  // D0
+#define ESPFC_BUZZER_PIN -1
 #define ESPFC_BUTTON_PIN -1
 #define ESPFC_LED_PIN -1
 

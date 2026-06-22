@@ -303,6 +303,7 @@ void Hardware::detectOled()
 
   oledSsd1306.setHeight(_model.config.oled.height);
   oledSsd1306.setPageInterval(_model.config.oled.pageInterval);
+  oledSsd1306.setStartupDuration(_model.config.oled.startupMs);
 
   Device::OledDevice* detectedOled = nullptr;
 

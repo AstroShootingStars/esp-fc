@@ -19,11 +19,110 @@ Then select your device from list and click connect.
 > [!NOTE]
 > Leaving some tabs, especially CLI requires you to click "Disconnect" button twice, and then click "Connect" again.
 
+## Configuration via GUI vs CLI
+
+Most flight controller features are available through the **Betaflight Configurator GUI** (Ports, Receiver, Sensors, Filters, Motors, PID, etc.). However, some advanced features are **CLI-only** (pin remapping, WiFi config, landing assists, diagnostics).
+
+| Your Board | Primary Config Tool | Additional CLI Features |
+|---|---|---|
+| **ESP32** | BFC GUI (Ports, Sensors, Motors, PID tabs) | WiFi/Bluetooth config, pin remapping, landing assist presets |
+| **ESP32-S2** | BFC GUI + USB (soft-serial WiFi disabled) | Pin remapping, motor poles, minimal CLI-only features |
+| **ESP32-S3** | BFC GUI (Ports, Sensors, Motors, PID tabs) | WiFi config, pin remapping, landing assist presets |
+| **ESP32-C3** | BFC GUI (Ports, I2C Sensors only, Motors, PID tabs) | WiFi config (soft-serial), pin remapping, I2C-only sensors |
+| **ESP8266** | BFC GUI (Ports, I2C Sensors, Motors, PID tabs) | I2C-only sensors, pin remapping (tight RAM) |
+| **RP2040** | BFC GUI + USB (best via USB CDC) | Pin remapping, rangefinder/opflow config, no WiFi |
+
+**See [Configuration Methods in Board Reference](boards.md#configuration-methods-gui-vs-cli) for detailed feature tables.**
+
 ## Configure wiring
 
 Go to the `CLI` tab and type `get pin`. This command will show what pins are associated to specified functions. If you wiring is diferrent, you can make some adjustments here. For more details, see [Pin Functions CLI Reference](/docs/cli.md#pin-functions)
 
 ![CLI Pins](/docs/images/bfc/bfc_cli_pins.png)
+
+## Board capability auto-sanitization
+
+ESP-FC now automatically sanitizes configuration based on active board IO and runtime capabilities so Betaflight changes do not leave the FC in an invalid state.
+
+What is auto-adjusted:
+
+1. Unsupported serial functions are removed for the active target.
+2. Invalid function mixes on one port are reduced to one primary function (priority favors MSP).
+3. Functions needing RX are removed from TX-only ports.
+4. Functions needing TX are removed from RX-only ports.
+5. Duplicate critical functions are collapsed to one port (`RX_SERIAL`, `GPS`, external OSD).
+6. If no MSP port remains, one valid MSP port is restored automatically.
+7. Wireless OTA and BT OTA are disabled automatically on unsupported targets/builds.
+
+This behavior helps keep all boards configurable from Betaflight without serial-port deadlocks after save/reboot.
+
+> [!NOTE]
+> On ESP32-S2, soft-serial WiFi bridge is disabled to keep RAM usage within safe limits. Use USB/UART MSP ports for Betaflight configuration on this target.
+
+### Board capability matrix
+
+| Target | Betaflight MSP ports (default) | SoftSerial WiFi bridge | WiFi OTA | BT OTA | External OSD (MSP DisplayPort) |
+|---|---|---|---|---|---|
+| ESP32 | UART0, UART1 | Yes | Yes | Optional (build-flag + runtime enable) | Yes, use a free UART with TX and RX |
+| ESP32-S2 | UART0, USB CDC | No | No | No | Yes, use free UART with TX and RX |
+| ESP32-S3 | UART0, USB CDC (build-dependent) | Yes | Yes | No | Yes, use UART1 or UART2 when free |
+| ESP32-C3 | UART0, USB CDC | Yes | Yes | No | Yes, use a free UART with TX and RX |
+| ESP8266 | UART0 | Yes | Yes | No | Limited: prefer UART1 TX-only OSD targets or remapped pins |
+| RP2040 | USB CDC, UART0 | No | No | No | Yes, use free UART pins |
+| RP2350 | USB CDC, UART0 | No | No | No | Yes, use free UART pins |
+
+Notes:
+
+1. Auto-sanitization keeps at least one MSP port active, and removes invalid serial assignments at boot.
+2. OSD is enabled only when `osd_enabled=1`, `osd_msp_displayport=1`, and a serial port has function `65536` (`frsky_osd`).
+3. ESP32 Bluetooth OTA is only available on classic ESP32 builds when `ESPFC_BT_OTA` is enabled and Bluetooth stack support is present.
+
+### Quick serial setup by target
+
+For detailed per-board port assignments, sensor connections, and feature availability, see [Board Reference](boards.md).
+
+Copy and paste the CLI commands below for your board, then run `save` and `reboot`. Adjust port indices and functions as needed (e.g., if not using RX serial or OSD).
+
+**ESP32** (Betaflight + RX serial + GPS + external OSD):
+```
+set serial_0 1 115200 0
+set serial_1 64 115200 0
+set serial_2 2 115200 0
+set serial_soft_0 65536 115200 0
+```
+
+**ESP32-S2** (UART0 MSP + RX serial):
+```
+set serial_0 1 115200 0
+set serial_1 64 115200 0
+```
+
+**ESP32-S3** (UART0 MSP + RX serial + GPS):
+```
+set serial_0 1 115200 0
+set serial_1 2 115200 0
+set serial_2 64 115200 0
+```
+
+**ESP32-C3** (UART0 MSP only, limited ports):
+```
+set serial_0 1 115200 0
+```
+
+**ESP8266** (UART0 MSP + OSD, no separate RX port):
+```
+set serial_0 65537 115200 0
+```
+
+**RP2040** (UART0 MSP + RX serial):
+```
+set serial_0 1 115200 0
+set serial_1 64 115200 0
+```
+
+Serial function codes: `1=MSP`, `2=GPS`, `64=RX_SERIAL`, `65536=frsky_osd (external OSD)`, `65537=MSP+OSD`.
+
+After applying these, go to Betaflight **Ports** tab to verify the allocations and adjust if needed.
 
 ## Gyro calibration
 
@@ -196,7 +295,55 @@ Not yet implemented, work in progess
 
 ### OSD
 
-Not implemented, but MW_OSD should works via serial port and MSP protocol.
+External OSD over MSP DisplayPort is supported.
+
+#### Recommended setup
+
+1. Use one UART for Betaflight Configurator MSP and a different UART for external OSD.
+2. Keep MSP enabled on the Configurator port.
+3. Assign external OSD function to the OSD UART using CLI:
+
+```
+# Example: set UART1 to external OSD function only
+set serial_1 65536 115200 0
+
+# Enable OSD and MSP displayport behavior
+set osd_enabled 1
+set osd_msp_displayport 1
+set osd_video_system 2
+set osd_profiles 3
+set osd_profile 1
+
+save
+reboot
+```
+
+#### Betaflight Configurator validation checklist
+
+1. Connect FC to Betaflight Configurator and open OSD tab.
+2. Verify OSD tab loads without command errors.
+3. Move at least one OSD element, click Save.
+4. Disconnect and reconnect Configurator.
+5. Confirm moved element is still in the saved position.
+6. Change active OSD profile in OSD tab and Save.
+7. Reconnect and verify selected profile value is preserved.
+8. With external OSD device connected to OSD UART, verify screen updates (heartbeat + redraw).
+
+#### Expected behavior
+
+- OSD config read/write works through MSP (`MSP_OSD_CONFIG`, `MSP_SET_OSD_CONFIG`, `MSP_OSD_VIDEO_CONFIG`, `MSP_SET_OSD_VIDEO_CONFIG`).
+- Runtime MSP DisplayPort frames are emitted on serial ports configured with function `65536` (frsky_osd).
+- Profile selection is MSP/CLI compatible; current firmware uses compact profile mapping for stored layout data.
+
+#### Troubleshooting
+
+- OSD tab opens but no external display output:
+	- Verify OSD UART is assigned `65536` and wired to the external OSD device.
+	- Verify baud rate and TX/RX direction for the target OSD module.
+- OSD settings do not persist:
+	- Ensure Save was clicked in Configurator and `save` was executed in CLI when using CLI changes.
+- No reconnect persistence in Configurator:
+	- Recheck that the active port still has MSP enabled for Configurator access.
 
 ## GPS Setup
 

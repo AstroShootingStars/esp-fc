@@ -10,6 +10,11 @@
 #include <WiFi.h>
 #endif
 
+#if defined(ESPFC_BT_OTA) && defined(ESP32) && !defined(ESP32S2) && !defined(ESP32S3) && !defined(ESP32C3) && defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED)
+#define ESPFC_BT_OTA_SUPPORTED
+#include <BluetoothSerial.h>
+#endif
+
 namespace Espfc {
 
 class Wireless
@@ -32,14 +37,31 @@ class Wireless
     void wifiEventDisconnected();
 
   private:
+    void beginOta();
+    void updateOta();
+  #ifdef ESPFC_BT_OTA_SUPPORTED
+    void beginBtOta();
+    void updateBtOta();
+  #endif
+
     Model& _model;
     Status _status;
     WiFiServer _server;
     WiFiClient _client;
     Device::SerialDeviceAdapter<WiFiClient> _adapter;
+    bool _otaStarted;
 #ifdef ESPFC_WIFI_ALT
     WiFiEventHandler _events[4];
 #endif
+  #ifdef ESPFC_BT_OTA_SUPPORTED
+    BluetoothSerial _btSerial;
+    bool _btOtaStarted;
+    bool _btUpdateActive;
+    size_t _btExpected;
+    size_t _btReceived;
+    char _btLine[24];
+    uint8_t _btLinePos;
+  #endif
 };
 
 }

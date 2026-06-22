@@ -1,11 +1,23 @@
 #include "Buzzer.hpp"
 #include "Hal/Gpio.h"
+#include <cstddef>
 
 namespace Espfc {
 
 namespace Connect {
 
-Buzzer::Buzzer(Model& model): _model(model), _status(BUZZER_STATUS_IDLE), _wait(0), _scheme(NULL), _e(BUZZER_SILENCE) {}
+namespace {
+constexpr uint8_t BEEPER_COMMAND_REPEAT = 0xFE;
+constexpr uint8_t BEEPER_COMMAND_STOP = 0xFF;
+}
+
+struct Buzzer::BeeperEntry {
+  BuzzerEvent mode;
+  uint8_t priority; // 0 = highest priority
+  const uint8_t* sequence;
+};
+
+Buzzer::Buzzer(Model& model): _model(model), _status(BUZZER_STATUS_IDLE), _wait(0), _scheme(NULL), _pos(0), _e(BUZZER_SILENCE) {}
 
 int Buzzer::begin()
 {
@@ -13,59 +25,105 @@ int Buzzer::begin()
   Hal::Gpio::pinMode(_model.config.pin[PIN_BUZZER], OUTPUT);
   Hal::Gpio::digitalWrite(_model.config.pin[PIN_BUZZER], (pin_status_t)_model.config.buzzer.inverted);
   _model.state.buzzer.timer.setRate(100);
+  _silence();
 
   return 1;
 }
 
 int Buzzer::update()
 {
-  //_model.state.debug[0] = _e;
-  //_model.state.debug[1] = _status;
-  //_model.state.debug[2] = (int16_t)(millis() - _wait);
-
   if(_model.config.pin[PIN_BUZZER] == -1) return 0;
   if(!_model.state.buzzer.timer.check()) return 0;
-  if(_wait > millis()) return 0;
 
-  switch(_status)
+  while(!_model.state.buzzer.empty())
   {
-    case BUZZER_STATUS_IDLE: // wait for command
-      if(!_model.state.buzzer.empty())
-      {
-        _e = _model.state.buzzer.pop();
-        _scheme = schemes()[_e];
-        _status = BUZZER_STATUS_TEST;
-      }
-      break;
-    case BUZZER_STATUS_TEST: // test for end or continue
-      if(!_scheme || *_scheme == 0)
-      {
-        _play(false, 10, BUZZER_STATUS_IDLE);
-        _scheme = NULL;
-        _e = BUZZER_SILENCE;
-      }
-      else
-      {
-        _play(true, *_scheme, BUZZER_STATUS_ON); // start playing
-      }
-      break;
-    case BUZZER_STATUS_ON: // end playing with pause, same length as on
-      _play(false, (*_scheme) / 2, BUZZER_STATUS_OFF);
-      break;
-    case BUZZER_STATUS_OFF: // move to next cycle
-      _scheme++;
-      _status = BUZZER_STATUS_TEST;
-      break;
+    _setMode(_model.state.buzzer.pop());
   }
+
+  if(_status != BUZZER_STATUS_ACTIVE || !_scheme) return 1;
+  if(_wait > millis()) return 1;
+
+  _advanceSequence();
 
   return 1;
 }
 
-void Buzzer::_play(bool v, int time, BuzzerPlayStatus s)
+void Buzzer::_setMode(BuzzerEvent mode)
 {
-  _write(v);
-  _delay(time);
-  _status = s;
+  if(mode == BUZZER_SILENCE)
+  {
+    _silence();
+    return;
+  }
+
+  const BeeperEntry* candidate = findEntry(mode);
+  if(!candidate || !candidate->sequence) return;
+
+  const BeeperEntry* current = findEntry(_e);
+  if(current && current->sequence && candidate->priority >= current->priority)
+  {
+    return;
+  }
+
+  _e = mode;
+  _scheme = candidate->sequence;
+  _pos = 0;
+  _wait = 0;
+  _status = BUZZER_STATUS_ACTIVE;
+}
+
+void Buzzer::_silence()
+{
+  _write(false);
+  _status = BUZZER_STATUS_IDLE;
+  _wait = 0;
+  _scheme = NULL;
+  _pos = 0;
+  _e = BUZZER_SILENCE;
+}
+
+void Buzzer::_advanceSequence()
+{
+  if(!_scheme)
+  {
+    _silence();
+    return;
+  }
+
+  bool wasRepeat = false;
+  while(true)
+  {
+    const uint8_t cmd = _scheme[_pos];
+    if(cmd == BEEPER_COMMAND_REPEAT)
+    {
+      if(wasRepeat)
+      {
+        _silence();
+        return;
+      }
+      wasRepeat = true;
+      _pos = 0;
+      continue;
+    }
+
+    if(cmd == BEEPER_COMMAND_STOP)
+    {
+      _silence();
+      return;
+    }
+
+    if(cmd == 0)
+    {
+      _pos++;
+      continue;
+    }
+
+    _pos++;
+    const bool on = (_pos % 2) == 1;
+    _write(on);
+    _wait = millis() + _delayMs(cmd);
+    return;
+  }
 }
 
 void Buzzer::_write(bool v)
@@ -73,77 +131,78 @@ void Buzzer::_write(bool v)
   Hal::Gpio::digitalWrite(_model.config.pin[PIN_BUZZER], (pin_status_t)(_model.config.buzzer.inverted ? !v : v));
 }
 
-void Buzzer::_delay(int time)
+uint32_t Buzzer::_delayMs(uint8_t ticks) const
 {
-  _wait = millis() + time * 10;
+  return (uint32_t)ticks * 10u;
 }
 
-const uint8_t** Buzzer::schemes()
+const Buzzer::BeeperEntry* Buzzer::entries()
 {
-  static const uint8_t beeperSilence[] = { 0 };
-  static const uint8_t beeperGyroCalibrated[] = { 10, 10, 10, 0 };
-  static const uint8_t beeperRxLost[] = { 30, 0 };
-  static const uint8_t beeperDisarming[] = { 10, 10, 0 };
-  static const uint8_t beeperArming[] = { 20, 0 };
-  static const uint8_t beeperSystemInit[] = { 10, 0 };
-  static const uint8_t beeperBatteryLow[] = { 30, 0 };
-  static const uint8_t beeperBatteryCritical[] = { 50, 0 };
+  static const uint8_t beep_short[] = { 10, 10, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_arming[] = { 30, 5, 5, 5, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_armingGpsFix[] = { 5, 5, 15, 5, 5, 5, 15, 30, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_armingGpsNoFix[] = { 30, 5, 30, 5, 30, 5, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_armed[] = { 0, 245, 10, 5, BEEPER_COMMAND_REPEAT };
+  static const uint8_t beep_disarm[] = { 15, 5, 15, 5, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_disarmRepeat[] = { 0, 100, 10, BEEPER_COMMAND_REPEAT };
+  static const uint8_t beep_batLow[] = { 25, 50, BEEPER_COMMAND_REPEAT };
+  static const uint8_t beep_batCrit[] = { 50, 2, BEEPER_COMMAND_REPEAT };
+  static const uint8_t beep_rxLost[] = { 50, 50, BEEPER_COMMAND_REPEAT };
+  static const uint8_t beep_sos[] = { 10, 10, 10, 10, 10, 40, 40, 10, 40, 10, 40, 40, 10, 10, 10, 10, 10, 70, BEEPER_COMMAND_REPEAT };
+  static const uint8_t beep_ready[] = { 4, 5, 4, 5, 8, 5, 15, 5, 8, 5, 4, 5, 4, 5, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_2short[] = { 5, 5, 5, 5, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_2long[] = { 20, 15, 35, 5, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_gyroCalibrated[] = { 20, 10, 20, 10, 20, 10, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_camOpen[] = { 5, 15, 10, 15, 20, BEEPER_COMMAND_STOP };
+  static const uint8_t beep_camClose[] = { 10, 8, 5, BEEPER_COMMAND_STOP };
 
-  static const uint8_t* beeperSchemes[] = {
-    //BUZZER_SILENCE
-    beeperSilence,
-    //BUZZER_GYRO_CALIBRATED,
-    beeperGyroCalibrated,
-    //BUZZER_RX_LOST,                 // Beeps when TX is turned off or signal lost (repeat until TX is okay)
-    beeperRxLost,
-    //BUZZER_RX_LOST_LANDING,         // Beeps SOS when armed and TX is turned off or signal lost (autolanding/autodisarm)
-    beeperSilence,
-    //BUZZER_DISARMING,               // Beep when disarming the board
-    beeperDisarming,
-    //BUZZER_ARMING,                  // Beep when arming the board
-    beeperArming,
-    //BUZZER_ARMING_GPS_FIX,          // Beep a special tone when arming the board and GPS has fix
-    beeperSilence,
-    //BUZZER_BAT_CRIT_LOW,            // Longer warning beeps when battery is critically low (repeats)
-    beeperBatteryCritical,
-    //BUZZER_BAT_LOW,                 // Warning beeps when battery is getting low (repeats)
-    beeperBatteryLow,
-    //BUZZER_GPS_STATUS,              // Num beeps = num Gps Sats, FIXME **** Disable beeper when connected to USB ****
-    beeperSilence,
-    //BUZZER_RX_SET,                  // Beeps when aux channel is set for beep or beep sequence how many satellites has found if GPS enabled
-    beeperRxLost,
-    //BUZZER_ACC_CALIBRATION,         // ACC inflight calibration completed confirmation
-    beeperSilence,
-    //BUZZER_ACC_CALIBRATION_FAIL,    // ACC inflight calibration failed
-    beeperSilence,
-    //BUZZER_READY_BEEP,              // Ring a tone when GPS is locked and ready
-    beeperGyroCalibrated,
-    //BUZZER_MULTI_BEEPS,             // Internal value used by 'beeperConfirmationBeeps()'.
-    beeperSilence,
-    //BUZZER_DISARM_REPEAT,           // Beeps sounded while stick held in disarm position
-    beeperSilence,
-    //BUZZER_ARMED,                   // Warning beeps when board is armed (repeats until board is disarmed or throttle is increased)
-    beeperSilence,
-    //BUZZER_SYSTEM_INIT,             // Initialisation beeps when board is powered on
-    beeperSystemInit,
-    //BUZZER_USB,                     // Some boards have beeper powered USB connected
-    beeperSilence,
-    //BUZZER_BLACKBOX_ERASE,          // Beep when blackbox erase completes
-    beeperSilence,
-    //BUZZER_CRASH_FLIP_MODE,         // Crash flip mode is active
-    beeperSilence,
-    //BUZZER_CAM_CONNECTION_OPEN,     // When the 5 key simulation stated
-    beeperSilence,
-    //BUZZER_CAM_CONNECTION_CLOSE,    // When the 5 key simulation stop
-    beeperSilence,
-    //BUZZER_ALL,                     // Turn ON or OFF all beeper conditions
-    beeperSilence,
-    //BUZZER_PREFERENCE,              // Save preferred beeper configuration
-    beeperSilence
-    // BUZZER_ALL and BUZZER_PREFERENCE must remain at the bottom of this enum
+  static const BeeperEntry beeperTable[] = {
+    { BUZZER_GYRO_CALIBRATED, 0, beep_gyroCalibrated },
+    { BUZZER_RX_LOST, 1, beep_rxLost },
+    { BUZZER_RX_LOST_LANDING, 2, beep_sos },
+    { BUZZER_DISARMING, 3, beep_disarm },
+    { BUZZER_ARMING, 4, beep_arming },
+    { BUZZER_ARMING_GPS_FIX, 5, beep_armingGpsFix },
+    { BUZZER_ARMING_GPS_NO_FIX, 6, beep_armingGpsNoFix },
+    { BUZZER_BAT_CRIT_LOW, 7, beep_batCrit },
+    { BUZZER_BAT_LOW, 8, beep_batLow },
+    { BUZZER_GPS_STATUS, 9, beep_short },
+    { BUZZER_RX_SET, 10, beep_short },
+    { BUZZER_ACC_CALIBRATION, 11, beep_2short },
+    { BUZZER_ACC_CALIBRATION_FAIL, 12, beep_2long },
+    { BUZZER_READY_BEEP, 13, beep_ready },
+    { BUZZER_MULTI_BEEPS, 14, beep_short },
+    { BUZZER_DISARM_REPEAT, 15, beep_disarmRepeat },
+    { BUZZER_ARMED, 16, beep_armed },
+    { BUZZER_SYSTEM_INIT, 17, beep_short },
+    { BUZZER_USB, 18, beep_short },
+    { BUZZER_BLACKBOX_ERASE, 19, beep_2short },
+    { BUZZER_CRASH_FLIP_MODE, 20, beep_2long },
+    { BUZZER_CAM_CONNECTION_OPEN, 21, beep_camOpen },
+    { BUZZER_CAM_CONNECTION_CLOSE, 22, beep_camClose },
+    { BUZZER_ALL, 23, NULL },
+    { BUZZER_PREFERENCE, 24, NULL },
   };
 
-  return beeperSchemes;
+  return beeperTable;
+}
+
+size_t Buzzer::entryCount()
+{
+  return (size_t)BUZZER_PREFERENCE;
+}
+
+const Buzzer::BeeperEntry* Buzzer::findEntry(BuzzerEvent mode)
+{
+  const BeeperEntry* table = entries();
+  for(size_t i = 0; i < entryCount(); i++)
+  {
+    if(table[i].mode == mode)
+    {
+      return &table[i];
+    }
+  }
+  return NULL;
 }
 
 }

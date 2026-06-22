@@ -35,9 +35,8 @@
 #define ESPFC_SERIAL_USB_DEV_T USBCDC
 #define ESPFC_SERIAL_USB_FN (SERIAL_FUNCTION_MSP)
 
-#define ESPFC_SERIAL_SOFT_0
-#define ESPFC_SERIAL_SOFT_0_FN (SERIAL_FUNCTION_MSP)
-#define ESPFC_SERIAL_SOFT_0_WIFI
+// ESP32-S2 has tighter RAM headroom than other ESP32 targets.
+// Keep core UART/USB MSP paths and disable WiFi soft-serial bridge on this target.
 
 #define ESPFC_SERIAL_REMAP_PINS
 #define ESPFC_SERIAL_DEBUG_PORT SERIAL_UART_0

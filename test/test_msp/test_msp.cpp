@@ -7,8 +7,10 @@
 #include <printf.h>
 #include "Connect/Msp.hpp"
 #include "Connect/MspParser.hpp"
+#include "Connect/MspProcessor.hpp"
 #include "msp/msp_protocol.h"
 #include <Gps.hpp>
+#include <vector>
 
 using namespace fakeit;
 using namespace Espfc;
@@ -25,6 +27,48 @@ using namespace Espfc::Connect;
 
 
 #define MSP_V2_FLAG 0
+
+class DummySerial: public Device::SerialDevice {
+public:
+  void begin(const SerialDeviceConfig&) override {}
+  void updateBaudRate(int) override {}
+  int available() override { return 0; }
+  int read() override { return -1; }
+  size_t readMany(uint8_t *, size_t) override { return 0; }
+  int peek() override { return -1; }
+  void flush() override {}
+  size_t write(uint8_t c) override {
+    tx.push_back(c);
+    return 1;
+  }
+  size_t write(const uint8_t * c, size_t l) override {
+    if(!c) return 0;
+    tx.insert(tx.end(), c, c + l);
+    return l;
+  }
+  int availableForWrite() override { return 4096; }
+  bool isTxFifoEmpty() override { return true; }
+  bool isSoft() const override { return false; }
+  operator bool() const override { return true; }
+
+  std::vector<uint8_t> tx;
+};
+
+static MspMessage makeCmd(uint16_t cmd, const uint8_t *payload, size_t len)
+{
+  MspMessage msg;
+  msg.state = MSP_STATE_RECEIVED;
+  msg.dir = MSP_TYPE_CMD;
+  msg.version = MSP_V1;
+  msg.cmd = cmd;
+  msg.received = len;
+  msg.read = 0;
+  if(payload && len > 0)
+  {
+    std::copy(payload, payload + len, msg.buffer);
+  }
+  return msg;
+}
 
 void test_msp_v1_parse_header()
 {
@@ -120,6 +164,65 @@ void test_msp_v2_parse_payload()
   TEST_ASSERT_EQUAL_UINT8(MSP_STATE_RECEIVED, msg.state);
 }
 
+void test_msp_osd_config_roundtrip()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+
+  const uint8_t setGeneral[] = {
+    0xFF, // addr = -1, general config
+    2,    // video system
+    1,    // units
+    33,   // rssi alarm
+    0x34, 0x12, // cap alarm
+    0x00, 0x00, // legacy timer placeholder
+    0xCD, 0xAB, // alt alarm
+    0x22, 0x11, // warnings low16
+    0x44, 0x33, 0x22, 0x11, // warnings u32
+    2,    // profile
+    1,    // overlay mode
+    24, 13, // camera frame
+    0x55, 0x00, // link quality alarm
+    0x66, 0x00  // rssi dbm alarm
+  };
+
+  MspResponse rsp;
+  proc.processCommand(makeCmd(MSP_SET_OSD_CONFIG, setGeneral, sizeof(setGeneral)), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+
+  const uint8_t setItem[] = {3, 0x77, 0x06, 1}; // addr=3, value=0x0677, screen=1
+  proc.processCommand(makeCmd(MSP_SET_OSD_CONFIG, setItem, sizeof(setItem)), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+
+  const uint8_t setTimer[] = {0xFE, 1, 0x21, 0x03}; // addr=-2, timer idx=1, value=0x0321
+  proc.processCommand(makeCmd(MSP_SET_OSD_CONFIG, setTimer, sizeof(setTimer)), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+
+  proc.processCommand(makeCmd(MSP_OSD_CONFIG, nullptr, 0), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+
+  TEST_ASSERT_GREATER_THAN_UINT16(100, rsp.len);
+  TEST_ASSERT_EQUAL_UINT8(2, rsp.data[1]); // video system
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[2]); // units
+  TEST_ASSERT_EQUAL_UINT8(33, rsp.data[3]); // rssi alarm
+  TEST_ASSERT_EQUAL_UINT8(0x34, rsp.data[4]);
+  TEST_ASSERT_EQUAL_UINT8(0x12, rsp.data[5]);
+
+  const size_t itemBase = 11;
+  const size_t itemOffset = itemBase + 3u * 2u;
+  TEST_ASSERT_EQUAL_UINT8(0x77, rsp.data[itemOffset + 0]);
+  TEST_ASSERT_EQUAL_UINT8(0x06, rsp.data[itemOffset + 1]);
+
+  const size_t timerBase = itemBase + (ESPFC_OSD_ITEM_COUNT * 2) + 1 + ESPFC_OSD_STAT_COUNT + 1;
+  TEST_ASSERT_EQUAL_UINT8(0x21, rsp.data[timerBase + 2]);
+  TEST_ASSERT_EQUAL_UINT8(0x03, rsp.data[timerBase + 3]);
+
+  const size_t profileCountOffset = timerBase + (ESPFC_OSD_TIMER_COUNT * 2) + 2 + 1 + 4;
+  TEST_ASSERT_EQUAL_UINT8(model.config.osd.profileCount, rsp.data[profileCountOffset]);
+  TEST_ASSERT_EQUAL_UINT8(2, rsp.data[profileCountOffset + 1]);
+}
+
 int main(int argc, char **argv)
 {
   UNITY_BEGIN();
@@ -129,6 +232,7 @@ int main(int argc, char **argv)
   RUN_TEST(test_msp_v2_parse_header);
   RUN_TEST(test_msp_v2_parse_no_payload);
   RUN_TEST(test_msp_v2_parse_payload);
+  RUN_TEST(test_msp_osd_config_roundtrip);
 
   return UNITY_END();
 }

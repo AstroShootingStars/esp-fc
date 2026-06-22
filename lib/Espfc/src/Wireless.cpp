@@ -1,10 +1,22 @@
 #include "Wireless.h"
+#include <ArduinoOTA.h>
+#if defined(ESPFC_WIFI_ALT) || defined(ARCH_RP2040)
+#include <Updater.h>
+#else
+#include <Update.h>
+#endif
+#include <algorithm>
+#include <cstdio>
 
 #ifdef ESPFC_SERIAL_SOFT_0_WIFI
 
 namespace Espfc {
 
-Wireless::Wireless(Model& model): _model(model), _status(STOPPED), _server(1111), _adapter(_client) {}
+Wireless::Wireless(Model& model): _model(model), _status(STOPPED), _server(1111), _adapter(_client), _otaStarted(false)
+#ifdef ESPFC_BT_OTA_SUPPORTED
+  , _btOtaStarted(false), _btUpdateActive(false), _btExpected(0), _btReceived(0), _btLine{0}, _btLinePos(0)
+#endif
+{}
 
 int Wireless::begin()
 {
@@ -52,6 +64,10 @@ int Wireless::connect()
   _server.setNoDelay(true);
   _model.state.serial[SERIAL_SOFT_0].stream = &_adapter;
   _model.logger.info().log(F("WIFI SERVER PORT")).log(WiFi.status()).logln(_model.config.wireless.port);
+  beginOta();
+#ifdef ESPFC_BT_OTA_SUPPORTED
+  beginBtOta();
+#endif
   return 1;
 }
 
@@ -84,7 +100,12 @@ int Wireless::update()
   switch(_status)
   {
     case STOPPED:
-      if(_model.state.mode.rescueConfigMode == RESCUE_CONFIG_ACTIVE && _model.isFeatureActive(FEATURE_SOFTSERIAL))
+      if((_model.state.mode.rescueConfigMode == RESCUE_CONFIG_ACTIVE && _model.isFeatureActive(FEATURE_SOFTSERIAL))
+         || _model.config.wireless.otaEnabled
+#ifdef ESPFC_BT_OTA_SUPPORTED
+         || _model.config.wireless.btOtaEnabled
+#endif
+      )
       {
         connect();
         _status = STARTED;
@@ -96,11 +117,165 @@ int Wireless::update()
       {
         _client = _server.accept();
       }
+      updateOta();
+#ifdef ESPFC_BT_OTA_SUPPORTED
+      updateBtOta();
+#endif
       break;
   }
 
   return 1;
 }
+
+void Wireless::beginOta()
+{
+  if(_otaStarted || !_model.config.wireless.otaEnabled) return;
+
+  const char* modelName = _model.config.modelName[0] != 0 ? _model.config.modelName : "ESP-FC";
+  ArduinoOTA.setHostname(modelName);
+  ArduinoOTA.setPort((uint16_t)_model.config.wireless.otaPort);
+  if(_model.config.wireless.otaPass[0] != 0)
+  {
+    ArduinoOTA.setPassword(_model.config.wireless.otaPass);
+  }
+
+  ArduinoOTA.onStart([this]() {
+    _model.logger.info().logln(F("OTA START"));
+  });
+  ArduinoOTA.onProgress([this](unsigned int progress, unsigned int total) {
+    const uint8_t pct = total ? (uint8_t)((progress * 100u) / total) : 0u;
+    if((pct % 20u) == 0u)
+    {
+      _model.logger.info().log(F("OTA PROGRESS")).logln((int)pct);
+    }
+  });
+  ArduinoOTA.onEnd([this]() {
+    _model.logger.info().logln(F("OTA END"));
+  });
+  ArduinoOTA.onError([this](ota_error_t error) {
+    _model.logger.info().log(F("OTA ERROR")).logln((int)error);
+  });
+
+  ArduinoOTA.begin();
+  _otaStarted = true;
+  _model.logger.info().log(F("OTA WIFI READY")).log(modelName).log(':').logln(_model.config.wireless.otaPort);
+}
+
+void Wireless::updateOta()
+{
+  if(!_otaStarted) return;
+  ArduinoOTA.handle();
+}
+
+#ifdef ESPFC_BT_OTA_SUPPORTED
+void Wireless::beginBtOta()
+{
+  if(_btOtaStarted || !_model.config.wireless.btOtaEnabled) return;
+
+  const char* modelName = _model.config.modelName[0] != 0 ? _model.config.modelName : "ESP-FC";
+  char btName[40] = {0};
+  snprintf(btName, sizeof(btName), "%s-OTA", modelName);
+  const bool ok = _btSerial.begin(btName);
+  _btOtaStarted = ok;
+  _model.logger.info().log(F("BT OTA")).log(btName).logln(ok ? F(" READY") : F(" FAIL"));
+}
+
+void Wireless::updateBtOta()
+{
+  if(!_btOtaStarted) return;
+
+  if(!_btSerial.hasClient())
+  {
+    if(_btUpdateActive)
+    {
+      Update.abort();
+      _btUpdateActive = false;
+      _btExpected = 0;
+      _btReceived = 0;
+      _btLinePos = 0;
+      _model.logger.info().logln(F("BT OTA ABORT"));
+    }
+    return;
+  }
+
+  while(_btSerial.available())
+  {
+    if(!_btUpdateActive)
+    {
+      const int c = _btSerial.read();
+      if(c < 0) break;
+      if(c == '\n' || c == '\r')
+      {
+        _btLine[_btLinePos] = 0;
+        unsigned long size = 0;
+        if(sscanf(_btLine, "OTA %lu", &size) == 1 && size > 0)
+        {
+          if(Update.begin((size_t)size))
+          {
+            _btExpected = (size_t)size;
+            _btReceived = 0;
+            _btUpdateActive = true;
+            _btSerial.println("OK");
+            _model.logger.info().log(F("BT OTA START")).logln((int)_btExpected);
+          }
+          else
+          {
+            _btSerial.println("ERR begin");
+            _model.logger.info().logln(F("BT OTA BEGIN FAIL"));
+          }
+        }
+        _btLinePos = 0;
+      }
+      else if(_btLinePos < (sizeof(_btLine) - 1))
+      {
+        _btLine[_btLinePos++] = (char)c;
+      }
+      continue;
+    }
+
+    uint8_t buff[256] = {0};
+    const size_t available = (size_t)_btSerial.available();
+    if(!available) break;
+    const size_t toRead = std::min(sizeof(buff), available);
+    const size_t read = _btSerial.readBytes(buff, toRead);
+    if(!read) break;
+
+    const size_t written = Update.write(buff, read);
+    _btReceived += written;
+    if(written != read)
+    {
+      Update.abort();
+      _btSerial.println("ERR write");
+      _model.logger.info().logln(F("BT OTA WRITE FAIL"));
+      _btUpdateActive = false;
+      _btExpected = 0;
+      _btReceived = 0;
+      _btLinePos = 0;
+      continue;
+    }
+
+    if(_btReceived >= _btExpected)
+    {
+      if(Update.end(true))
+      {
+        _btSerial.println("OK reboot");
+        _model.logger.info().logln(F("BT OTA END"));
+        delay(50);
+        ESP.restart();
+      }
+      else
+      {
+        _btSerial.println("ERR end");
+        _model.logger.info().logln(F("BT OTA END FAIL"));
+      }
+      _btUpdateActive = false;
+      _btExpected = 0;
+      _btReceived = 0;
+      _btLinePos = 0;
+    }
+  }
+}
+#endif
 
 }
 
