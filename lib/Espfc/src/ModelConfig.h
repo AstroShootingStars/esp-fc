@@ -767,6 +767,7 @@ struct MagConfig
   int8_t bus = BUS_AUTO;
   int8_t dev = MAG_DEFAULT;
   int8_t align = ALIGN_DEFAULT;
+  int16_t declination = 0; // degrees * 10
   int16_t offset[3] = { 0, 0, 0 };
   int16_t scale[3] = { 1000, 1000, 1000 };
   FilterConfig filter{FILTER_BIQUAD, 10};

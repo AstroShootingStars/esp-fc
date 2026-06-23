@@ -445,6 +445,7 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
 
     Param(PSTR("mag_bus"), &c.mag.bus, busDevChoices),
     Param(PSTR("mag_dev"), &c.mag.dev, magDevChoices),
+    Param(PSTR("mag_declination"), &c.mag.declination),
     Param(PSTR("mag_align"), &c.mag.align, alignChoices),
     Param(PSTR("mag_filter_type"), &c.mag.filter.type, filterTypeChoices),
     Param(PSTR("mag_filter_lpf"), &c.mag.filter.freq),

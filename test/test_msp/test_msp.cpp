@@ -250,6 +250,70 @@ void test_msp_board_info_payload_shape()
   TEST_ASSERT_EQUAL_UINT8(0, rsp.data[44]); // configuration state
 }
 
+void test_msp_compass_declination_roundtrip()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  const uint8_t setDeclination[] = {0x66, 0x00}; // 10.2 deg in 0.1-deg units
+  proc.processCommand(makeCmd(MSP_SET_COMPASS_CONFIG, setDeclination, sizeof(setDeclination)), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+
+  proc.processCommand(makeCmd(MSP_COMPASS_CONFIG, nullptr, 0), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT16(2, rsp.len);
+  TEST_ASSERT_EQUAL_UINT8(0x66, rsp.data[0]);
+  TEST_ASSERT_EQUAL_UINT8(0x00, rsp.data[1]);
+}
+
+void test_msp_sensor_config_payload_shape()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  proc.processCommand(makeCmd(MSP_SENSOR_CONFIG, nullptr, 0), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT16(5, rsp.len);
+
+  const uint8_t setCfg[] = {
+    2, // accel
+    3, // baro
+    4, // mag
+    2, // rangefinder (mapped to internal default, reported back as enabled)
+    1  // optical flow
+  };
+  proc.processCommand(makeCmd(MSP_SET_SENSOR_CONFIG, setCfg, sizeof(setCfg)), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+
+  proc.processCommand(makeCmd(MSP_SENSOR_CONFIG, nullptr, 0), rsp, serial);
+  TEST_ASSERT_EQUAL_UINT16(5, rsp.len);
+  TEST_ASSERT_EQUAL_UINT8(2, rsp.data[0]);
+  TEST_ASSERT_EQUAL_UINT8(3, rsp.data[1]);
+  TEST_ASSERT_EQUAL_UINT8(4, rsp.data[2]);
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[3]);
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[4]);
+}
+
+void test_msp2_gyro_sensor_active_auto_maps_to_bf_default()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  model.config.gyro.dev = GYRO_AUTO;
+  proc.processCommand(makeCmd(MSP2_GYRO_SENSOR_ACTIVE, nullptr, 0), rsp, serial);
+
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT16(2, rsp.len);
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[0]); // one gyro slot
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[1]); // BF GYRO_DEFAULT (not GYRO_NONE)
+}
+
 int main(int argc, char **argv)
 {
   UNITY_BEGIN();
@@ -261,6 +325,9 @@ int main(int argc, char **argv)
   RUN_TEST(test_msp_v2_parse_payload);
   RUN_TEST(test_msp_osd_config_roundtrip);
   RUN_TEST(test_msp_board_info_payload_shape);
+  RUN_TEST(test_msp_compass_declination_roundtrip);
+  RUN_TEST(test_msp_sensor_config_payload_shape);
+  RUN_TEST(test_msp2_gyro_sensor_active_auto_maps_to_bf_default);
 
   return UNITY_END();
 }

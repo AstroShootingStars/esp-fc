@@ -128,6 +128,22 @@ extern "C" {
 #define MSP2_ESPFC_SET_RANGEFINDER_CONFIG     0x1F12
 #endif
 
+#ifndef MSP2_ESPFC_RANGEFINDER_CONFIG_LEGACY
+#define MSP2_ESPFC_RANGEFINDER_CONFIG_LEGACY  0x202D
+#endif
+
+#ifndef MSP2_ESPFC_SET_RANGEFINDER_CONFIG_LEGACY
+#define MSP2_ESPFC_SET_RANGEFINDER_CONFIG_LEGACY 0x202E
+#endif
+
+#ifndef MSP_COMPASS_CONFIG
+#define MSP_COMPASS_CONFIG 133
+#endif
+
+#ifndef MSP_SET_COMPASS_CONFIG
+#define MSP_SET_COMPASS_CONFIG 224
+#endif
+
 // Extended receiver protocol support - using standard Betaflight MSP commands only
 // Custom extensions disabled to maintain Betaflight configurator compatibility
 
@@ -295,6 +311,79 @@ static uint8_t fromFilterTypeDerivative(uint8_t t)
     case Espfc::FILTER_PT3: return 1;
     case Espfc::FILTER_BIQUAD: return 2;
     default: return 1;
+  }
+}
+
+static uint8_t toBfGyroHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case Espfc::GYRO_NONE: return 0;
+    case Espfc::GYRO_AUTO: return 1;
+    case Espfc::GYRO_MPU6050: return 2;
+    case Espfc::GYRO_MPU6000: return 4;
+    case Espfc::GYRO_MPU6500: return 5;
+    case Espfc::GYRO_MPU9250: return 6;
+    case Espfc::GYRO_ICM20602: return 8;
+    default: return 1;
+  }
+}
+
+static uint8_t toBfAccelHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case Espfc::GYRO_AUTO: return 0;
+    case Espfc::GYRO_NONE: return 1;
+    case Espfc::GYRO_MPU6050: return 2;
+    case Espfc::GYRO_MPU6000: return 3;
+    case Espfc::GYRO_MPU6500: return 4;
+    case Espfc::GYRO_MPU9250: return 5;
+    default: return 0;
+  }
+}
+
+static uint8_t fromBfAccelHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case 0: return Espfc::GYRO_AUTO;
+    case 1: return Espfc::GYRO_NONE;
+    case 2: return Espfc::GYRO_MPU6050;
+    case 3: return Espfc::GYRO_MPU6000;
+    case 4: return Espfc::GYRO_MPU6500;
+    case 5: return Espfc::GYRO_MPU9250;
+    default: return Espfc::GYRO_AUTO;
+  }
+}
+
+static uint8_t toBfRangefinderHardware(uint8_t dev)
+{
+  return dev == Espfc::Device::RANGEFINDER_NONE ? 0 : 1;
+}
+
+static uint8_t fromBfRangefinderHardware(uint8_t dev)
+{
+  return dev == 0 ? Espfc::Device::RANGEFINDER_NONE : Espfc::Device::RANGEFINDER_DEFAULT;
+}
+
+static uint8_t toBfOpticalFlowHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case Espfc::Device::OPFLOW_NONE: return 0;
+    case Espfc::Device::OPFLOW_MSP:
+    case Espfc::Device::OPFLOW_DEFAULT:
+    default: return 1;
+  }
+}
+
+static uint8_t fromBfOpticalFlowHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case 0: return Espfc::Device::OPFLOW_NONE;
+    default: return Espfc::Device::OPFLOW_MSP;
   }
 }
 
@@ -870,50 +959,38 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SENSOR_CONFIG:
-      // Betaflight expects gyro hardware at index 0.
-      r.writeU8(_model.config.gyro.dev);  // gyro hardware
-      r.writeU8(_model.config.accel.dev); // 3 acc mpu6050
-      r.writeU8(_model.config.baro.dev);  // 2 baro bmp085
+      r.writeU8(toBfAccelHardware(_model.config.accel.dev));
+      r.writeU8(_model.config.baro.dev);  // baro enum is BF-compatible
       r.writeU8(_model.config.mag.dev);   // 3 mag hmc5883l
-      r.writeU8(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev);  // Report bottom rangefinder device
-      r.writeU8(_model.config.opticalFlow.dev);
+      r.writeU8(toBfRangefinderHardware(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev));
+      r.writeU8(toBfOpticalFlowHardware(_model.config.opticalFlow.dev));
       break;
 
     case MSP2_SENSOR_CONFIG_ACTIVE:
-      r.writeU8(_model.state.gyro.present ? (uint8_t)_model.config.gyro.dev : 0xFF);
-      r.writeU8(_model.state.accel.present ? (uint8_t)_model.config.accel.dev : 0xFF);
-      r.writeU8(_model.state.baro.present ? (uint8_t)_model.config.baro.dev : 0xFF);
-      r.writeU8(_model.state.mag.present ? (uint8_t)_model.config.mag.dev : 0xFF);
-      r.writeU8(_model.state.rangefinder[RANGEFINDER_BOTTOM].present ? (uint8_t)_model.config.rangefinder[RANGEFINDER_BOTTOM].dev : 0xFF);
-      r.writeU8(_model.state.opticalFlow.present ? (uint8_t)_model.config.opticalFlow.dev : 0xFF);
+      // Report configured devices so UI sections stay visible even before runtime detection stabilizes.
+      r.writeU8(_model.config.gyro.dev == GYRO_NONE ? 0xFF : toBfGyroHardware(_model.config.gyro.dev));
+      r.writeU8(_model.config.accel.dev == GYRO_NONE ? 0xFF : toBfAccelHardware(_model.config.accel.dev));
+      r.writeU8(_model.config.baro.dev == BARO_NONE ? 0xFF : (uint8_t)_model.config.baro.dev);
+      r.writeU8(_model.config.mag.dev == MAG_NONE ? 0xFF : (uint8_t)_model.config.mag.dev);
+      r.writeU8(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev == Device::RANGEFINDER_NONE ? 0xFF : toBfRangefinderHardware(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev));
+      r.writeU8(_model.config.opticalFlow.dev == Device::OPFLOW_NONE ? 0xFF : toBfOpticalFlowHardware(_model.config.opticalFlow.dev));
       break;
 
     case MSP2_GYRO_SENSOR_ACTIVE:
       // Keep one slot visible so configurator can render the active IMU section.
       r.writeU8(1);
-      r.writeU8(_model.state.gyro.present ? (uint8_t)_model.config.gyro.dev : 0xFF);
+      r.writeU8(_model.config.gyro.dev == GYRO_NONE ? 0xFF : toBfGyroHardware(_model.config.gyro.dev));
       break;
 
     case MSP_SET_SENSOR_CONFIG:
-      if(m.remain() >= 6)
-      {
-        // API 1.46+: gyro, accel, baro, mag, rangefinder, optical flow
-        _model.config.gyro.dev = m.readU8();
-        _model.config.accel.dev = m.readU8();
-        _model.config.baro.dev = m.readU8();
-        _model.config.mag.dev = m.readU8();
-        _model.config.rangefinder[RANGEFINDER_BOTTOM].dev = m.readU8();
-        _model.config.opticalFlow.dev = m.readU8();
-      }
-      else
-      {
-        // Legacy ordering without explicit gyro hardware.
-        if(m.remain() >= 1) _model.config.accel.dev = m.readU8();
-        if(m.remain() >= 1) _model.config.baro.dev = m.readU8();
-        if(m.remain() >= 1) _model.config.mag.dev = m.readU8();
-        if(m.remain() >= 1) _model.config.rangefinder[RANGEFINDER_BOTTOM].dev = m.readU8();
-        if(m.remain() >= 1) _model.config.opticalFlow.dev = m.readU8();
-      }
+      // Betaflight Configurator sends 5 fields: acc, baro, mag, rangefinder, optical flow.
+      // Keep this layout for compatibility; consume any extra bytes defensively.
+      if(m.remain() >= 1) _model.config.accel.dev = fromBfAccelHardware(m.readU8());
+      if(m.remain() >= 1) _model.config.baro.dev = m.readU8();
+      if(m.remain() >= 1) _model.config.mag.dev = m.readU8();
+      if(m.remain() >= 1) _model.config.rangefinder[RANGEFINDER_BOTTOM].dev = fromBfRangefinderHardware(m.readU8());
+      if(m.remain() >= 1) _model.config.opticalFlow.dev = fromBfOpticalFlowHardware(m.readU8());
+      while(m.remain() > 0) m.readU8();
       _model.reload();
       break;
 
@@ -1689,9 +1766,17 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       _model.reload();
       break;
 
-    //case MSP_COMPASS_CONFIG:
-    //  r.writeU16(0); // mag_declination * 10
-    //  break;
+    case MSP_COMPASS_CONFIG:
+      r.writeU16(_model.config.mag.declination); // mag_declination * 10
+      break;
+
+    case MSP_SET_COMPASS_CONFIG:
+      if(m.remain() >= 2)
+      {
+        _model.config.mag.declination = std::clamp<int16_t>(m.readU16(), -1800, 1800);
+        _model.reload();
+      }
+      break;
 
     case MSP_FILTER_CONFIG:
       r.writeU8(_model.config.gyro.filter.freq);           // gyro lpf
@@ -2143,6 +2228,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         break;
 
       case MSP2_ESPFC_RANGEFINDER_CONFIG:
+      case MSP2_ESPFC_RANGEFINDER_CONFIG_LEGACY:
         // Per-sensor config blocks: position, bus, dev, address, enabled
         for(uint8_t i = 0; i < RANGEFINDER_COUNT; i++)
         {
@@ -2156,6 +2242,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         break;
 
       case MSP2_ESPFC_SET_RANGEFINDER_CONFIG:
+      case MSP2_ESPFC_SET_RANGEFINDER_CONFIG_LEGACY:
         // Accept one or more config blocks: position, bus, dev, address, enabled
         while(m.remain() >= 5)
         {
