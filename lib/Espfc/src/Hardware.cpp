@@ -69,14 +69,229 @@ Hardware::Hardware(Model& model): _model(model) {}
 
 int Hardware::begin()
 {
+#if defined(ESPFC_GY87_I2C) && (ESPFC_GY87_I2C)
+  // GY-87 wiring preset only: keep sensor type dynamic by I2C detection.
+  _model.config.pin[PIN_I2C_0_SDA] = 9;
+  _model.config.pin[PIN_I2C_0_SCL] = 10;
+  _model.config.i2cSpeed = 100;
+  // Disable SPI CS defaults to keep probing on I2C only for this module.
+  _model.config.pin[PIN_SPI_CS0] = -1;
+  _model.config.pin[PIN_SPI_CS1] = -1;
+  _model.logger.info().logln(F("SENSORS I2C preset pins 9/10 @100k"));
+#endif
+
+  // Recover from accidental configurator writes that disable core sensors.
+  // If gyro is disabled, force a safe auto/default core sensor profile.
+  if(_model.config.gyro.dev == GYRO_NONE)
+  {
+    _model.config.gyro.dev = GYRO_AUTO;
+    if(_model.config.accel.dev == GYRO_NONE) _model.config.accel.dev = GYRO_AUTO;
+    if(_model.config.baro.dev == BARO_NONE) _model.config.baro.dev = BARO_DEFAULT;
+    if(_model.config.mag.dev == MAG_NONE) _model.config.mag.dev = MAG_DEFAULT;
+    _model.logger.info().log(F("SENSORS")).logln(F("recovered gyro/accel/baro/mag defaults"));
+  }
+
+  // Keep accel enabled whenever gyro is enabled unless user explicitly changed it later.
+  if(_model.config.gyro.dev != GYRO_NONE && _model.config.accel.dev == GYRO_NONE)
+  {
+    _model.config.accel.dev = GYRO_AUTO;
+    _model.logger.info().log(F("SENSORS")).logln(F("recovered accel default"));
+  }
+
+#if defined(ESPFC_I2C_0)
+  // Recover broken persisted I2C configuration (e.g. pins set to -1 by UI writes).
+  if(_model.config.pin[PIN_I2C_0_SDA] < 0 || _model.config.pin[PIN_I2C_0_SCL] < 0)
+  {
+    _model.config.pin[PIN_I2C_0_SDA] = ESPFC_I2C_0_SDA;
+    _model.config.pin[PIN_I2C_0_SCL] = ESPFC_I2C_0_SCL;
+    if(_model.config.i2cSpeed <= 0) _model.config.i2cSpeed = 400;
+    _model.logger.info().log(F("SENSORS")).log(F("recovered i2c pins")).log(_model.config.pin[PIN_I2C_0_SDA]).logln(_model.config.pin[PIN_I2C_0_SCL]);
+  }
+#endif
+
+  _model.logger.info()
+      .log(F("SENSORS"))
+      .log(F("begin i2c sda/scl/speed"))
+      .log(_model.config.pin[PIN_I2C_0_SDA])
+      .log(_model.config.pin[PIN_I2C_0_SCL])
+      .logln(_model.config.i2cSpeed);
+
   initBus();
+
+#if defined(ESPFC_I2C_0)
+  // Dynamic sensor-type hints from detected I2C addresses/IDs.
+  // This avoids hard-coding specific IMU/baro/mag while still preferring likely devices.
+  if(_model.config.pin[PIN_I2C_0_SDA] != -1 && _model.config.pin[PIN_I2C_0_SCL] != -1)
+  {
+    auto probeI2cAddr = [&](uint8_t addr) -> bool {
+      WireInstance.beginTransmission(addr);
+      return WireInstance.endTransmission() == 0;
+    };
+
+    auto readI2cReg = [&](uint8_t addr, uint8_t reg, uint8_t& out) -> bool {
+      return i2cBus.read(addr, reg, 1, &out) == 1;
+    };
+
+#if defined(ESPFC_I2C_SCAN_DEBUG) && (ESPFC_I2C_SCAN_DEBUG)
+    int ackCount = 0;
+    for(uint8_t addr = 0x03; addr < 0x78; addr++)
+    {
+      if(!probeI2cAddr(addr)) continue;
+      ackCount++;
+      _model.logger.info().log(F("I2C ACK")).logln((int)addr);
+    }
+    _model.logger.info().log(F("I2C ACK COUNT")).logln(ackCount);
+#endif
+
+    const bool has68 = probeI2cAddr(0x68);
+    const bool has69 = probeI2cAddr(0x69);
+    const bool has1E = probeI2cAddr(0x1E);
+    const bool has0C = probeI2cAddr(0x0C);
+    const bool has0D = probeI2cAddr(0x0D);
+
+    uint8_t id76 = 0;
+    uint8_t id77 = 0;
+    const bool has76Addr = probeI2cAddr(0x76);
+    const bool has77Addr = probeI2cAddr(0x77);
+    const bool has76 = has76Addr && readI2cReg(0x76, 0xD0, id76);
+    const bool has77 = has77Addr && readI2cReg(0x77, 0xD0, id77);
+
+    bool hasSpl06 = false;
+    if(has76Addr && !has76)
+    {
+      uint8_t spl = 0;
+      hasSpl06 = readI2cReg(0x76, 0x0D, spl) && spl == 0x10;
+    }
+    if(has77Addr && !has77 && !hasSpl06)
+    {
+      uint8_t spl = 0;
+      hasSpl06 = readI2cReg(0x77, 0x0D, spl) && spl == 0x10;
+    }
+
+    if((has68 || has69) && (_model.config.gyro.dev == GYRO_AUTO || _model.config.gyro.dev == GYRO_NONE))
+    {
+      _model.config.gyro.dev = GYRO_AUTO;
+      if(_model.config.accel.dev == GYRO_NONE || _model.config.accel.dev == GYRO_AUTO) _model.config.accel.dev = GYRO_AUTO;
+    }
+
+    if(has1E && (_model.config.mag.dev == MAG_DEFAULT || _model.config.mag.dev == MAG_NONE))
+    {
+      _model.config.mag.dev = MAG_HMC5883L;
+    }
+    else if(has0C && (_model.config.mag.dev == MAG_DEFAULT || _model.config.mag.dev == MAG_NONE))
+    {
+      _model.config.mag.dev = MAG_AK8963;
+    }
+    else if(has0D && (_model.config.mag.dev == MAG_DEFAULT || _model.config.mag.dev == MAG_NONE))
+    {
+      _model.config.mag.dev = MAG_QMC5883L;
+    }
+
+    if((has76 || has77 || hasSpl06) && (_model.config.baro.dev == BARO_DEFAULT || _model.config.baro.dev == BARO_NONE))
+    {
+      const uint8_t baroId = has77 ? id77 : id76;
+      if(baroId == 0x55) _model.config.baro.dev = BARO_BMP085;
+      else if(baroId == 0x58 || baroId == 0x60) _model.config.baro.dev = BARO_BMP280;
+      else if(hasSpl06) _model.config.baro.dev = BARO_SPL06;
+      else _model.config.baro.dev = BARO_DEFAULT;
+    }
+
+#if defined(ESPFC_I2C_SCAN_DEBUG) && (ESPFC_I2C_SCAN_DEBUG)
+    _model.logger.info().log(F("I2C addr 68/69/1E/0C/0D/76/77"))
+      .log((int)has68).log((int)has69).log((int)has1E).log((int)has0C).log((int)has0D).log((int)has76Addr).logln((int)has77Addr);
+#endif
+  }
+#endif
+
   detectGyro();
   detectMag();
   detectBaro();
+
+#if defined(ESPFC_SPI_0) && !(defined(ESPFC_GY87_I2C) && (ESPFC_GY87_I2C))
+  // If no core sensor is detected, retry once with target-default SPI pins.
+  if(!_model.state.gyro.present && !_model.state.mag.present && !_model.state.baro.present)
+  {
+    bool spiPinsRecovered = false;
+
+    if(_model.config.pin[PIN_SPI_0_SCK] != ESPFC_SPI_0_SCK)
+    {
+      _model.config.pin[PIN_SPI_0_SCK] = ESPFC_SPI_0_SCK;
+      spiPinsRecovered = true;
+    }
+    if(_model.config.pin[PIN_SPI_0_MOSI] != ESPFC_SPI_0_MOSI)
+    {
+      _model.config.pin[PIN_SPI_0_MOSI] = ESPFC_SPI_0_MOSI;
+      spiPinsRecovered = true;
+    }
+    if(_model.config.pin[PIN_SPI_0_MISO] != ESPFC_SPI_0_MISO)
+    {
+      _model.config.pin[PIN_SPI_0_MISO] = ESPFC_SPI_0_MISO;
+      spiPinsRecovered = true;
+    }
+    if(_model.config.pin[PIN_SPI_CS0] != ESPFC_SPI_CS_GYRO)
+    {
+      _model.config.pin[PIN_SPI_CS0] = ESPFC_SPI_CS_GYRO;
+      spiPinsRecovered = true;
+    }
+    if(_model.config.pin[PIN_SPI_CS1] != ESPFC_SPI_CS_BARO)
+    {
+      _model.config.pin[PIN_SPI_CS1] = ESPFC_SPI_CS_BARO;
+      spiPinsRecovered = true;
+    }
+
+    if(spiPinsRecovered)
+    {
+      _model.logger.info().logln(F("SENSORS retry spi defaults"));
+      initBus();
+      detectGyro();
+      detectMag();
+      detectBaro();
+    }
+  }
+#endif
+
+#if defined(ESPFC_I2C_0)
+  // If no core sensor is detected, retry with target-default I2C pins/speed once.
+  if(!_model.state.gyro.present && !_model.state.mag.present && !_model.state.baro.present)
+  {
+    _model.config.pin[PIN_I2C_0_SDA] = ESPFC_I2C_0_SDA;
+    _model.config.pin[PIN_I2C_0_SCL] = ESPFC_I2C_0_SCL;
+    _model.config.i2cSpeed = 400;
+    _model.logger.info().logln(F("SENSORS retry i2c defaults"));
+    initBus();
+    detectGyro();
+    detectMag();
+    detectBaro();
+
+    if(!_model.state.gyro.present && !_model.state.mag.present && !_model.state.baro.present)
+    {
+      static const uint8_t probeAddr[] = {0x68, 0x69, 0x1E, 0x0D, 0x0C, 0x76, 0x77};
+      for(size_t i = 0; i < sizeof(probeAddr); i++)
+      {
+        uint8_t v = 0;
+        const int8_t c = i2cBus.read(probeAddr[i], 0x00, 1, &v);
+        _model.logger.info().log(F("I2C probe")).log((int)probeAddr[i]).log(c).logln((int)v);
+      }
+
+      uint8_t who = 0;
+      const int8_t whoCount = i2cBus.read(0x68, 0x75, 1, &who);
+      _model.logger.info().log(F("I2C whoami 0x68")).log(whoCount).logln((int)who);
+    }
+  }
+#endif
+
   detectRangefinder();
   detectTemperatureSensor();
   detectOpticalFlow();
   detectOled();
+
+  _model.logger.info()
+      .log(F("SENSORS"))
+      .log(F("detect g/a/m/b"))
+      .log((int)_model.state.gyro.present)
+      .log((int)_model.state.accel.present)
+      .log((int)_model.state.mag.present)
+      .logln((int)_model.state.baro.present);
   return 1;
 }
 
@@ -102,13 +317,23 @@ void Hardware::initBus()
   int i2cResult =
       i2cBus.begin(_model.config.pin[PIN_I2C_0_SDA], _model.config.pin[PIN_I2C_0_SCL], _model.config.i2cSpeed * 1000ul);
   i2cBus.onError = std::bind(&Hardware::onI2CError, this);
-  (void)i2cResult;
+  _model.logger.info()
+      .log(F("I2C"))
+      .log(F("begin"))
+      .log(_model.config.pin[PIN_I2C_0_SDA])
+      .log(_model.config.pin[PIN_I2C_0_SCL])
+      .log(_model.config.i2cSpeed)
+      .logln(i2cResult);
 
 #endif
 }
 
 void Hardware::detectGyro()
 {
+  _model.state.gyro.dev = nullptr;
+  _model.state.gyro.present = false;
+  _model.state.accel.present = false;
+
   if (_model.config.gyro.dev == GYRO_NONE) return;
 
   Device::GyroDevice* detectedGyro = nullptr;
@@ -119,8 +344,8 @@ void Hardware::detectGyro()
     if (!gyro && detectDevice(mpu6500, i2cBus)) gyro = &mpu6500;
     if (!gyro && detectDevice(icm20602, i2cBus)) gyro = &icm20602;
     if (!gyro && detectDevice(bmi160, i2cBus)) gyro = &bmi160;
-    if (!gyro && detectDevice(itg3205, i2cBus)) gyro = &itg3205;
     if (!gyro && detectDevice(mpu6050, i2cBus)) gyro = &mpu6050;
+    if (!gyro && detectDevice(itg3205, i2cBus)) gyro = &itg3205;
     if (!gyro && detectDevice(lsm6dso, i2cBus)) gyro = &lsm6dso;
     return gyro;
   };
@@ -140,20 +365,52 @@ void Hardware::detectGyro()
 #if defined(ESPFC_I2C_0)
   if (!detectedGyro && _model.config.pin[PIN_I2C_0_SDA] != -1 && _model.config.pin[PIN_I2C_0_SCL] != -1)
   {
-    detectedGyro = scanGyroI2c();
+    auto scanGyroI2cOn = [&](int sda, int scl, int speedKhz) -> Device::GyroDevice* {
+      const int i2cResult = i2cBus.begin(sda, scl, (uint32_t)speedKhz * 1000ul);
+      if(!i2cResult) return nullptr;
+      _model.logger.info().log(F("I2C")).log(F("scan gyro")).log(sda).log(scl).logln(speedKhz);
+      return scanGyroI2c();
+    };
+
+    // Prefer configured pins/speed first.
+    detectedGyro = scanGyroI2cOn(_model.config.pin[PIN_I2C_0_SDA], _model.config.pin[PIN_I2C_0_SCL], _model.config.i2cSpeed);
+
+    // Older IMU modules (e.g. ITG3205 on GY-85) can fail at higher bus rates.
+    if(!detectedGyro && _model.config.i2cSpeed > 400)
+    {
+      detectedGyro = scanGyroI2cOn(_model.config.pin[PIN_I2C_0_SDA], _model.config.pin[PIN_I2C_0_SCL], 400);
+      if(detectedGyro) _model.config.i2cSpeed = 400;
+    }
+    if(!detectedGyro && _model.config.i2cSpeed > 100)
+    {
+      detectedGyro = scanGyroI2cOn(_model.config.pin[PIN_I2C_0_SDA], _model.config.pin[PIN_I2C_0_SCL], 100);
+      if(detectedGyro) _model.config.i2cSpeed = 100;
+    }
 
 #if defined(ESP32S3)
-    // Some ESP32-S3 boards route user I2C to GPIO21/GPIO22.
-    // Retry there if the configured bus did not find a gyro.
-    if (!detectedGyro && _model.config.pin[PIN_I2C_0_SDA] == 9 && _model.config.pin[PIN_I2C_0_SCL] == 10)
+    // Some ESP32-S3 boards use either GPIO9/10 or GPIO21/22 for user I2C.
+    // If initial scan fails, probe both common pin pairs and lock to the one that works.
+    if (!detectedGyro)
     {
-      const int altSda = 21;
-      const int altScl = 22;
-      const int altI2cResult = i2cBus.begin(altSda, altScl, _model.config.i2cSpeed * 1000ul);
-      if (altI2cResult)
+      const int pairs[][2] = {{9, 10}, {10, 9}, {21, 22}, {22, 21}};
+      for(size_t i = 0; i < 4 && !detectedGyro; i++)
       {
-        _model.logger.info().log(F("I2C")).log(F("retrying gyro on alt pins")).log(altSda).logln(altScl);
-        detectedGyro = scanGyroI2c();
+        const int altSda = pairs[i][0];
+        const int altScl = pairs[i][1];
+        if(_model.config.pin[PIN_I2C_0_SDA] == altSda && _model.config.pin[PIN_I2C_0_SCL] == altScl) continue;
+
+        detectedGyro = scanGyroI2cOn(altSda, altScl, _model.config.i2cSpeed);
+        if(!detectedGyro && _model.config.i2cSpeed > 400)
+        {
+          detectedGyro = scanGyroI2cOn(altSda, altScl, 400);
+          if(detectedGyro) _model.config.i2cSpeed = 400;
+        }
+        if(!detectedGyro && _model.config.i2cSpeed > 100)
+        {
+          detectedGyro = scanGyroI2cOn(altSda, altScl, 100);
+          if(detectedGyro) _model.config.i2cSpeed = 100;
+        }
+
         if (detectedGyro)
         {
           _model.config.pin[PIN_I2C_0_SDA] = altSda;
@@ -181,6 +438,10 @@ void Hardware::detectGyro()
 
 void Hardware::detectMag()
 {
+  _model.state.mag.dev = nullptr;
+  _model.state.mag.present = false;
+  _model.state.mag.rate = 0;
+
   if (_model.config.mag.dev == MAG_NONE) return;
 
   Device::MagDevice* detectedMag = nullptr;
@@ -207,7 +468,19 @@ void Hardware::detectMag()
 
 void Hardware::detectBaro()
 {
+  _model.state.baro.dev = nullptr;
+  _model.state.baro.present = false;
+
   if (_model.config.baro.dev == BARO_NONE) return;
+
+  // GY-85 class builds (ITG3205 + ADXL345 + HMC5883L) do not include barometer.
+  // When baro is in auto/default mode, skip probing to avoid false positives.
+  if (_model.config.baro.dev == BARO_DEFAULT && _model.state.gyro.dev && _model.state.gyro.dev->getType() == GYRO_ITG3205)
+  {
+    _model.state.baro.dev = nullptr;
+    _model.state.baro.present = false;
+    return;
+  }
 
   Device::BaroDevice* detectedBaro = nullptr;
 #if defined(ESPFC_SPI_0)

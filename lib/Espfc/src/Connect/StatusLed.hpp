@@ -14,6 +14,7 @@ enum LedType
 enum LedStatus
 {
   LED_OFF,
+  LED_BOOT,
   LED_OK,
   LED_ERROR,
   LED_ON,

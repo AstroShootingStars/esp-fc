@@ -429,7 +429,15 @@ void Actuator::updateArmingDisabled()
   int errors = _model.state.i2cErrorDelta;
   _model.state.i2cErrorDelta = 0;
 
-  _model.setArmingDisabled(ARMING_DISABLED_NO_GYRO,        !_model.state.gyro.present || errors);
+  bool gyroBusI2c = false;
+  if(_model.state.gyro.dev && _model.state.gyro.dev->getBus())
+  {
+    gyroBusI2c = _model.state.gyro.dev->getBus()->getType() == BUS_I2C;
+  }
+
+  const bool gyroCommError = errors && (gyroBusI2c || !_model.state.gyro.present);
+
+  _model.setArmingDisabled(ARMING_DISABLED_NO_GYRO,        !_model.state.gyro.present || gyroCommError);
   _model.setArmingDisabled(ARMING_DISABLED_FAILSAFE,        _model.state.failsafe.phase != FC_FAILSAFE_IDLE);
   _model.setArmingDisabled(ARMING_DISABLED_RX_FAILSAFE,     _model.state.input.rxLoss || _model.state.input.rxFailSafe);
   _model.setArmingDisabled(ARMING_DISABLED_THROTTLE,       !_model.isThrottleLow());
@@ -643,14 +651,34 @@ void Actuator::updateRescueConfig()
 
 void Actuator::updateLed()
 {
+  const bool accelRequired = _model.config.accel.dev != GYRO_NONE;
+  const bool sensorsReady = _model.state.gyro.present && (!accelRequired || _model.state.accel.present);
+
+  if(!sensorsReady)
+  {
+    static uint32_t ledSensorDiagTs = 0;
+    const uint32_t now = millis();
+    if(now - ledSensorDiagTs > 2000)
+    {
+      ledSensorDiagTs = now;
+      _model.logger.info()
+          .log(F("LED ERR g/a/b"))
+          .log((int)_model.state.gyro.present)
+          .log((int)_model.state.accel.present)
+          .log((int)_model.state.baro.present)
+          .log(F(" arming"))
+          .log((int)_model.state.mode.armingDisabledFlags)
+          .log(F(" i2c"))
+          .logln((int)_model.state.i2cErrorCount);
+    }
+    _model.state.led.setStatus(Connect::LED_ERROR);
+    return;
+  }
+
   if(_model.isModeActive(MODE_ARMED) || _model.state.mode.isLongClickActive())
   {
     if(_model.state.mode.isLongClickActive()) _model.setGpsHome();
     _model.state.led.setStatus(Connect::LED_ON);
-  }
-  else if(_model.armingDisabled())
-  {
-    _model.state.led.setStatus(Connect::LED_ERROR);
   }
   else
   {

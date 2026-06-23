@@ -1322,7 +1322,7 @@ class ModelConfig
     DebugConfig debug;
 
     // not classified yet
-    int16_t i2cSpeed = 800;
+    int16_t i2cSpeed = 400;
     int8_t loopSync = 8; // MPU 1000Hz
     int8_t mixerSync = 1;
     int32_t featureMask = ESPFC_FEATURE_MASK;
@@ -1331,6 +1331,7 @@ class ModelConfig
     uint8_t rescueConfigDelay = 30;
     int16_t boardAlignment[3] = {0, 0, 0};
     char modelName[MODEL_NAME_LEN + 1];
+    char pilotName[MODEL_NAME_LEN + 1];
     BeeperConfig beeper;
     uint8_t fpvCamAngleDegrees = 0;
 
@@ -1363,6 +1364,7 @@ class ModelConfig
       wireless.ssid[0] = 0;
       wireless.pass[0] = 0;
       modelName[0] = 0;
+      pilotName[0] = 0;
 
       // Keep default vtx frequency in sync with the default vtx table selection.
       if(vtx.band >= 1 && vtx.band <= vtxTable.bands && vtx.channel >= 1 && vtx.channel <= vtxTable.channels)

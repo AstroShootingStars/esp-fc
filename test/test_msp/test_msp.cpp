@@ -298,6 +298,49 @@ void test_msp_sensor_config_payload_shape()
   TEST_ASSERT_EQUAL_UINT8(1, rsp.data[4]);
 }
 
+void test_msp_sensor_config_reports_detected_mag_and_baro_mapped_to_bf_ids()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  model.config.accel.dev = GYRO_MPU6050;
+  model.config.baro.dev = BARO_DEFAULT;
+  model.config.mag.dev = MAG_DEFAULT;
+  model.state.baro.dev = (Device::BaroDevice*)0x1;
+  model.state.mag.dev = (Device::MagDevice*)0x1;
+
+  struct FakeBaro: Device::BaroDevice {
+    int begin(BusDevice*) override { return 0; }
+    int begin(BusDevice*, uint8_t) override { return 0; }
+    DeviceType getType() const override { return BARO_BMP085; }
+    float readTemperature() override { return 0; }
+    float readPressure() override { return 0; }
+    int getDelay(BaroDeviceMode) const override { return 0; }
+    void setMode(BaroDeviceMode) override {}
+    bool testConnection() override { return false; }
+  } fakeBaro;
+
+  struct FakeMag: Device::MagDevice {
+    int begin(BusDevice*) override { return 0; }
+    int begin(BusDevice*, uint8_t) override { return 0; }
+    DeviceType getType() const override { return MAG_HMC5883L; }
+    int readMag(VectorInt16&) override { return 0; }
+    const VectorFloat convert(const VectorInt16&) const override { return VectorFloat(); }
+    int getRate() const override { return 0; }
+    bool testConnection() override { return false; }
+  } fakeMag;
+
+  model.state.baro.dev = &fakeBaro;
+  model.state.mag.dev = &fakeMag;
+
+  proc.processCommand(makeCmd(MSP_SENSOR_CONFIG, nullptr, 0), rsp, serial);
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT8(2, rsp.data[1]);
+  TEST_ASSERT_EQUAL_UINT8(2, rsp.data[2]);
+}
+
 void test_msp2_gyro_sensor_active_auto_maps_to_bf_default()
 {
   Model model;
@@ -311,7 +354,102 @@ void test_msp2_gyro_sensor_active_auto_maps_to_bf_default()
   TEST_ASSERT_EQUAL_INT(1, rsp.result);
   TEST_ASSERT_EQUAL_UINT16(2, rsp.len);
   TEST_ASSERT_EQUAL_UINT8(1, rsp.data[0]); // one gyro slot
-  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[1]); // BF GYRO_DEFAULT (not GYRO_NONE)
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[1]); // BF GYRO_DEFAULT (filtered out in UI)
+}
+
+void test_msp_status_reports_mag_bit_when_configured()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  model.config.mag.dev = MAG_QMC5883L;
+  model.state.mag.present = false; // simulate not detected yet
+
+  proc.processCommand(makeCmd(MSP_STATUS, nullptr, 0), rsp, serial);
+
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  // MSP_STATUS sensor bitfield starts at byte 4 (u16 loopTime + u16 i2cErrorCount)
+  const uint16_t sensors = (uint16_t)rsp.data[4] | ((uint16_t)rsp.data[5] << 8);
+  TEST_ASSERT_NOT_EQUAL(0u, sensors & (1u << 2)); // MAG bit
+}
+
+void test_msp2_gyro_sensor_bmi160_maps_to_bf_bmi160()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  model.config.gyro.dev = GYRO_BMI160;
+  proc.processCommand(makeCmd(MSP2_GYRO_SENSOR_ACTIVE, nullptr, 0), rsp, serial);
+
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT16(2, rsp.len);
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[0]);  // one gyro slot
+  TEST_ASSERT_EQUAL_UINT8(14, rsp.data[1]); // 1.47 legacy sensor list index for BMI160
+}
+
+void test_msp2_gyro_sensor_itg3205_maps_to_bf_virtual()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  model.config.gyro.dev = GYRO_ITG3205;
+  model.state.gyro.present = true;
+  proc.processCommand(makeCmd(MSP2_GYRO_SENSOR_ACTIVE, nullptr, 0), rsp, serial);
+
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT16(2, rsp.len);
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[0]);  // one gyro slot
+  TEST_ASSERT_EQUAL_UINT8(23, rsp.data[1]); // BF VIRTUAL
+}
+
+void test_msp_sensor_alignment_payload_shape_api147()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  model.config.gyro.align = ALIGN_DEFAULT;
+  model.config.mag.align = ALIGN_DEFAULT;
+  model.config.gyro.dev = GYRO_AUTO;
+  model.state.gyro.present = false;
+
+  proc.processCommand(makeCmd(MSP_SENSOR_ALIGNMENT, nullptr, 0), rsp, serial);
+
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT16(11, rsp.len);
+  // Byte 4 is gyro_enable_mask in API >= 1.47 payload
+  TEST_ASSERT_EQUAL_UINT8(1, rsp.data[4]);
+}
+
+void test_msp_set_sensor_alignment_api147_updates_mag_align()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  const uint8_t payload[] = {
+    ALIGN_CW0_DEG,
+    ALIGN_CW0_DEG,
+    ALIGN_CW270_DEG,
+    1,
+    0, 0,
+    0, 0,
+    0, 0,
+  };
+
+  proc.processCommand(makeCmd(MSP_SET_SENSOR_ALIGNMENT, payload, sizeof(payload)), rsp, serial);
+
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT8(ALIGN_CW0_DEG, model.config.gyro.align);
+  TEST_ASSERT_EQUAL_UINT8(ALIGN_CW270_DEG, model.config.mag.align);
 }
 
 int main(int argc, char **argv)
@@ -327,7 +465,13 @@ int main(int argc, char **argv)
   RUN_TEST(test_msp_board_info_payload_shape);
   RUN_TEST(test_msp_compass_declination_roundtrip);
   RUN_TEST(test_msp_sensor_config_payload_shape);
+  RUN_TEST(test_msp_sensor_config_reports_detected_mag_and_baro_mapped_to_bf_ids);
   RUN_TEST(test_msp2_gyro_sensor_active_auto_maps_to_bf_default);
+  RUN_TEST(test_msp_status_reports_mag_bit_when_configured);
+  RUN_TEST(test_msp2_gyro_sensor_bmi160_maps_to_bf_bmi160);
+  RUN_TEST(test_msp2_gyro_sensor_itg3205_maps_to_bf_virtual);
+  RUN_TEST(test_msp_sensor_alignment_payload_shape_api147);
+  RUN_TEST(test_msp_set_sensor_alignment_api147_updates_mag_align);
 
   return UNITY_END();
 }

@@ -1,9 +1,11 @@
 #include "BaroSensor.hpp"
 #include <functional>
+#include <cmath>
 
 namespace Espfc::Sensor {
 
-BaroSensor::BaroSensor(Model& model): _model(model), _state(BARO_STATE_INIT), _counter(0) {}
+BaroSensor::BaroSensor(Model& model):
+  _model(model), _state(BARO_STATE_INIT), _counter(0), _lastPressureValid(0.f), _hasLastPressure(false) {}
 
 int BaroSensor::begin()
 {
@@ -15,7 +17,7 @@ int BaroSensor::begin()
   const int toGyroRate = (delay / _model.state.gyro.timer.interval) + 1; // number of gyro readings per cycle
   const int interval = _model.state.gyro.timer.interval * toGyroRate;
   const int rate = 1000000 / interval;
-  const int biasSamples = 3 * rate;
+  const int biasSamples = 8 * rate;
   const auto internalFilter = FILTER_PT1;
   const auto internalCutoff = std::max((rate + 4) / 8, 1);
 
@@ -107,16 +109,47 @@ void BaroSensor::readTemperature()
 void BaroSensor::readPressure()
 {
   float press = _model.state.baro.pressureRaw = _baro->readPressure();
-  // press = _pressureMedianFilter.update(press);
+  if(!std::isfinite(press) || press < 10000.f || press > 130000.f)
+  {
+    // Keep last valid value if driver returned invalid pressure.
+    press = _model.state.baro.pressure;
+  }
+
+  // Reject isolated I2C/baro glitches that still fall into a broad valid range.
+  if(_hasLastPressure)
+  {
+    static constexpr float PRESSURE_STEP_MAX_PA = 80.f;
+    if(std::fabs(press - _lastPressureValid) > PRESSURE_STEP_MAX_PA)
+    {
+      press = _lastPressureValid;
+    }
+  }
+
+  press = _pressureMedianFilter.update(press);
   _model.state.baro.pressure = _pressureFilter.update(press);
+  _lastPressureValid = _model.state.baro.pressure;
+  _hasLastPressure = true;
 }
 
 void BaroSensor::updateAltitude()
 {
   Espfc::BaroState& baro = _model.state.baro;
 
+  if(!std::isfinite(baro.pressure) || baro.pressure < 10000.f || baro.pressure > 130000.f)
+  {
+    return;
+  }
+
   baro.altitudeRaw = Utils::toAltitude(baro.pressure);
+  if(!std::isfinite(baro.altitudeRaw))
+  {
+    return;
+  }
   baro.altitude = _altitudeFilter.update(baro.altitudeRaw);
+  if(!std::isfinite(baro.altitude))
+  {
+    return;
+  }
 
   if (baro.altitudeBiasSamples > 0)
   {
@@ -130,9 +163,26 @@ void BaroSensor::updateAltitude()
   }
 
   baro.altitudeGround = baro.altitude - baro.altitudeBias;
+  if(baro.altitudeBiasSamples > 0)
+  {
+    // Keep reported ground height calm while the startup bias is still converging.
+    baro.altitudeGround = 0.f;
+  }
+  if(!std::isfinite(baro.altitudeGround))
+  {
+    baro.altitudeGround = 0.f;
+  }
 
   const float varioAlt = baro.altitude;
   baro.vario = _varioFilter.update((varioAlt - baro.altitudePrev) * baro.rate);
+  if(baro.altitudeBiasSamples > 0)
+  {
+    baro.vario = 0.f;
+  }
+  if(!std::isfinite(baro.vario))
+  {
+    baro.vario = 0.f;
+  }
   baro.altitudePrev = varioAlt;
 
   if (_model.config.debug.mode == DEBUG_BARO)

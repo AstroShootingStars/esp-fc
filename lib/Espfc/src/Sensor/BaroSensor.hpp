@@ -39,6 +39,8 @@ private:
   Utils::Filter _varioFilter;
   uint32_t _wait;
   int32_t _counter;
+  float _lastPressureValid;
+  bool _hasLastPressure;
 };
 
 } // namespace Espfc::Sensor

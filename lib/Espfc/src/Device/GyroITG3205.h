@@ -137,8 +137,20 @@ public:
   {
     uint8_t whoami = 0;
     uint8_t len = _bus->readByte(_addr, ITG3205_RA_WHO_AM_I, &whoami);
-    // ITG3205 WHO_AM_I usually reflects upper 7-bit address (0x68/0x69).
-    return len == 1 && (whoami == 0x68 || whoami == 0x69);
+    // ITG3205 WHO_AM_I values vary across modules/clones:
+    // - 7-bit address form: 0x68 / 0x69
+    // - shifted alias forms seen in some stacks: 0x34, 0xD0, 0xD2
+    // Accept these aliases to improve GY-85 compatibility.
+    if (len == 1 && (whoami == 0x68 || whoami == 0x69 || whoami == 0x34 || whoami == 0xD0 || whoami == 0xD2))
+    {
+      return true;
+    }
+
+    // Fallback for clones that report unexpected WHO_AM_I values:
+    // if gyro output registers are readable, treat device as present.
+    uint8_t raw[6] = {0};
+    int8_t rawLen = _bus->readFast(_addr, ITG3205_RA_GYRO_XOUT_H, 6, raw);
+    return rawLen == 6;
   }
 
 private:

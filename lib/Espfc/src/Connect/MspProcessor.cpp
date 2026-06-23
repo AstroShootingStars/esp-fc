@@ -216,15 +216,15 @@ static void writeMsp2Text(Espfc::Connect::MspResponse& r, uint8_t textType, cons
   r.writeData(safeText, (int)textLen);
 }
 
-static void readMsp2TextToModelName(Espfc::Connect::MspMessage& m, char* modelName)
+static void readMsp2TextToBuffer(Espfc::Connect::MspMessage& m, char* text)
 {
-  if(!modelName || m.remain() < 1) return;
+  if(!text || m.remain() < 1) return;
   const uint8_t textLen = m.readU8();
   const size_t copyLen = std::min<size_t>(textLen, Espfc::MODEL_NAME_LEN);
-  memset(modelName, 0, Espfc::MODEL_NAME_LEN + 1);
+  memset(text, 0, Espfc::MODEL_NAME_LEN + 1);
   for(size_t i = 0; i < copyLen && m.remain() > 0; i++)
   {
-    modelName[i] = (char)m.readU8();
+    text[i] = (char)m.readU8();
   }
   while(m.remain() > 0) m.readU8();
 }
@@ -318,13 +318,17 @@ static uint8_t toBfGyroHardware(uint8_t dev)
 {
   switch(dev)
   {
-    case Espfc::GYRO_NONE: return 0;
-    case Espfc::GYRO_AUTO: return 1;
+    // API 1.47 legacy sensor_types.js index order
+    case Espfc::GYRO_AUTO: return 0;
+    case Espfc::GYRO_NONE: return 1;
     case Espfc::GYRO_MPU6050: return 2;
     case Espfc::GYRO_MPU6000: return 4;
     case Espfc::GYRO_MPU6500: return 5;
     case Espfc::GYRO_MPU9250: return 6;
     case Espfc::GYRO_ICM20602: return 8;
+    case Espfc::GYRO_BMI160: return 14;
+    case Espfc::GYRO_LSM6DSO: return 16;
+    case Espfc::GYRO_ITG3205: return 23; // unsupported by BF list, expose as VIRTUAL
     default: return 1;
   }
 }
@@ -340,6 +344,63 @@ static uint8_t toBfAccelHardware(uint8_t dev)
     case Espfc::GYRO_MPU6500: return 4;
     case Espfc::GYRO_MPU9250: return 5;
     default: return 0;
+  }
+}
+
+static uint8_t toBfBaroHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case Espfc::BARO_DEFAULT: return 0;
+    case Espfc::BARO_NONE: return 1;
+    case Espfc::BARO_BMP085: return 2;
+    case Espfc::BARO_MS5611: return 3;
+    case Espfc::BARO_BMP280: return 4;
+    case Espfc::BARO_SPL06: return 8; // closest legacy BF entry is DPS310-class
+    default: return 0;
+  }
+}
+
+static uint8_t fromBfBaroHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case 0: return Espfc::BARO_DEFAULT;
+    case 1: return Espfc::BARO_NONE;
+    case 2: return Espfc::BARO_BMP085;
+    case 3: return Espfc::BARO_MS5611;
+    case 4: return Espfc::BARO_BMP280;
+    case 8: return Espfc::BARO_SPL06;
+    default: return Espfc::BARO_DEFAULT;
+  }
+}
+
+static uint8_t toBfMagHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case Espfc::MAG_DEFAULT: return 0;
+    case Espfc::MAG_NONE: return 1;
+    case Espfc::MAG_HMC5883L: return 2;
+    case Espfc::MAG_AK8975: return 3;
+    case Espfc::MAG_AK8963: return 4;
+    case Espfc::MAG_QMC5883L: return 5;
+    case Espfc::MAG_QMC5883P: return 5;
+    default: return 0;
+  }
+}
+
+static uint8_t fromBfMagHardware(uint8_t dev)
+{
+  switch(dev)
+  {
+    case 0: return Espfc::MAG_DEFAULT;
+    case 1: return Espfc::MAG_NONE;
+    case 2: return Espfc::MAG_HMC5883L;
+    case 3: return Espfc::MAG_AK8975;
+    case 4: return Espfc::MAG_AK8963;
+    case 5: return Espfc::MAG_QMC5883L;
+    default: return Espfc::MAG_DEFAULT;
   }
 }
 
@@ -385,6 +446,15 @@ static uint8_t fromBfOpticalFlowHardware(uint8_t dev)
     case 0: return Espfc::Device::OPFLOW_NONE;
     default: return Espfc::Device::OPFLOW_MSP;
   }
+}
+
+static uint8_t effectiveBfGyroHardware(const Espfc::Model& model)
+{
+  if(model.state.gyro.dev)
+  {
+    return toBfGyroHardware((uint8_t)model.state.gyro.dev->getType());
+  }
+  return toBfGyroHardware((uint8_t)model.config.gyro.dev);
 }
 
 static char toUpperAscii(char c)
@@ -468,8 +538,29 @@ static uint8_t fromGyroDlpf(uint8_t t)
 {
   switch(t) {
     case Espfc::GYRO_DLPF_256: return 0;
-    case Espfc::GYRO_DLPF_EX: return 1;
-    default: return 2;
+    case Espfc::GYRO_DLPF_188: return 1;
+    case Espfc::GYRO_DLPF_98: return 2;
+    case Espfc::GYRO_DLPF_42: return 3;
+    case Espfc::GYRO_DLPF_20: return 4;
+    case Espfc::GYRO_DLPF_10: return 5;
+    case Espfc::GYRO_DLPF_5: return 6;
+    case Espfc::GYRO_DLPF_EX: return 7;
+    default: return 0;
+  }
+}
+
+static uint8_t toGyroDlpf(uint8_t t)
+{
+  switch(t) {
+    case 0: return Espfc::GYRO_DLPF_256;
+    case 1: return Espfc::GYRO_DLPF_188;
+    case 2: return Espfc::GYRO_DLPF_98;
+    case 3: return Espfc::GYRO_DLPF_42;
+    case 4: return Espfc::GYRO_DLPF_20;
+    case 5: return Espfc::GYRO_DLPF_10;
+    case 6: return Espfc::GYRO_DLPF_5;
+    case 7: return Espfc::GYRO_DLPF_EX;
+    default: return Espfc::GYRO_DLPF_256;
   }
 }
 
@@ -601,34 +692,41 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       {
         const uint16_t loopTimeUs = deriveLoopTimeUs(_model);
         r.writeU16(loopTimeUs);
-      }
-      r.writeU16(_model.state.i2cErrorCount); // i2c error count
-      //         acc,     baro,    mag,     gps,     sonar,   gyro
-      r.writeU16(_model.accelActive() | _model.baroActive() << 1 | _model.magActive() << 2 | _model.gpsActive() << 3 | 0 << 4 | _model.gyroActive() << 5);
-      r.writeU32(_model.state.mode.mask); // flight mode flags
-      r.writeU8(0); // pid profile
-      r.writeU16(lrintf(_model.state.stats.getCpuLoad()));
-      if (m.cmd == MSP_STATUS_EX) {
-        r.writeU8(RATE_PROFILE_COUNT); // max profile count
-        r.writeU8(_model.config.activeRateProfile); // current rate profile index
-      } else {  // MSP_STATUS
-        // Report actual gyro cycle time (us). Some configurator builds use this
-        // to derive and display gyro update frequency.
-        uint16_t gyroCycleUs = _model.state.gyro.timer.interval;
-        if(gyroCycleUs == 0) gyroCycleUs = _model.state.loopTimer.interval;
-        if(gyroCycleUs == 0 && _model.state.gyro.rate > 0) gyroCycleUs = (uint16_t)(1000000ul / (uint32_t)_model.state.gyro.rate);
-        if(gyroCycleUs == 0) gyroCycleUs = deriveLoopTimeUs(_model);
-        r.writeU16(gyroCycleUs);
-        r.writeU8(_model.state.gyro.present ? 1 : 0); // detected gyro type (required by BF configurator)
-      }
+        r.writeU16(_model.state.i2cErrorCount); // i2c error count
+        // Report runtime-active sensors for status icons.
+        const uint16_t sensorMask =
+          ((_model.accelActive() || _model.config.accel.dev != GYRO_NONE) ? 1 : 0) |
+          (((_model.baroActive()) ? 1 : 0) << 1) |
+          (((_model.magActive() || _model.config.mag.dev != MAG_NONE) ? 1 : 0) << 2) |
+          (((_model.gpsActive()) ? 1 : 0) << 3) |
+          ((0) << 4) |
+          (((_model.gyroActive()) ? 1 : 0) << 5);
+        r.writeU16(sensorMask);
+        r.writeU32(_model.state.mode.mask); // flight mode flags
+        r.writeU8(0); // pid profile
+        r.writeU16(lrintf(_model.state.stats.getCpuLoad()));
+        if (m.cmd == MSP_STATUS_EX) {
+          r.writeU8(RATE_PROFILE_COUNT); // max profile count
+          r.writeU8(_model.config.activeRateProfile); // current rate profile index
+        } else {  // MSP_STATUS
+          // Report actual gyro cycle time (us). Some configurator builds use this
+          // to derive and display gyro update frequency.
+          uint16_t gyroCycleUs = _model.state.gyro.timer.interval;
+          if(gyroCycleUs == 0) gyroCycleUs = _model.state.loopTimer.interval;
+          if(gyroCycleUs == 0 && _model.state.gyro.rate > 0) gyroCycleUs = (uint16_t)(1000000ul / (uint32_t)_model.state.gyro.rate);
+          if(gyroCycleUs == 0) gyroCycleUs = deriveLoopTimeUs(_model);
+          r.writeU16(gyroCycleUs);
+          r.writeU8(_model.state.gyro.present ? 1 : 0); // detected gyro type (required by BF configurator)
+        }
 
-      // flight mode flags (above 32 bits)
-      r.writeU8(0); // count
+        // flight mode flags (above 32 bits)
+        r.writeU8(0); // count
 
-      // Write arming disable flags
-      r.writeU8(ARMING_DISABLED_FLAGS_COUNT);  // 1 byte, flag count
-      r.writeU32(_model.state.mode.armingDisabledFlags);  // 4 bytes, flags
-      r.writeU8(0); // reboot required
+        // Write arming disable flags
+        r.writeU8(ARMING_DISABLED_FLAGS_COUNT);  // 1 byte, flag count
+        r.writeU32(_model.state.mode.armingDisabledFlags);  // 4 bytes, flags
+        r.writeU8(0); // reboot required
+      }
       break;
 
     case MSP_LOOP_TIME:
@@ -666,8 +764,9 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         switch(textType)
         {
           case MSP2TEXT_PILOT_NAME:
+            writeMsp2Text(r, textType, _model.config.pilotName);
+            break;
           case MSP2TEXT_CRAFT_NAME:
-            // esp-fc stores one persisted model name; mirror it for pilot/craft text requests.
             writeMsp2Text(r, textType, _model.config.modelName);
             break;
           default:
@@ -696,8 +795,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         switch(textType)
         {
           case MSP2TEXT_PILOT_NAME:
+            readMsp2TextToBuffer(m, _model.config.pilotName);
+            break;
           case MSP2TEXT_CRAFT_NAME:
-            readMsp2TextToModelName(m, _model.config.modelName);
+            readMsp2TextToBuffer(m, _model.config.modelName);
             break;
           default:
             r.result = 0;
@@ -960,18 +1061,18 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_SENSOR_CONFIG:
       r.writeU8(toBfAccelHardware(_model.config.accel.dev));
-      r.writeU8(_model.config.baro.dev);  // baro enum is BF-compatible
-      r.writeU8(_model.config.mag.dev);   // 3 mag hmc5883l
+      r.writeU8(_model.state.baro.dev ? toBfBaroHardware((uint8_t)_model.state.baro.dev->getType()) : toBfBaroHardware((uint8_t)_model.config.baro.dev));
+      r.writeU8(_model.state.mag.dev ? toBfMagHardware((uint8_t)_model.state.mag.dev->getType()) : toBfMagHardware((uint8_t)_model.config.mag.dev));
       r.writeU8(toBfRangefinderHardware(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev));
       r.writeU8(toBfOpticalFlowHardware(_model.config.opticalFlow.dev));
       break;
 
     case MSP2_SENSOR_CONFIG_ACTIVE:
       // Report configured devices so UI sections stay visible even before runtime detection stabilizes.
-      r.writeU8(_model.config.gyro.dev == GYRO_NONE ? 0xFF : toBfGyroHardware(_model.config.gyro.dev));
+      r.writeU8(_model.gyroActive() ? effectiveBfGyroHardware(_model) : 0xFF);
       r.writeU8(_model.config.accel.dev == GYRO_NONE ? 0xFF : toBfAccelHardware(_model.config.accel.dev));
-      r.writeU8(_model.config.baro.dev == BARO_NONE ? 0xFF : (uint8_t)_model.config.baro.dev);
-      r.writeU8(_model.config.mag.dev == MAG_NONE ? 0xFF : (uint8_t)_model.config.mag.dev);
+      r.writeU8(_model.state.baro.dev ? toBfBaroHardware((uint8_t)_model.state.baro.dev->getType()) : (_model.config.baro.dev == BARO_NONE ? 0xFF : toBfBaroHardware((uint8_t)_model.config.baro.dev)));
+      r.writeU8(_model.state.mag.dev ? toBfMagHardware((uint8_t)_model.state.mag.dev->getType()) : (_model.config.mag.dev == MAG_NONE ? 0xFF : toBfMagHardware((uint8_t)_model.config.mag.dev)));
       r.writeU8(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev == Device::RANGEFINDER_NONE ? 0xFF : toBfRangefinderHardware(_model.config.rangefinder[RANGEFINDER_BOTTOM].dev));
       r.writeU8(_model.config.opticalFlow.dev == Device::OPFLOW_NONE ? 0xFF : toBfOpticalFlowHardware(_model.config.opticalFlow.dev));
       break;
@@ -979,15 +1080,35 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP2_GYRO_SENSOR_ACTIVE:
       // Keep one slot visible so configurator can render the active IMU section.
       r.writeU8(1);
-      r.writeU8(_model.config.gyro.dev == GYRO_NONE ? 0xFF : toBfGyroHardware(_model.config.gyro.dev));
+      // When unavailable, return DEFAULT (1) instead of 0xFF so Configurator
+      // filters the row out instead of showing a nameless toggle.
+      r.writeU8(_model.gyroActive() ? effectiveBfGyroHardware(_model) : 1);
       break;
 
     case MSP_SET_SENSOR_CONFIG:
       // Betaflight Configurator sends 5 fields: acc, baro, mag, rangefinder, optical flow.
       // Keep this layout for compatibility; consume any extra bytes defensively.
-      if(m.remain() >= 1) _model.config.accel.dev = fromBfAccelHardware(m.readU8());
-      if(m.remain() >= 1) _model.config.baro.dev = m.readU8();
-      if(m.remain() >= 1) _model.config.mag.dev = m.readU8();
+      if(m.remain() >= 1)
+      {
+        const uint8_t raw = m.readU8();
+        const uint8_t mapped = fromBfAccelHardware(raw);
+        // Guard against configurator enum drift: keep accel enabled unless disable was already intentional.
+        _model.config.accel.dev = (mapped == GYRO_NONE && _model.config.accel.dev != GYRO_NONE) ? GYRO_AUTO : mapped;
+      }
+      if(m.remain() >= 1)
+      {
+        const uint8_t raw = m.readU8();
+        const uint8_t mapped = fromBfBaroHardware(raw);
+        // Guard against configurator enum drift: keep baro enabled unless disable was already intentional.
+        _model.config.baro.dev = (mapped == BARO_NONE && _model.config.baro.dev != BARO_NONE) ? BARO_DEFAULT : mapped;
+      }
+      if(m.remain() >= 1)
+      {
+        const uint8_t raw = m.readU8();
+        const uint8_t mapped = fromBfMagHardware(raw);
+        // Guard against configurator enum drift: keep mag enabled unless disable was already intentional.
+        _model.config.mag.dev = (mapped == MAG_NONE && _model.config.mag.dev != MAG_NONE) ? MAG_DEFAULT : mapped;
+      }
       if(m.remain() >= 1) _model.config.rangefinder[RANGEFINDER_BOTTOM].dev = fromBfRangefinderHardware(m.readU8());
       if(m.remain() >= 1) _model.config.opticalFlow.dev = fromBfOpticalFlowHardware(m.readU8());
       while(m.remain() > 0) m.readU8();
@@ -998,11 +1119,13 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(_model.config.gyro.align); // gyro align
       r.writeU8(_model.config.gyro.align); // acc align, Starting with 4.0 gyro and acc alignment are the same
       r.writeU8(_model.config.mag.align);  // mag align
-      //1.41+
-      r.writeU8(_model.state.gyro.present ? 1 : 0); // gyro detection mask GYRO_1_MASK
-      r.writeU8(0); // gyro_to_use
-      r.writeU8(_model.config.gyro.align); // gyro 1
-      r.writeU8(0); // gyro 2
+      // API >= 1.47 format expected by Betaflight Configurator:
+      // gyro_detection_flags, gyro_enable_mask, mag_align_roll/pitch/yaw (decidegrees)
+      r.writeU8(_model.state.gyro.present ? 1 : 0); // DETECTED_GYRO_1 flag
+      r.writeU8(_model.config.gyro.dev == GYRO_NONE ? 0 : 1); // enable first gyro slot
+      r.writeU16(0); // mag custom roll (decidegrees)
+      r.writeU16(0); // mag custom pitch (decidegrees)
+      r.writeU16(0); // mag custom yaw (decidegrees)
       break;
 
     case MSP_SET_SENSOR_ALIGNMENT:
@@ -1010,8 +1133,17 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         uint8_t gyroAlign = m.readU8(); // gyro align
         m.readU8(); // discard deprecated acc align
         _model.config.mag.align = m.readU8(); // mag align
-        // API >= 1.41 - support the gyro_to_use and alignment for gyros 1 & 2
-        if(m.remain() >= 3)
+        // API >= 1.47 payload: gyro_enable_mask + mag custom roll/pitch/yaw
+        if(m.remain() >= 7)
+        {
+          uint8_t gyroEnableMask = m.readU8();
+          (void)gyroEnableMask;
+          m.readU16(); // mag custom roll (unsupported)
+          m.readU16(); // mag custom pitch (unsupported)
+          m.readU16(); // mag custom yaw (unsupported)
+        }
+        // Legacy payload: gyro_to_use + gyro1/gyro2 align
+        else if(m.remain() >= 3)
         {
           m.readU8(); // gyro_to_use
           gyroAlign = m.readU8(); // gyro 1 align
@@ -1265,7 +1397,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_ALTITUDE:
-      r.writeU32(lrintf(_model.state.altitude.height * 100.f));  // alt [cm]
+      // Prefer direct baro-ground altitude when baro is active for more responsive altitude telemetry.
+      r.writeU32(lrintf((_model.baroActive() ? _model.state.baro.altitudeGround : _model.state.altitude.height) * 100.f));  // alt [cm]
       r.writeU16(lrintf(_model.state.altitude.vario * 100.f));   // vario [cm/s]
       break;
 
@@ -1365,15 +1498,25 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_ARMING_CONFIG:
+    #if !defined(ESP32S2)
       r.writeU8(_model.config.arming.autoDisarmDelay); // auto_disarm delay
       r.writeU8(_model.config.arming.disarmKillSwitch); // reserved in BF, persisted for compatibility
+    #else
+      r.writeU8(0); // auto_disarm delay not supported on ESP32S2
+      r.writeU8(0); // reserved in BF, persisted for compatibility
+    #endif
       r.writeU8(_model.config.arming.smallAngle); // small angle
       r.writeU8(_model.config.arming.gyroCalOnFirstArm); // gyro cal on first arm
       break;
 
     case MSP_SET_ARMING_CONFIG:
+    #if !defined(ESP32S2)
       if(m.remain() >= 1) _model.config.arming.autoDisarmDelay = m.readU8(); // auto_disarm delay
       if(m.remain() >= 1) _model.config.arming.disarmKillSwitch = m.readU8(); // reserved in BF
+    #else
+      if(m.remain() >= 1) m.readU8(); // consume auto_disarm delay for protocol compatibility
+      if(m.remain() >= 1) m.readU8(); // consume reserved byte for protocol compatibility
+    #endif
       if(m.remain() >= 1) _model.config.arming.smallAngle = std::min<uint8_t>(180, m.readU8()); // small angle
       if(m.remain() >= 1) _model.config.arming.gyroCalOnFirstArm = m.readU8() ? 1 : 0;
       _model.reload();
@@ -1832,7 +1975,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           _model.config.dterm.filter.type = (FilterType)m.readU8();
       }
       if (m.remain() >= 10) {
-        m.readU8(); // dlfp type
+        _model.config.gyro.dlpf = toGyroDlpf(m.readU8()); // gyro hardware dlpf type
         m.readU8(); // 32k dlfp type
         _model.config.gyro.filter.freq = m.readU16();
         _model.config.gyro.filter2.freq = m.readU16();

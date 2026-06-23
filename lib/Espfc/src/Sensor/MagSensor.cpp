@@ -7,6 +7,14 @@
 
 namespace Espfc::Sensor {
 
+static uint8_t effectiveMagAlign(const Model& model, const Device::MagDevice* mag)
+{
+  if(model.config.mag.align != ALIGN_DEFAULT) return model.config.mag.align;
+  if(model.state.gyro.dev && model.state.gyro.dev->getType() == GYRO_ITG3205 && mag && mag->getType() == MAG_HMC5883L) return ALIGN_CW270_DEG;
+  if(model.state.gyro.dev && model.state.gyro.dev->getType() == GYRO_MPU6050 && mag && mag->getType() == MAG_HMC5883L) return ALIGN_CW90_DEG;
+  return model.config.mag.align;
+}
+
 MagSensor::MagSensor(Model& model): _model(model) {}
 
 int MagSensor::begin()
@@ -58,7 +66,7 @@ int MagSensor::filter()
 
   _model.state.mag.adc = _mag->convert(_model.state.mag.raw);
 
-  align(_model.state.mag.adc, _model.config.mag.align);
+  align(_model.state.mag.adc, effectiveMagAlign(_model, _mag));
   _model.state.mag.adc = _model.state.boardAlignment.apply(_model.state.mag.adc);
 
   for (size_t i = 0; i < AXIS_COUNT_RPY; i++)
@@ -134,12 +142,9 @@ void MagSensor::applyCalibration()
   float maxRange = -1;
   for (int i = 0; i < AXIS_COUNT_RPY; i++)
   {
-    if (_model.state.mag.calibrationMin[i] > -EPSILON) return;
-    if (_model.state.mag.calibrationMax[i] < EPSILON) return;
-    if ((_model.state.mag.calibrationMax[i] - _model.state.mag.calibrationMin[i]) > maxRange)
-    {
-      maxRange = _model.state.mag.calibrationMax[i] - _model.state.mag.calibrationMin[i];
-    }
+    const float range = _model.state.mag.calibrationMax[i] - _model.state.mag.calibrationMin[i];
+    if (range < EPSILON) return; // axis did not move at all — incomplete calibration
+    if (range > maxRange) maxRange = range;
   }
 
   // probably incomplete data, must be positive

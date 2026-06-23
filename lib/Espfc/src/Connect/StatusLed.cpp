@@ -59,6 +59,22 @@ static void ws2812_init(int8_t pin)
 
 static void ws2812_write_pixel(uint8_t * buffer, const ws2812_pixel_t& pixel)
 {
+#if defined(ESPFC_LED_WS2812_ORDER_RGB) && (ESPFC_LED_WS2812_ORDER_RGB)
+  *buffer++ = bitpatterns[pixel.r >> 6 & 0x03];
+  *buffer++ = bitpatterns[pixel.r >> 4 & 0x03];
+  *buffer++ = bitpatterns[pixel.r >> 2 & 0x03];
+  *buffer++ = bitpatterns[pixel.r >> 0 & 0x03];
+
+  *buffer++ = bitpatterns[pixel.g >> 6 & 0x03];
+  *buffer++ = bitpatterns[pixel.g >> 4 & 0x03];
+  *buffer++ = bitpatterns[pixel.g >> 2 & 0x03];
+  *buffer++ = bitpatterns[pixel.g >> 0 & 0x03];
+
+  *buffer++ = bitpatterns[pixel.b >> 6 & 0x03];
+  *buffer++ = bitpatterns[pixel.b >> 4 & 0x03];
+  *buffer++ = bitpatterns[pixel.b >> 2 & 0x03];
+  *buffer++ = bitpatterns[pixel.b >> 0 & 0x03];
+#else
   *buffer++ = bitpatterns[pixel.g >> 6 & 0x03];
   *buffer++ = bitpatterns[pixel.g >> 4 & 0x03];
   *buffer++ = bitpatterns[pixel.g >> 2 & 0x03];
@@ -73,6 +89,7 @@ static void ws2812_write_pixel(uint8_t * buffer, const ws2812_pixel_t& pixel)
   *buffer++ = bitpatterns[pixel.b >> 4 & 0x03];
   *buffer++ = bitpatterns[pixel.b >> 2 & 0x03];
   *buffer++ = bitpatterns[pixel.b >> 0 & 0x03];
+#endif
 }
 
 static void ws2812_update(const ws2812_pixel_t * pixels)
@@ -87,7 +104,9 @@ static void ws2812_update(const ws2812_pixel_t * pixels)
   i2s_write(I2S_NUM, out_buffer, SIZE_BUFFER, &bytes_written, portMAX_DELAY);
 }
 
-static const ws2812_pixel_t PIXEL_ON[] = {{0x40, 0x40, 0x80}};
+static const ws2812_pixel_t PIXEL_BOOT[] = {{0x00, 0x80, 0x00}};   // red
+static const ws2812_pixel_t PIXEL_OK[] = {{0x80, 0x00, 0x00}};     // green
+static const ws2812_pixel_t PIXEL_ERROR[] = {{0x20, 0x80, 0x00}};  // orange (GRB: lower G, higher R)
 static const ws2812_pixel_t PIXEL_OFF[] = {{0, 0, 0}};
 
 #endif
@@ -96,6 +115,7 @@ namespace Espfc::Connect
 {
 
 static int LED_OFF_PATTERN[] = {0};
+static int LED_BOOT_PATTERN[] = {80, 80, 80, 300, 0};
 static int LED_OK_PATTERN[] = {100, 900, 0};
 static int LED_ERROR_PATTERN[] = {100, 100, 100, 100, 100, 1500, 0};
 static int LED_ON_PATTERN[] = {100, 0};
@@ -131,6 +151,10 @@ void StatusLed::setStatus(LedStatus newStatus, bool force)
 
   switch (_status)
   {
+    case LED_BOOT:
+      _pattern = LED_BOOT_PATTERN;
+      _state = HIGH;
+      break;
     case LED_OK:
       _pattern = LED_OK_PATTERN;
       break;
@@ -174,7 +198,30 @@ void StatusLed::update()
 void StatusLed::_write(uint8_t val)
 {
 #ifdef ESPFC_LED_WS2812
-  if(_type == LED_STRIP) ws2812_update(val ? PIXEL_ON : PIXEL_OFF);
+  if(_type == LED_STRIP)
+  {
+    if(!val)
+    {
+      ws2812_update(PIXEL_OFF);
+      return;
+    }
+
+    switch(_status)
+    {
+      case LED_BOOT:
+        ws2812_update(PIXEL_BOOT);
+        break;
+      case LED_ERROR:
+        ws2812_update(PIXEL_ERROR);
+        break;
+      case LED_ON:
+      case LED_OK:
+      default:
+        ws2812_update(PIXEL_OK);
+        break;
+    }
+    return;
+  }
   if(_type == LED_SIMPLE) digitalWrite(_pin, val ^ _invert);
 #else
   digitalWrite(_pin, val ^ _invert);

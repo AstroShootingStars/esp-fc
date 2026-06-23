@@ -146,34 +146,21 @@ public:
 
     bool isSpi = _bus->isSPI();
 
-    uint8_t userCtrl = MPU6050_I2C_MST_EN;
     if (isSpi)
     {
-      userCtrl |= MPU6050_I2C_IF_DIS;
-    }
-
-    if (true)
-    {
-      // reset I2C master
-      //_bus->writeByte(_addr, MPU6050_USER_CTRL, MPU6050_I2C_MST_RESET);
-
-      // enable I2C master mode, and disable I2C
+      // SPI: disable I2C slave interface and enable I2C master for aux sensors
+      uint8_t userCtrl = MPU6050_I2C_MST_EN | MPU6050_I2C_IF_DIS;
       res = _bus->writeByte(_addr, MPU6050_USER_CTRL, userCtrl);
-      // D("mpu6050:i2c_master_en", b, res);
-
-      // set the I2C bus speed to 400 kHz
       res = _bus->writeByte(_addr, MPU6050_I2C_MST_CTRL, MPU6050_I2C_MST_400);
-      // D("mpu6050:i2c_master_speed", b, res);
-
-      // set i2c master delay and enable for slave 0
       res = _bus->writeByte(_addr, MPU6050_I2C_SLV4_CTRL, MPU6050_I2C_MST_DLY_15);
       res = _bus->writeByte(_addr, MPU6050_I2C_MST_DELAY_CTRL, MPU6050_I2C_DELAY_ES_SHADOW | MPU6050_I2C_SLV0_DLY_EN);
     }
     else
     {
-      // enable I2C bypass mode
+      // I2C: enable bypass mode so auxiliary bus sensors (HMC5883L, BMP) are
+      // directly accessible on the main I2C bus. This is required for GY-87
+      // boards where those sensors are wired to MPU6050's ES_DA/ES_CL pins.
       res = _bus->writeByte(_addr, MPU6050_INT_PIN_CFG, MPU6050_I2C_BYPASS_EN);
-      // D("mpu6050:i2c_bypass", res);
     }
     delay(10);
 

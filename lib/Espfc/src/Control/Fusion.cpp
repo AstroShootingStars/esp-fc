@@ -304,7 +304,7 @@ void Fusion::lerpFusion()
 
 void Fusion::madgwickFusion()
 {
-  if(false && _model.magActive())
+  if(_model.magActive())
   {
     _madgwick.update(
       _model.state.attitude.rate.x, _model.state.attitude.rate.y, _model.state.attitude.rate.z,
@@ -325,7 +325,7 @@ void Fusion::madgwickFusion()
 
 void FAST_CODE_ATTR Fusion::mahonyFusion()
 {
-  if(false && _model.magActive())
+  if(_model.magActive())
   {
     _mahony.update(
       _model.state.attitude.rate.x, _model.state.attitude.rate.y, _model.state.attitude.rate.z,

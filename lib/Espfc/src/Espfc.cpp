@@ -1,6 +1,7 @@
 #include "Espfc.h"
 #include "Hal/Gpio.h"
 #include "Debug_Espfc.h"
+#include <Arduino.h>
 
 namespace Espfc {
 
@@ -19,7 +20,36 @@ int Espfc::load()
 
 int Espfc::begin()
 {
+#if defined(ESPFC_LED_PIN) && (ESPFC_LED_PIN >= 0)
+#if defined(ESPFC_LED_FORCE_DEFAULT) && (ESPFC_LED_FORCE_DEFAULT)
+  _model.config.pin[PIN_LED_BLINK] = ESPFC_LED_PIN;
+#if defined(ESPFC_LED_TYPE)
+  _model.config.led.type = ESPFC_LED_TYPE;
+#endif
+#else
+  if(_model.config.pin[PIN_LED_BLINK] < 0)
+  {
+    _model.config.pin[PIN_LED_BLINK] = ESPFC_LED_PIN;
+#if defined(ESPFC_LED_TYPE)
+    _model.config.led.type = ESPFC_LED_TYPE;
+#endif
+  }
+#endif
+#endif
+
   _model.state.led.begin(_model.config.pin[PIN_LED_BLINK], _model.config.led.type, _model.config.led.invert);
+
+  if(_model.config.led.type == Connect::LED_STRIP)
+  {
+    _model.state.led.setStatus(Connect::LED_BOOT, true);
+
+    // Short boot animation for RGB onboard LED while subsystems initialize.
+    for(size_t i = 0; i < 4; i++)
+    {
+      delay(80);
+      _model.state.led.update();
+    }
+  }
 
   _serial.begin();      // requires _model.load()
   //_model.logStorageResult();
@@ -32,6 +62,24 @@ int Espfc::begin()
   _controller.begin();
   _blackbox.begin();    // requires _serial.begin(), _actuator.begin()
   _buzzer.begin();
+
+  const bool gyroDetected = _model.state.gyro.present && _model.state.gyro.dev != nullptr;
+  const bool accelRequired = _model.config.accel.dev != GYRO_NONE;
+  const bool accelDetected = !accelRequired || _model.state.accel.present;
+  const bool baroRequired = _model.config.baro.dev != BARO_NONE;
+  const bool baroDetected = !baroRequired || _model.state.baro.present;
+  // LED readiness should reflect critical flight sensors only.
+  const bool bootSensorsDetected = gyroDetected && accelDetected;
+  if(_model.config.led.type == Connect::LED_STRIP || _model.config.led.type == Connect::LED_SIMPLE)
+  {
+    _model.state.led.setStatus(bootSensorsDetected ? Connect::LED_ON : Connect::LED_ERROR, true);
+  }
+
+  _model.logger.info()
+      .log(F("BOOT SENSORS g/a/b"))
+      .log((int)gyroDetected)
+      .log((int)accelDetected)
+      .logln((int)baroDetected);
 
   _model.state.buzzer.push(BUZZER_SYSTEM_INIT);
 
@@ -91,6 +139,39 @@ int FAST_CODE_ATTR Espfc::update(bool externalTrigger)
   _hardware.updateOled();
   _model.state.led.update();
   _model.state.stats.update();
+
+#if defined(ESPFC_STAB_DEBUG)
+  // WARNING: This prints text over the active serial stream.
+  // Do not enable while using Betaflight configurator over MSP on the same port.
+  static uint32_t stabilityCheckTs = 0;
+  const uint32_t nowStab = millis();
+  if(nowStab - stabilityCheckTs >= 100) // Every 100ms (10 Hz)
+  {
+    stabilityCheckTs = nowStab;
+
+    const float rpyScale = 57.2957795f;
+    const float yawDeg = _model.state.attitude.euler.z * rpyScale;
+    const float pitchDeg = _model.state.attitude.euler.y * rpyScale;
+    const float rollDeg = _model.state.attitude.euler.x * rpyScale;
+
+    const float gyroX = _model.state.gyro.adc.x;
+    const float gyroY = _model.state.gyro.adc.y;
+    const float gyroZ = _model.state.gyro.adc.z;
+    const float gyroNorm = sqrtf(gyroX * gyroX + gyroY * gyroY + gyroZ * gyroZ);
+
+    // Emit only at rest/slow movement.
+    if(gyroNorm < 300.f)
+    {
+      D("STAB",
+        "yaw", yawDeg,
+        "pitch", pitchDeg,
+        "roll", rollDeg,
+        "alt", _model.state.baro.altitudeGround,
+        "gnorm", gyroNorm
+      );
+    }
+  }
+#endif
 
   return 1;
 }

@@ -6,6 +6,13 @@ namespace Espfc::Sensor {
 static constexpr float ESPFC_FUZZY_ACCEL_ZERO = 0.05f;
 static constexpr float ESPFC_FUZZY_GYRO_ZERO = 0.20f;
 
+static uint8_t effectiveGyroAlign(const Model& model, const Device::GyroDevice* gyro)
+{
+  if(model.config.gyro.align != ALIGN_DEFAULT) return model.config.gyro.align;
+  if(gyro && gyro->getType() == GYRO_ITG3205) return ALIGN_CW270_DEG;
+  return model.config.gyro.align;
+}
+
 AccelSensor::AccelSensor(Model& model): _model(model) {}
 
 int AccelSensor::begin()
@@ -70,7 +77,7 @@ int FAST_CODE_ATTR AccelSensor::filter()
 
   _model.state.accel.adc = (VectorFloat)_model.state.accel.raw * _model.state.accel.scale;
 
-  align(_model.state.accel.adc, _model.config.gyro.align);
+  align(_model.state.accel.adc, effectiveGyroAlign(_model, _gyro));
   _model.state.accel.adc = _model.state.boardAlignment.apply(_model.state.accel.adc);
 
   for (size_t i = 0; i < AXIS_COUNT_RPY; i++)

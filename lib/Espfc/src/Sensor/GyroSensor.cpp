@@ -12,6 +12,13 @@ namespace Espfc::Sensor
 static constexpr float ESPFC_FUZZY_ACCEL_ZERO = 0.05f;
 static constexpr float ESPFC_FUZZY_GYRO_ZERO = 0.20f;
 
+static uint8_t effectiveGyroAlign(const Model& model, const Device::GyroDevice* gyro)
+{
+  if(model.config.gyro.align != ALIGN_DEFAULT) return model.config.gyro.align;
+  if(gyro && gyro->getType() == GYRO_ITG3205) return ALIGN_CW270_DEG;
+  return model.config.gyro.align;
+}
+
 GyroSensor::GyroSensor(Model &model) : _dyn_notch_denom(1), _model(model)
 {
 }
@@ -74,7 +81,7 @@ int FAST_CODE_ATTR GyroSensor::read()
   _gyro->readGyro(_model.state.gyro.raw);
 
   VectorFloat input = static_cast<VectorFloat>(_model.state.gyro.raw) * _model.state.gyro.scale;
-  align(input, _model.config.gyro.align);
+  align(input, effectiveGyroAlign(_model, _gyro));
   input = _model.state.boardAlignment.apply(input);
 
   if (_model.config.gyro.filter3.freq)

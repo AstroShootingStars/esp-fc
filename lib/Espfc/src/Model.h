@@ -397,6 +397,15 @@ class Model
         }
       }
 
+      // Prevent excessively slow attitude response on MPU6050 + HMC5883L modules
+      // (GY-87 style) when gyro hardware LPF is set too low.
+      if(state.gyro.dev && state.gyro.dev->getType() == GYRO_MPU6050 &&
+         state.mag.dev && state.mag.dev->getType() == MAG_HMC5883L &&
+         config.gyro.dlpf >= GYRO_DLPF_10)
+      {
+        config.gyro.dlpf = GYRO_DLPF_42;
+      }
+
       int loopSyncMax = 1;
       //if(config.mag.dev != MAG_NONE || config.baro.dev != BARO_NONE) loopSyncMax /= 2;
 
