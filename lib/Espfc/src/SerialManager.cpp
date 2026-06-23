@@ -33,7 +33,6 @@ SerialManager::SerialManager(Model& model, TelemetryManager& telemetry): _model(
 #endif
 {
   std::fill_n(_bfApiHandshakeState, SERIAL_UART_COUNT, 0);
-  std::fill_n(_bfApiHandshakeAnnounced, SERIAL_UART_COUNT, false);
 }
 
 int SerialManager::begin()
@@ -225,11 +224,6 @@ void SerialManager::processMsp(SerialPortState& ss)
     if(detectBetaflightApiRequest(byte, _current) && !consumed)
     {
       sendBetaflightApiVersion(*ss.stream);
-      if(!_bfApiHandshakeAnnounced[_current])
-      {
-        sendBetaflightHandshakeMetadata(*ss.stream);
-        _bfApiHandshakeAnnounced[_current] = true;
-      }
       ss.mspRequest = Connect::MspMessage();
       ss.mspResponse = Connect::MspResponse();
       c++;
@@ -307,39 +301,6 @@ void SerialManager::sendBetaflightApiVersion(Device::SerialDevice& stream) const
   };
 
   stream.write(response, sizeof(response));
-}
-
-void SerialManager::sendBetaflightHandshakeMetadata(Device::SerialDevice& stream)
-{
-  Connect::MspMessage request;
-  Connect::MspResponse response;
-
-  request.version = Connect::MSP_V1;
-  request.dir = Connect::MSP_TYPE_CMD;
-
-  response.version = Connect::MSP_V1;
-
-  request.cmd = MSP_BOARD_INFO;
-  _msp.processCommand(request, response, stream);
-  _msp.sendResponse(response, stream);
-
-  response = Connect::MspResponse();
-  response.version = Connect::MSP_V1;
-  request.cmd = MSP_FC_VARIANT;
-  _msp.processCommand(request, response, stream);
-  _msp.sendResponse(response, stream);
-
-  response = Connect::MspResponse();
-  response.version = Connect::MSP_V1;
-  request.cmd = MSP_FC_VERSION;
-  _msp.processCommand(request, response, stream);
-  _msp.sendResponse(response, stream);
-
-  response = Connect::MspResponse();
-  response.version = Connect::MSP_V1;
-  request.cmd = MSP_BUILD_INFO;
-  _msp.processCommand(request, response, stream);
-  _msp.sendResponse(response, stream);
 }
 
 Device::SerialDevice * SerialManager::getSerialPortById(SerialPort portId)

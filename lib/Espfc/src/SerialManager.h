@@ -28,7 +28,6 @@ private:
   void processMsp(SerialPortState& ss);
   bool detectBetaflightApiRequest(uint8_t byte, size_t portIndex);
   void sendBetaflightApiVersion(Device::SerialDevice& stream) const;
-  void sendBetaflightHandshakeMetadata(Device::SerialDevice& stream);
 
   void next()
   {
@@ -39,7 +38,6 @@ private:
   Model& _model;
   size_t _current;
   uint8_t _bfApiHandshakeState[SERIAL_UART_COUNT];
-  bool _bfApiHandshakeAnnounced[SERIAL_UART_COUNT];
 
   Connect::MspProcessor _msp;
   Connect::OsdDisplayport _osd;
