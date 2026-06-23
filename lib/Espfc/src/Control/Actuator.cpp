@@ -113,6 +113,8 @@ int Actuator::update()
 void Actuator::updateAdjustments()
 {
   const uint32_t nowMs = millis();
+  const int16_t midRc = _model.config.input.midRc;
+  const auto& input = _model.state.input;
 
   for(size_t i = 0; i < ADJUSTMENT_RANGES_COUNT; i++)
   {
@@ -141,7 +143,7 @@ void Actuator::updateAdjustments()
 
     const uint16_t rangeStartUs = stepToUs(cfg.rangeStartStep);
     const uint16_t rangeEndUs = stepToUs(cfg.rangeEndStep);
-    const int16_t rangeValueUs = _model.state.input.us[rangeChannel];
+    const int16_t rangeValueUs = input.us[rangeChannel];
     if(!(rangeValueUs > (int16_t)rangeStartUs && rangeValueUs < (int16_t)rangeEndUs))
     {
       if(cfg.stateIndex < 4 && cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_SLIDER_MASTER_MULTIPLIER)
@@ -152,15 +154,14 @@ void Actuator::updateAdjustments()
       continue;
     }
 
-    const int16_t adjustValueUs = _model.state.input.us[adjustChannel];
-    const int16_t mid = _model.config.input.midRc;
-    const int8_t position = adjustValueUs > mid + 200 ? 1 : (adjustValueUs < mid - 200 ? -1 : 0);
+    const int16_t adjustValueUs = input.us[adjustChannel];
+    const int8_t position = adjustValueUs > midRc + 200 ? 1 : (adjustValueUs < midRc - 200 ? -1 : 0);
 
     bool changed = false;
     const bool absoluteMode = cfg.adjustmentCenter != 0 || cfg.adjustmentScale != 0;
     if(absoluteMode)
     {
-      changed = applyAdjustmentAbsolute(cfg.stateIndex, cfg.adjustmentFunction, _model.state.input.ch[adjustChannel], cfg.adjustmentCenter, cfg.adjustmentScale);
+      changed = applyAdjustmentAbsolute(cfg.stateIndex, cfg.adjustmentFunction, input.ch[adjustChannel], cfg.adjustmentCenter, cfg.adjustmentScale);
       _adjustmentPosition[i] = position;
     }
     else if(cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_OSD_PROFILE || cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_LED_PROFILE || cfg.adjustmentFunction == ADJUSTMENT_FUNCTION_RATE_PROFILE)

@@ -104,6 +104,7 @@ class BatteryState
     float currentUnfiltered;
     float cellVoltage;
     float percentage;
+    uint32_t consumedMah = 0;
     int8_t cells;
     int8_t samples;
     Utils::Timer timer;

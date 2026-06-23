@@ -24,21 +24,23 @@ int Controller::begin()
 
 int FAST_CODE_ATTR Controller::update()
 {
+  auto& state = _model.state;
+
   if(_model.state.tuningUpdatePending)
   {
     refreshRuntimeTunings();
-    _model.state.tuningUpdatePending = false;
+    state.tuningUpdatePending = false;
   }
 
   uint32_t startTime = 0;
   if (_model.config.debug.mode == DEBUG_PIDLOOP)
   {
     startTime = micros();
-    _model.state.debug[0] = startTime - _model.state.loopTimer.last;
+    state.debug[0] = startTime - state.loopTimer.last;
   }
 
   {
-    Utils::Stats::Measure(_model.state.stats, COUNTER_OUTER_PID);
+    Utils::Stats::Measure(state.stats, COUNTER_OUTER_PID);
     resetIterm();
     switch (_model.config.mixer.type)
     {
@@ -49,7 +51,7 @@ int FAST_CODE_ATTR Controller::update()
   }
 
   {
-    Utils::Stats::Measure(_model.state.stats, COUNTER_INNER_PID);
+    Utils::Stats::Measure(state.stats, COUNTER_INNER_PID);
     switch (_model.config.mixer.type)
     {
       case FC_MIXER_GIMBAL: innerLoopRobot(); break;
@@ -62,25 +64,20 @@ int FAST_CODE_ATTR Controller::update()
 
   // Update obstacle avoidance and apply corrections
   _obstacleAvoidance.update();
-  if(_model.config.obstacleAvoidance.enabled && _model.state.obstacleAvoidance.active)
+  if(_model.config.obstacleAvoidance.enabled && state.obstacleAvoidance.active)
   {
-    // Apply throttle correction for slow down / stop modes
-    if(_model.config.obstacleAvoidance.avoidanceMode <= 1)
+    // Apply throttling in stop/slowdown and bypass modes.
+    const uint8_t mode = _model.config.obstacleAvoidance.avoidanceMode;
+    if(mode <= 2)
     {
       float correction = _obstacleAvoidance.getThrottleCorrection();
-      _model.state.output.ch[AXIS_THRUST] *= correction;
-    }
-    // For bypass mode, also reduce throttle to aid maneuvering
-    else if(_model.config.obstacleAvoidance.avoidanceMode == 2)
-    {
-      float correction = _obstacleAvoidance.getThrottleCorrection();
-      _model.state.output.ch[AXIS_THRUST] *= correction;
+      state.output.ch[AXIS_THRUST] *= correction;
     }
   }
 
   if (_model.config.debug.mode == DEBUG_PIDLOOP)
   {
-    _model.state.debug[2] = micros() - startTime;
+    state.debug[2] = micros() - startTime;
   }
 
   return 1;
@@ -110,6 +107,7 @@ void Controller::refreshRuntimeTunings()
 void FAST_CODE_ATTR Controller::applyLandingAssist()
 {
   const auto& lac = _model.config.landingAssist;
+  auto& state = _model.state;
   if(!lac.enabled)
   {
     _landingTouchdownPending = false;
@@ -124,8 +122,8 @@ void FAST_CODE_ATTR Controller::applyLandingAssist()
     return;
   }
 
-  const bool lowThrottleIntent = _model.state.input.us[AXIS_THRUST] <= (_model.config.input.minCheck + lac.throttleIntentMargin);
-  const bool failsafeLandingIntent = _model.state.failsafe.phase == FC_FAILSAFE_LANDING;
+  const bool lowThrottleIntent = state.input.us[AXIS_THRUST] <= (_model.config.input.minCheck + lac.throttleIntentMargin);
+  const bool failsafeLandingIntent = state.failsafe.phase == FC_FAILSAFE_LANDING;
   const bool landingIntent = lowThrottleIntent || failsafeLandingIntent;
 
   if(!landingIntent)
@@ -135,17 +133,19 @@ void FAST_CODE_ATTR Controller::applyLandingAssist()
     return;
   }
 
+  float& thrustOut = state.output.ch[AXIS_THRUST];
+
   // Smooth descent limiter from barometer to avoid hard drop near touchdown.
   if(_model.baroActive())
   {
     const float descentRateLimit = lac.descentRateLimitCms * 0.01f;
-    const float vario = _model.state.altitude.vario;
+    const float vario = state.altitude.vario;
     if(vario < descentRateLimit)
     {
       const float gain = std::clamp((float)lac.descentCorrectivePermille * 0.001f, 0.0f, 1.0f);
       const float maxCorr = std::clamp((float)lac.descentCorrectiveMaxPermille * 0.001f, 0.0f, 1.0f);
       const float corrective = std::clamp((descentRateLimit - vario) * gain, 0.0f, maxCorr);
-      _model.state.output.ch[AXIS_THRUST] = std::clamp(_model.state.output.ch[AXIS_THRUST] + corrective, -1.0f, 1.0f);
+      thrustOut = std::clamp(thrustOut + corrective, -1.0f, 1.0f);
     }
   }
 
@@ -154,20 +154,23 @@ void FAST_CODE_ATTR Controller::applyLandingAssist()
   bool flowTouchdown = false;
   bool handTouchdown = false;
 
+  const bool gpsActive = _model.gpsActive();
+  const bool flowActive = _model.opticalFlowActive();
+
   if(_model.baroActive())
   {
     const float hThr = lac.baroHeightThresholdCm * 0.01f;
     const float vThr = lac.baroVarioThresholdCms * 0.01f;
-    baroTouchdown = std::fabs(_model.state.altitude.height) < hThr && std::fabs(_model.state.altitude.vario) < vThr;
+    baroTouchdown = std::fabs(state.altitude.height) < hThr && std::fabs(state.altitude.vario) < vThr;
   }
 
-  if(_model.gpsActive() && _model.state.gps.fix && _model.state.gps.numSats >= _model.config.gps.minSats)
+  if(gpsActive && state.gps.fix && state.gps.numSats >= _model.config.gps.minSats)
   {
-    gpsTouchdown = std::abs(_model.state.gps.velocity.raw.down) < lac.gpsDownThresholdMms
-      && std::abs(_model.state.gps.velocity.raw.groundSpeed) < lac.gpsGroundThresholdMms;
+    gpsTouchdown = std::abs(state.gps.velocity.raw.down) < lac.gpsDownThresholdMms
+      && std::abs(state.gps.velocity.raw.groundSpeed) < lac.gpsGroundThresholdMms;
   }
 
-  if(_model.opticalFlowActive())
+  if(flowActive)
   {
     const float flowThr = std::max(0.0f, (float)lac.flowRateThresholdMrad * 0.001f);
     const float flowHandThr = std::max(0.0f, (float)lac.flowRateHandThresholdMrad * 0.001f);
@@ -175,21 +178,21 @@ void FAST_CODE_ATTR Controller::applyLandingAssist()
     const float handMinH = std::max(0.0f, (float)lac.handHeightMinCm * 0.01f);
     const float handMaxH = std::max(handMinH, (float)lac.handHeightMaxCm * 0.01f);
 
-    flowTouchdown = _model.state.opticalFlow.quality >= lac.flowQualityThreshold
-      && std::fabs(_model.state.opticalFlow.flowRateX) < flowThr
-      && std::fabs(_model.state.opticalFlow.flowRateY) < flowThr;
+    flowTouchdown = state.opticalFlow.quality >= lac.flowQualityThreshold
+      && std::fabs(state.opticalFlow.flowRateX) < flowThr
+      && std::fabs(state.opticalFlow.flowRateY) < flowThr;
 
-    handTouchdown = _model.state.opticalFlow.quality >= lac.flowHandQualityThreshold
-      && std::fabs(_model.state.opticalFlow.flowRateX) < flowHandThr
-      && std::fabs(_model.state.opticalFlow.flowRateY) < flowHandThr
-      && std::fabs(_model.state.altitude.vario) < handVarioThr
-      && _model.state.altitude.height > handMinH
-      && _model.state.altitude.height < handMaxH;
+    handTouchdown = state.opticalFlow.quality >= lac.flowHandQualityThreshold
+      && std::fabs(state.opticalFlow.flowRateX) < flowHandThr
+      && std::fabs(state.opticalFlow.flowRateY) < flowHandThr
+      && std::fabs(state.altitude.vario) < handVarioThr
+      && state.altitude.height > handMinH
+      && state.altitude.height < handMaxH;
   }
 
   const int touchdownVotes = (baroTouchdown ? 1 : 0) + (gpsTouchdown ? 1 : 0) + (flowTouchdown ? 1 : 0);
   const bool multiSensorTouchdown = touchdownVotes >= 2;
-  const bool singleSensorFallback = baroTouchdown && !_model.gpsActive() && !_model.opticalFlowActive();
+  const bool singleSensorFallback = baroTouchdown && !gpsActive && !flowActive;
   const bool touchdownDetected = handTouchdown || multiSensorTouchdown || singleSensorFallback;
 
   const uint32_t nowMs = millis();
@@ -203,7 +206,7 @@ void FAST_CODE_ATTR Controller::applyLandingAssist()
 
     // Ramp down thrust smoothly while touchdown is confirmed.
     const float ramp = std::clamp((float)lac.touchdownRampPermille * 0.001f, 0.0f, 1.0f);
-    _model.state.output.ch[AXIS_THRUST] = std::max(_model.state.output.ch[AXIS_THRUST] - ramp, -1.0f);
+    thrustOut = std::max(thrustOut - ramp, -1.0f);
 
     if(nowMs - _landingTouchdownStartMs > (uint32_t)std::max(0, (int)lac.touchdownHoldMs))
     {
@@ -223,18 +226,10 @@ void Controller::outerLoopRobot()
   const float gyroScale = 0.1f;
   const float speed = _speedFilter.update(_model.state.output.ch[AXIS_PITCH] * speedScale +
                                           _model.state.gyro.adc[AXIS_PITCH] * gyroScale);
-  float angle = 0;
   const auto& input = _model.state.input;
   const auto& levelConf = _model.config.level;
-
-  if (true || _model.isModeActive(MODE_ANGLE))
-  {
-    angle = input.ch[AXIS_PITCH] * Utils::toRad(levelConf.angleLimit);
-  }
-  else
-  {
-    angle = _model.state.outerPid[AXIS_PITCH].update(input.ch[AXIS_PITCH], speed) * Utils::toRad(levelConf.rateLimit);
-  }
+  const float angleLimitRad = Utils::toRad(levelConf.angleLimit);
+  const float angle = input.ch[AXIS_PITCH] * angleLimitRad;
   _model.state.setpoint.angle.set(AXIS_PITCH, angle);
   _model.state.setpoint.rate[AXIS_YAW] = input.ch[AXIS_YAW] * Utils::toRad(levelConf.rateLimit);
 
@@ -258,7 +253,8 @@ void Controller::innerLoopRobot()
   auto& innerPid = _model.state.innerPid;
 
   const float angle = std::max(abs(attitude.euler[AXIS_PITCH]), abs(attitude.euler[AXIS_ROLL]));
-  const bool stabilize = angle < Utils::toRad(_model.config.level.angleLimit);
+  const float angleLimitRad = Utils::toRad(_model.config.level.angleLimit);
+  const bool stabilize = angle < angleLimitRad;
   if (stabilize)
   {
     output.ch[AXIS_PITCH] = innerPid[AXIS_PITCH].update(setpoint.angle[AXIS_PITCH], attitude.euler[AXIS_PITCH]);
@@ -280,56 +276,67 @@ void Controller::innerLoopRobot()
 
 void FAST_CODE_ATTR Controller::outerLoop()
 {
+  auto& state = _model.state;
+  const auto& input = state.input;
+
   const float ffFloor = 1.0f - (_model.config.dterm.feedForwardTransition * 0.01f);
   auto updateFeedforwardFactor = [&](size_t axis, float stickInput, bool enabled) {
     const float stick = std::clamp(std::fabs(stickInput), 0.0f, 1.0f);
-    _model.state.innerPid[axis].ffTransitionFactor = enabled ? std::max(stick, ffFloor) : 0.0f;
+    state.innerPid[axis].ffTransitionFactor = enabled ? std::max(stick, ffFloor) : 0.0f;
   };
 
+  const float angleLimitRad = Utils::toRad(_model.config.level.angleLimit);
+  const float horizonStrength = _model.config.level.horizonStrength * 0.01f;
+  const bool angleMode = _model.isModeActive(MODE_ANGLE);
+  const bool horizonMode = _model.isModeActive(MODE_HORIZON);
+
   // Roll/Pitch rates control
-  if (_model.isModeActive(MODE_ANGLE))
+  if (angleMode)
   {
     for (size_t i = 0; i < AXIS_COUNT_RP; i++)
     {
-      const float angleSetpoint = Utils::toRad(_model.config.level.angleLimit) * _model.state.input.ch[i];
-      _model.state.setpoint.rate[i] = _model.state.outerPid[i].update(angleSetpoint, _model.state.attitude.euler[i]);
-      updateFeedforwardFactor(i, _model.state.input.ch[i], false);
+      const float stickInput = input.ch[i];
+      const float angleSetpoint = angleLimitRad * stickInput;
+      state.setpoint.rate[i] = state.outerPid[i].update(angleSetpoint, state.attitude.euler[i]);
+      updateFeedforwardFactor(i, stickInput, false);
     }
   }
-  else if (_model.isModeActive(MODE_HORIZON))
+  else if (horizonMode)
   {
     for (size_t i = 0; i < AXIS_COUNT_RP; i++)
     {
-      const float angleSetpoint = Utils::toRad(_model.config.level.angleLimit) * _model.state.input.ch[i];
-      const float angleRate = _model.state.outerPid[i].update(angleSetpoint, _model.state.attitude.euler[i]);
-      const float acroRate = calculateSetpointRate(i, _model.state.input.ch[i]);
-      const float stick = std::fabs(_model.state.input.ch[i]);
-      const float angleWeight = std::clamp((1.f - std::clamp(stick, 0.f, 1.f)) * (_model.config.level.horizonStrength * 0.01f), 0.0f, 1.0f);
-      _model.state.setpoint.rate[i] = acroRate * (1.f - angleWeight) + angleRate * angleWeight;
-      updateFeedforwardFactor(i, _model.state.input.ch[i], true);
+      const float stickInput = input.ch[i];
+      const float angleSetpoint = angleLimitRad * stickInput;
+      const float angleRate = state.outerPid[i].update(angleSetpoint, state.attitude.euler[i]);
+      const float acroRate = calculateSetpointRate(i, stickInput);
+      const float stick = std::fabs(stickInput);
+      const float angleWeight = std::clamp((1.f - std::clamp(stick, 0.f, 1.f)) * horizonStrength, 0.0f, 1.0f);
+      state.setpoint.rate[i] = acroRate * (1.f - angleWeight) + angleRate * angleWeight;
+      updateFeedforwardFactor(i, stickInput, true);
     }
   }
   else
   {
     for (size_t i = 0; i < AXIS_COUNT_RP; i++)
     {
-      _model.state.setpoint.rate[i] = calculateSetpointRate(i, _model.state.input.ch[i]);
-      updateFeedforwardFactor(i, _model.state.input.ch[i], true);
+      const float stickInput = input.ch[i];
+      state.setpoint.rate[i] = calculateSetpointRate(i, stickInput);
+      updateFeedforwardFactor(i, stickInput, true);
     }
   }
 
   // Yaw rates control
-  _model.state.setpoint.rate[AXIS_YAW] = calculateSetpointRate(AXIS_YAW, _model.state.input.ch[AXIS_YAW]);
-  updateFeedforwardFactor(AXIS_YAW, _model.state.input.ch[AXIS_YAW], true);
+  state.setpoint.rate[AXIS_YAW] = calculateSetpointRate(AXIS_YAW, input.ch[AXIS_YAW]);
+  updateFeedforwardFactor(AXIS_YAW, input.ch[AXIS_YAW], true);
 
   // thrust control
   if (_model.isModeActive(MODE_ALTHOLD))
   {
-    _model.state.setpoint.rate[AXIS_THRUST] = calcualteAltHoldSetpoint();
+    state.setpoint.rate[AXIS_THRUST] = calcualteAltHoldSetpoint();
   }
   else
   {
-    _model.state.setpoint.rate[AXIS_THRUST] = _model.state.input.ch[AXIS_THRUST];
+    state.setpoint.rate[AXIS_THRUST] = input.ch[AXIS_THRUST];
   }
 
   // debug
@@ -337,7 +344,7 @@ void FAST_CODE_ATTR Controller::outerLoop()
   {
     for (size_t i = 0; i < AXIS_COUNT_RPY; ++i)
     {
-      _model.state.debug[i] = lrintf(Utils::toDeg(_model.state.setpoint.rate[i]));
+      state.debug[i] = lrintf(Utils::toDeg(state.setpoint.rate[i]));
     }
   }
 }

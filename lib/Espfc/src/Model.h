@@ -714,6 +714,71 @@ class Model
         }
       }
 
+      auto pinUsedByOtherFunction = [&](size_t idx, int8_t pin) -> bool {
+        if(pin < 0) return false;
+        for(size_t i = 0; i < PIN_COUNT; i++)
+        {
+          if(i == idx) continue;
+          if(config.pin[i] == pin) return true;
+        }
+        return false;
+      };
+
+      auto selectBatteryAdcPin = [&](size_t idx, int8_t preferred) -> int8_t {
+        if(preferred >= 0 && !otaUnsafePin(preferred) && !pinUsedByOtherFunction(idx, preferred))
+        {
+          return preferred;
+        }
+
+#if defined(ESP8266)
+        const int8_t candidates[] = {17};
+#elif defined(ESP32C3)
+        const int8_t candidates[] = {0, 1};
+#elif defined(ESP32S2)
+        const int8_t candidates[] = {1, 4};
+#elif defined(ESP32S3)
+        const int8_t candidates[] = {1, 4};
+#elif defined(ARCH_RP2040)
+        const int8_t candidates[] = {26, 27, 28};
+#elif defined(ESP32)
+        // Keep ESP32 on ADC1 pins to avoid ADC2/WiFi contention.
+        const int8_t candidates[] = {36, 39, 34, 35, 32, 33};
+#else
+        const int8_t candidates[] = {-1};
+#endif
+
+        for(size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++)
+        {
+          const int8_t pin = candidates[i];
+          if(pin < 0) continue;
+          if(otaUnsafePin(pin)) continue;
+          if(pinUsedByOtherFunction(idx, pin)) continue;
+          return pin;
+        }
+
+        return -1;
+      };
+
+#ifdef ESPFC_ADC_0
+      if(config.vbat.source == 1)
+      {
+        const int8_t fallback = defaultPinForFunction(PIN_INPUT_ADC_0);
+        config.pin[PIN_INPUT_ADC_0] = selectBatteryAdcPin(PIN_INPUT_ADC_0, fallback);
+        if(config.pin[PIN_INPUT_ADC_0] < 0) config.vbat.source = 0;
+      }
+#endif
+
+#ifdef ESPFC_ADC_1
+      if(config.ibat.source == 1)
+      {
+        const int8_t fallback = defaultPinForFunction(PIN_INPUT_ADC_1);
+        config.pin[PIN_INPUT_ADC_1] = selectBatteryAdcPin(PIN_INPUT_ADC_1, fallback);
+        if(config.pin[PIN_INPUT_ADC_1] < 0) config.ibat.source = 0;
+      }
+#else
+      config.ibat.source = 0;
+#endif
+
       if(config.oled.height != 0 && config.oled.height != 32 && config.oled.height != 64)
       {
         config.oled.height = 0;
@@ -748,6 +813,32 @@ class Model
         if(config.input.elrsUid[i] > 255) config.input.elrsUid[i] = 0;
       }
       config.input.elrsModelId = constrain(config.input.elrsModelId, 0, 255);
+      // power and battery config validation
+      config.vbat.source = constrain(config.vbat.source, 0, 1);
+      config.ibat.source = constrain(config.ibat.source, 0, 1);
+      config.vbat.scale = constrain(config.vbat.scale, 1, 250);
+      config.vbat.resDiv = constrain(config.vbat.resDiv, 1, 255);
+      config.vbat.resMult = constrain(config.vbat.resMult, 1, 255);
+      config.vbat.cellMin = constrain(config.vbat.cellMin, 100, 500);
+      config.vbat.cellMax = constrain(config.vbat.cellMax, 200, 500);
+      if(config.vbat.cellMin > config.vbat.cellMax) std::swap(config.vbat.cellMin, config.vbat.cellMax);
+      config.vbat.cellWarning = constrain(config.vbat.cellWarning, config.vbat.cellMin, config.vbat.cellMax);
+      config.vbat.capacity = constrain(config.vbat.capacity, (uint16_t)0, (uint16_t)65000);
+      config.ibat.scale = constrain(config.ibat.scale, (int16_t)-32000, (int16_t)32000);
+      config.ibat.offset = constrain(config.ibat.offset, (int16_t)-32000, (int16_t)32000);
+      // failsafe config validation
+      config.failsafe.delay = constrain(config.failsafe.delay, 0, 255);
+      config.failsafe.offDelay = constrain(config.failsafe.offDelay, 0, 255);
+      config.failsafe.throttle = constrain(config.failsafe.throttle, config.input.minRc, config.input.maxRc);
+      config.failsafe.killSwitch = constrain(config.failsafe.killSwitch, 0, 1);
+      config.failsafe.throttleLowDelay = constrain(config.failsafe.throttleLowDelay, 0, 1000);
+      config.failsafe.procedure = constrain(config.failsafe.procedure, 0, 2);
+      for(size_t i = 0; i < INPUT_CHANNELS; i++)
+      {
+        auto& ch = config.input.channel[i];
+        ch.fsMode = constrain(ch.fsMode, 0, 2); // auto, hold, set
+        ch.fsValue = constrain(ch.fsValue, config.input.minRc, config.input.maxRc);
+      }
       // mode range validation
       for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
       {

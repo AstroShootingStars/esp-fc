@@ -315,9 +315,19 @@ static uint16_t toVbatVoltage(float voltage)
   return constrain(lrintf(voltage * 100.0f), 0, 32000);
 }
 
-static uint16_t toIbatCurrent(float current)
+static int16_t toIbatCurrentSigned(float current)
 {
   return constrain(lrintf(current * 100.0f), -32000, 32000);
+}
+
+static uint16_t toIbatCurrent(float current)
+{
+  return (uint16_t)toIbatCurrentSigned(current);
+}
+
+static uint16_t toIbatCurrentMeterValue(float current)
+{
+  return constrain(lrintf(std::max(current, 0.0f) * 1000.0f), 0, 0xffff);
 }
 
 constexpr uint8_t MSP_PASSTHROUGH_ESC_4WAY = 0xff;
@@ -487,7 +497,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_ANALOG:
       r.writeU8(toVbatVoltageLegacy(_model.state.battery.voltage));  // voltage in 0.1V
-      r.writeU16(0); // mah drawn
+      r.writeU16(std::min<uint32_t>(_model.state.battery.consumedMah, (uint32_t)std::numeric_limits<uint16_t>::max())); // mah drawn
       r.writeU16(_model.getRssi()); // rssi
       r.writeU16(toIbatCurrent(_model.state.battery.current));  // amperage in 0.01A
       r.writeU16(toVbatVoltage(_model.state.battery.voltage));  // voltage in 0.01V
@@ -503,28 +513,28 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_BATTERY_CONFIG:
-      r.writeU8(34);  // vbatmincellvoltage
-      r.writeU8(42);  // vbatmaxcellvoltage
+      r.writeU8(std::clamp<int>(_model.config.vbat.cellMin / 10, 0, 255));  // vbatmincellvoltage
+      r.writeU8(std::clamp<int>(_model.config.vbat.cellMax / 10, 0, 255));  // vbatmaxcellvoltage
       r.writeU8((_model.config.vbat.cellWarning + 5) / 10);  // vbatwarningcellvoltage
-      r.writeU16(0); // batteryCapacity
+      r.writeU16(_model.config.vbat.capacity); // batteryCapacity
       r.writeU8(_model.config.vbat.source);  // voltageMeterSource
       r.writeU8(_model.config.ibat.source);  // currentMeterSource
-      r.writeU16(340); // vbatmincellvoltage
-      r.writeU16(420); // vbatmaxcellvoltage
+      r.writeU16(_model.config.vbat.cellMin); // vbatmincellvoltage
+      r.writeU16(_model.config.vbat.cellMax); // vbatmaxcellvoltage
       r.writeU16(_model.config.vbat.cellWarning); // vbatwarningcellvoltage
       break;
 
     case MSP_SET_BATTERY_CONFIG:
-      m.readU8();  // vbatmincellvoltage
-      m.readU8();  // vbatmaxcellvoltage
-      _model.config.vbat.cellWarning = m.readU8() * 10;  // vbatwarningcellvoltage
-      m.readU16(); // batteryCapacity
-      _model.config.vbat.source = toVbatSource(m.readU8());  // voltageMeterSource
-      _model.config.ibat.source = toIbatSource(m.readU8());  // currentMeterSource
+      if(m.remain() >= 1) _model.config.vbat.cellMin = m.readU8() * 10;  // vbatmincellvoltage (legacy)
+      if(m.remain() >= 1) _model.config.vbat.cellMax = m.readU8() * 10;  // vbatmaxcellvoltage (legacy)
+      if(m.remain() >= 1) _model.config.vbat.cellWarning = m.readU8() * 10;  // vbatwarningcellvoltage (legacy)
+      if(m.remain() >= 2) _model.config.vbat.capacity = m.readU16(); // batteryCapacity
+      if(m.remain() >= 1) _model.config.vbat.source = toVbatSource(m.readU8());  // voltageMeterSource
+      if(m.remain() >= 1) _model.config.ibat.source = toIbatSource(m.readU8());  // currentMeterSource
       if(m.remain() >= 6)
       {
-        m.readU16(); // vbatmincellvoltage
-        m.readU16(); // vbatmaxcellvoltage
+        _model.config.vbat.cellMin = m.readU16(); // vbatmincellvoltage
+        _model.config.vbat.cellMax = m.readU16(); // vbatmaxcellvoltage
         _model.config.vbat.cellWarning = m.readU16();
       }
       _model.reload();
@@ -533,11 +543,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_BATTERY_STATE:
       // battery characteristics
       r.writeU8(_model.state.battery.cells); // cell count, 0 indicates battery not detected.
-      r.writeU16(0); // capacity in mAh
+      r.writeU16(_model.config.vbat.capacity); // capacity in mAh
 
       // battery state
       r.writeU8(toVbatVoltageLegacy(_model.state.battery.voltage)); // in 0.1V steps
-      r.writeU16(0); // milliamp hours drawn from battery
+      r.writeU16(std::min<uint32_t>(_model.state.battery.consumedMah, (uint32_t)std::numeric_limits<uint16_t>::max())); // milliamp hours drawn from battery
       r.writeU16(toIbatCurrent(_model.state.battery.current)); // send current in 0.01 A steps, range is -320A to 320A
 
       // battery alerts
@@ -546,20 +556,14 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_VOLTAGE_METERS:
-      for(int i = 0; i < 1; i++)
-      {
-        r.writeU8(i + 10);  // meter id (10-19 vbat adc)
-        r.writeU8(toVbatVoltageLegacy(_model.state.battery.voltage));  // meter value
-      }
+      r.writeU8(10);  // meter id (10-19 vbat adc)
+      r.writeU8(toVbatVoltageLegacy(_model.state.battery.voltage));  // meter value
       break;
 
     case MSP_CURRENT_METERS:
-      for(int i = 0; i < 1; i++)
-      {
-        r.writeU8(i + 10);  // meter id (10-19 ibat adc)
-        r.writeU16(0); // mah drawn
-        r.writeU16(constrain(toIbatCurrent(_model.state.battery.current) * 10, 0, 0xffff));  // meter value
-      }
+      r.writeU8(10);  // meter id (10-19 ibat adc)
+      r.writeU16(std::min<uint32_t>(_model.state.battery.consumedMah, (uint32_t)std::numeric_limits<uint16_t>::max())); // mah drawn
+      r.writeU16(toIbatCurrentMeterValue(_model.state.battery.current));  // meter value (0.001A units, non-negative)
       break;
 
     case MSP_VOLTAGE_METER_CONFIG:
@@ -597,8 +601,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       if(m.remain() >= 1)
       {
         _model.config.ibat.source = toIbatSource(m.readU8());
-      _model.reload();
       }
+      _model.reload();
       break;
 
 
@@ -1263,17 +1267,17 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SET_FAILSAFE_CONFIG:
-      _model.config.failsafe.delay = m.readU8(); //failsafe_delay
-      _model.config.failsafe.offDelay = m.readU8(); //failsafe_off_delay
-      _model.config.failsafe.throttle = m.readU16(); //failsafe_throttle
-      _model.config.failsafe.killSwitch = m.readU8(); //failsafe_kill_switch
-      _model.config.failsafe.throttleLowDelay = m.readU16(); //failsafe_throttle_low_delay
-      _model.config.failsafe.procedure = m.readU8(); //failsafe_procedure
+      if(m.remain() >= 1) _model.config.failsafe.delay = m.readU8(); // failsafe_delay
+      if(m.remain() >= 1) _model.config.failsafe.offDelay = m.readU8(); // failsafe_off_delay
+      if(m.remain() >= 2) _model.config.failsafe.throttle = m.readU16(); // failsafe_throttle
+      if(m.remain() >= 1) _model.config.failsafe.killSwitch = m.readU8(); // failsafe_kill_switch
+      if(m.remain() >= 2) _model.config.failsafe.throttleLowDelay = m.readU16(); // failsafe_throttle_low_delay
+      if(m.remain() >= 1) _model.config.failsafe.procedure = m.readU8(); // failsafe_procedure
       _model.reload();
       break;
 
     case MSP_RXFAIL_CONFIG:
-      for (size_t i = 0; i < _model.state.input.channelCount; i++)
+      for(size_t i = 0; i < INPUT_CHANNELS; i++)
       {
         r.writeU8(_model.config.input.channel[i].fsMode);
         r.writeU16(_model.config.input.channel[i].fsValue);
@@ -1282,15 +1286,20 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_SET_RXFAIL_CONFIG:
       {
+        if(m.remain() < 4)
+        {
+          r.result = 0;
+          break;
+        }
         size_t i = m.readU8();
         if(i < INPUT_CHANNELS)
         {
-          _model.config.input.channel[i].fsMode = m.readU8(); // mode
-          _model.config.input.channel[i].fsValue = m.readU16(); // pulse
+          _model.config.input.channel[i].fsMode = std::clamp<int8_t>(m.readU8(), 0, 2); // mode: auto/hold/set
+          _model.config.input.channel[i].fsValue = std::clamp<int16_t>((int16_t)m.readU16(), _model.config.input.minRc, _model.config.input.maxRc); // pulse
         }
         else
         {
-          r.result = -1;
+          r.result = 0;
         }
         _model.reload();
       }
@@ -2329,6 +2338,16 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_SET_BOARD_INFO:
     case MSP_SET_NAV_CONFIG:
     case MSP_SET_RAW_GPS:
+      // Manual GPS injection (for testing/simulation)
+      if(m.remain() >= 1) _model.state.gps.fix = m.readU8() != 0;
+      if(m.remain() >= 1) _model.state.gps.numSats = m.readU8();
+      if(m.remain() >= 4) _model.state.gps.location.raw.lat = m.readU32();
+      if(m.remain() >= 4) _model.state.gps.location.raw.lon = m.readU32();
+      if(m.remain() >= 2) _model.state.gps.location.raw.height = (int32_t)m.readU16() * 1000;
+      if(m.remain() >= 2) _model.state.gps.velocity.raw.groundSpeed = m.readU16() * 10;
+      if(m.remain() >= 2) _model.state.gps.velocity.raw.heading = m.readU16() * 10000;
+      break;
+
     case MSP_SET_SIGNATURE:
     case MSP_SET_TRANSPONDER_CONFIG:
     case MSP_SET_WP:
@@ -2349,10 +2368,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       }
       for(size_t i = 0; i < LED_CONFIGURABLE_COLOR_COUNT; i++)
       {
-        _model.config.ledStrip.colors[i].h = m.readU16();
+        _model.config.ledStrip.colors[i].h = std::min<uint16_t>(m.readU16(), 359);
         _model.config.ledStrip.colors[i].s = m.readU8();
         _model.config.ledStrip.colors[i].v = m.readU8();
       }
+      _model.reload();
       break;
 
     case MSP_SET_LED_STRIP_CONFIG:
@@ -2371,6 +2391,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         _model.config.ledStrip.ledConfig[i] = m.readU32();
         if(m.remain() >= 1) _model.config.ledStrip.profile = m.readU8();
       }
+      _model.reload();
       break;
 
     case MSP_SET_LED_STRIP_MODECOLOR:
@@ -2383,14 +2404,14 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         uint8_t modeIdx = m.readU8();
         uint8_t modeColorIdx = m.readU8();
         uint8_t colorIdx = m.readU8();
-        if(colorIdx >= LED_CONFIGURABLE_COLOR_COUNT)
-        {
-          r.result = 0;
-          break;
-        }
         if(modeIdx < LED_MODE_COUNT)
         {
           if(modeColorIdx >= LED_DIRECTION_COUNT)
+          {
+            r.result = 0;
+            break;
+          }
+          if(colorIdx >= LED_CONFIGURABLE_COLOR_COUNT)
           {
             r.result = 0;
             break;
@@ -2400,6 +2421,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         else if(modeIdx == LED_SPECIAL_MODE_INDEX)
         {
           if(modeColorIdx >= LED_SPECIAL_COLOR_COUNT)
+          {
+            r.result = 0;
+            break;
+          }
+          if(colorIdx >= LED_CONFIGURABLE_COLOR_COUNT)
           {
             r.result = 0;
             break;
@@ -2418,6 +2444,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         else
           r.result = 0;
       }
+      if(r.result) _model.reload();
       break;
 
     case MSP_SET_VTXTABLE_BAND:
@@ -2588,6 +2615,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           _model.config.gps.setHomeOnce = m.readU8(); // gps_set_home_point_once
           m.readU8(); // gps_ublox_use_galileo
       }
+      _model.reload();
       break;
 
     case MSP_SET_GPS_RESCUE:
@@ -2606,6 +2634,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       if(m.remain() >= 1) _model.config.gpsRescue.altitudeMode = m.readU8();
       if(m.remain() >= 2) _model.config.gpsRescue.minStartDistM = m.readU16();
       if(m.remain() >= 2) _model.config.gpsRescue.initialClimbM = m.readU16();
+      _model.reload();
       break;
 
     case MSP_SET_GPS_RESCUE_PIDS:
@@ -2616,6 +2645,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       if(m.remain() >= 2) _model.config.gpsRescue.velI = m.readU16();
       if(m.remain() >= 2) _model.config.gpsRescue.velD = m.readU16();
       if(m.remain() >= 2) _model.config.gpsRescue.yawP = m.readU16();
+      _model.reload();
       break;
 
     case MSP_SET_TX_INFO:
@@ -2797,6 +2827,19 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_CAMERA_CONTROL:
     case MSP_GPSSTATISTICS:
+      // GPS accuracy statistics
+      r.writeU16(_model.state.gps.accuracy.pDop);           // pDOP x 100
+      r.writeU16(0);                                          // hdop (use pDOP proxy)
+      r.writeU16(0);                                          // vdop (use pDOP proxy)
+      r.writeU32(_model.state.gps.accuracy.horizontal);      // horizontal accuracy in mm
+      r.writeU32(_model.state.gps.accuracy.vertical);        // vertical accuracy in mm
+      r.writeU32(_model.state.gps.accuracy.speed);           // speed accuracy in mm/s
+      r.writeU32(_model.state.gps.accuracy.heading);         // heading accuracy in deg x 1e5
+      r.writeU32(_model.state.gps.lastMsgTs / 1000);         // lastMessageDt in ms
+      r.writeU8(_model.state.gps.numSats);                   // number of satellites used
+      r.writeU8(_model.state.gps.fixType);                   // fix type (0=no, 1=dead reck, 2=2D, 3=3D, 4=GNSS+DR, 5=time only)
+      break;
+
     case MSP_TRANSPONDER_CONFIG:
     case MSP_V2_FRAME:
     case MSP_WP:

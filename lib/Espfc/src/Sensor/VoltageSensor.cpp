@@ -12,6 +12,8 @@ int VoltageSensor::begin()
 {
   _model.state.battery.timer.setRate(100);
   _model.state.battery.samples = 50;
+  _model.state.battery.consumedMah = 0;
+  _consumedMahAcc = 0.0f;
 
   _vFilterFast.begin(FilterConfig(FILTER_PT1, 20), _model.state.battery.timer.rate);
   _vFilter.begin(FilterConfig(FILTER_PT2, 2), _model.state.battery.timer.rate);
@@ -85,7 +87,7 @@ int VoltageSensor::readVbat()
 int VoltageSensor::readIbat()
 {
 #ifdef ESPFC_ADC_1
-  if (_model.config.ibat.source != 1 && _model.config.pin[PIN_INPUT_ADC_1] == -1) return 0;
+  if (_model.config.ibat.source != 1 || _model.config.pin[PIN_INPUT_ADC_1] == -1) return 0;
 
   _model.state.battery.rawCurrent = analogRead(_model.config.pin[PIN_INPUT_ADC_1]);
   float volts = _iFilterFast.update(_model.state.battery.rawCurrent * ESPFC_ADC_SCALE);
@@ -96,6 +98,19 @@ int VoltageSensor::readIbat()
 
   _model.state.battery.currentUnfiltered = volts;
   _model.state.battery.current = _iFilter.update(_model.state.battery.currentUnfiltered);
+
+  // Integrate positive current draw into consumed capacity.
+  if(_model.state.battery.current > 0.0f)
+  {
+    const float dt = 2.0f / _model.state.battery.timer.rate;
+    _consumedMahAcc += _model.state.battery.current * dt * (1000.0f / 3600.0f);
+    if(_consumedMahAcc >= 1.0f)
+    {
+      const uint32_t delta = (uint32_t)_consumedMahAcc;
+      _model.state.battery.consumedMah += delta;
+      _consumedMahAcc -= delta;
+    }
+  }
 
   if (_model.config.debug.mode == DEBUG_CURRENT_SENSOR)
   {

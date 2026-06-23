@@ -21,11 +21,12 @@ float FAST_CODE_ATTR Rates::getSetpoint(const int axis, float input) const
   float result = 0;
   switch (rateType)
   {
-    case RATES_TYPE_BETAFLIGHT: result = betaflight(axis, input, inputAbs);
-    case RATES_TYPE_RACEFLIGHT: result = raceflight(axis, input, inputAbs);
-    case RATES_TYPE_KISS: result = kiss(axis, input, inputAbs);
-    case RATES_TYPE_ACTUAL: result = actual(axis, input, inputAbs);
-    case RATES_TYPE_QUICK: result = quick(axis, input, inputAbs);
+    case RATES_TYPE_BETAFLIGHT: result = betaflight(axis, input, inputAbs); break;
+    case RATES_TYPE_RACEFLIGHT: result = raceflight(axis, input, inputAbs); break;
+    case RATES_TYPE_KISS: result = kiss(axis, input, inputAbs); break;
+    case RATES_TYPE_ACTUAL: result = actual(axis, input, inputAbs); break;
+    case RATES_TYPE_QUICK: result = quick(axis, input, inputAbs); break;
+    default: result = betaflight(axis, input, inputAbs); break;
   }
   return Utils::toRad(Utils::clamp(result, -(float)_config->rateLimit[axis], (float)_config->rateLimit[axis]));
 }

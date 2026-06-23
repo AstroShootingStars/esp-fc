@@ -685,7 +685,10 @@ struct RpmFilterConfig
 
 struct VBatConfig
 {
+  int16_t cellMin = 340;
+  int16_t cellMax = 420;
   int16_t cellWarning = 350;
+  uint16_t capacity = 0;
   uint8_t scale = 100;
   uint8_t resDiv = 10;
   uint8_t resMult = 1;

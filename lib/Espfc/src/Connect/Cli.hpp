@@ -31,9 +31,9 @@ public:
   {
     public:
       Param(): Param(NULL, PARAM_NONE, NULL, NULL) {}
-      Param(const Param& p): Param(p.name, p.type, p.addr, p.choices) {}
+      Param(const Param& p): Param(p.name, static_cast<ParamType>(p.type), p.addr, p.choices, p.maxLen) {}
 
-      Param(const char * n, ParamType t, char * a, const char * const * c, size_t l = 16): name(n), type(t), addr(a), choices(c), maxLen(l) {}
+      Param(const char * n, ParamType t, char * a, const char * const * c, uint8_t l = 16): name(n), type((uint8_t)t), addr(a), choices(c), maxLen(l) {}
 
       Param(const char * n, bool    * a): Param(n, PARAM_BOOL,   reinterpret_cast<char*>(a), NULL) {}
       Param(const char * n, int8_t  * a): Param(n, PARAM_BYTE,   reinterpret_cast<char*>(a), NULL) {}
@@ -75,14 +75,15 @@ public:
         *reinterpret_cast<T*>(addr) = v;
       }
 
+      void write(const char * v) const;
       void write(const String& v) const;
       int32_t parse(const char * v) const;
 
       const char * name;
-      ParamType type;
+      uint8_t type;
       char * addr;
       const char * const * choices;
-      size_t maxLen;
+      uint8_t maxLen;
   };
 
   Cli(Model& model);

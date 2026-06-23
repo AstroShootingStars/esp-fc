@@ -1,6 +1,7 @@
 #include "Connect/Cli.hpp"
 #include <platform.h>
 #include <algorithm>
+#include <cstdlib>
 #include "Hardware.h"
 #include "Device/GyroDevice.h"
 #include "Hal/Pgm.h"
@@ -20,9 +21,25 @@
 #include <freertos/task.h>
 #endif
 
+// Compile-time flag to include verbose CLI help, status, and diagnostic output.
+// Disable on flash-constrained targets (esp32s2) to reduce binary size.
+#ifndef ESPFC_CLI_VERBOSE_HELP
+#define ESPFC_CLI_VERBOSE_HELP 0
+#endif
+
 namespace Espfc {
 
 namespace Connect {
+
+static inline int32_t parseIntArg(const char * v)
+{
+  return v ? static_cast<int32_t>(strtol(v, nullptr, 10)) : 0;
+}
+
+static inline float parseFloatArg(const char * v)
+{
+  return v ? strtof(v, nullptr) : 0.f;
+}
 
 void Cli::Param::print(Stream& stream) const
 {
@@ -198,10 +215,10 @@ void Cli::Param::update(const char ** args) const
       break;
     case PARAM_FLOAT:
       if(!v) return;
-      write(String(v).toFloat());
+      write(parseFloatArg(v));
       break;
     case PARAM_STRING:
-      write(String(v ? v : ""));
+      write(v ? v : "");
       break;
     case PARAM_BITMASK:
       if(!v) return;
@@ -247,57 +264,62 @@ void Cli::Param::write(OutputChannelConfig& och, const char ** args) const
 {
   if(args[2]) och.servo = *args[2] == 'S';
   if(args[3]) och.reverse = *args[3] == 'R';
-  if(args[4]) och.min = String(args[4]).toInt();
-  if(args[5]) och.neutral = String(args[5]).toInt();
-  if(args[6]) och.max = String(args[6]).toInt();
+  if(args[4]) och.min = parseIntArg(args[4]);
+  if(args[5]) och.neutral = parseIntArg(args[5]);
+  if(args[6]) och.max = parseIntArg(args[6]);
 }
 
 void Cli::Param::write(InputChannelConfig& ich, const char ** args) const
 {
-  if(args[2]) ich.map = String(args[2]).toInt();
-  if(args[3]) ich.min = String(args[3]).toInt();
-  if(args[4]) ich.neutral = String(args[4]).toInt();
-  if(args[5]) ich.max = String(args[5]).toInt();
+  if(args[2]) ich.map = parseIntArg(args[2]);
+  if(args[3]) ich.min = parseIntArg(args[3]);
+  if(args[4]) ich.neutral = parseIntArg(args[4]);
+  if(args[5]) ich.max = parseIntArg(args[5]);
   if(args[6]) ich.fsMode = *args[6] == 'A' ? 0 : (*args[6] == 'H' ? 1 : (*args[6] == 'S' ? 2 : 0));
-  if(args[7]) ich.fsValue = String(args[7]).toInt();
+  if(args[7]) ich.fsValue = parseIntArg(args[7]);
 }
 
 void Cli::Param::write(ScalerConfig& sc, const char ** args) const
 {
-  if(args[2]) sc.dimension = (ScalerDimension)String(args[2]).toInt();
-  if(args[3]) sc.channel = String(args[3]).toInt();
-  if(args[4]) sc.minScale = String(args[4]).toInt();
-  if(args[5]) sc.maxScale = String(args[5]).toInt();
+  if(args[2]) sc.dimension = (ScalerDimension)parseIntArg(args[2]);
+  if(args[3]) sc.channel = parseIntArg(args[3]);
+  if(args[4]) sc.minScale = parseIntArg(args[4]);
+  if(args[5]) sc.maxScale = parseIntArg(args[5]);
 }
 
 void Cli::Param::write(ActuatorCondition& ac, const char ** args) const
 {
-  if(args[2]) ac.id = String(args[2]).toInt();
-  if(args[3]) ac.ch = String(args[3]).toInt();
-  if(args[4]) ac.min = String(args[4]).toInt();
-  if(args[5]) ac.max = String(args[5]).toInt();
-  if(args[6]) ac.logicMode = String(args[6]).toInt();
-  if(args[7]) ac.linkId = String(args[7]).toInt();
+  if(args[2]) ac.id = parseIntArg(args[2]);
+  if(args[3]) ac.ch = parseIntArg(args[3]);
+  if(args[4]) ac.min = parseIntArg(args[4]);
+  if(args[5]) ac.max = parseIntArg(args[5]);
+  if(args[6]) ac.logicMode = parseIntArg(args[6]);
+  if(args[7]) ac.linkId = parseIntArg(args[7]);
 }
 
 void Cli::Param::write(MixerEntry& ac, const char ** args) const
 {
-  if(args[2]) ac.src = constrain(String(args[2]).toInt(), 0, MIXER_SOURCE_MAX - 1);
-  if(args[3]) ac.dst = constrain(String(args[3]).toInt(), 0, (int)(OUTPUT_CHANNELS - 1));
-  if(args[4]) ac.rate = constrain(String(args[4]).toInt(), -1000, 1000);
+  if(args[2]) ac.src = constrain(parseIntArg(args[2]), 0, MIXER_SOURCE_MAX - 1);
+  if(args[3]) ac.dst = constrain(parseIntArg(args[3]), 0, (int)(OUTPUT_CHANNELS - 1));
+  if(args[4]) ac.rate = constrain(parseIntArg(args[4]), -1000, 1000);
 }
 
 void Cli::Param::write(SerialPortConfig& sc, const char ** args) const
 {
-  if(args[2]) sc.functionMask = String(args[2]).toInt();
-  if(args[3]) sc.baud = String(args[3]).toInt();
-  if(args[4]) sc.blackboxBaud = String(args[4]).toInt();
+  if(args[2]) sc.functionMask = parseIntArg(args[2]);
+  if(args[3]) sc.baud = parseIntArg(args[3]);
+  if(args[4]) sc.blackboxBaud = parseIntArg(args[4]);
+}
+
+void Cli::Param::write(const char * v) const
+{
+  *addr = 0;
+  strncat(addr, v ? v : "", maxLen);
 }
 
 void Cli::Param::write(const String& v) const
 {
-  *addr = 0;
-  strncat(addr, v.c_str(), maxLen);
+  write(v.c_str());
 }
 
 int32_t Cli::Param::parse(const char * v) const
@@ -309,8 +331,7 @@ int32_t Cli::Param::parse(const char * v) const
       if(strcasecmp_P(v, choices[i]) == 0) return i;
     }
   }
-  String tmp = v;
-  return tmp.toInt();
+  return parseIntArg(v);
 }
 
 Cli::Cli(Model& model): _model(model), _ignore(false), _active(false)
@@ -320,19 +341,19 @@ Cli::Cli(Model& model): _model(model), _ignore(false), _active(false)
 
 const Cli::Param * Cli::initialize(ModelConfig& c)
 {
-  const char ** busDevChoices            = Device::BusDevice::getNames();
-  const char ** gyroDevChoices           = Device::GyroDevice::getNames();
-  const char ** baroDevChoices           = Device::BaroDevice::getNames();
-  const char ** magDevChoices            = Device::MagDevice::getNames();
-  const char ** rangefinderDevChoices    = Device::RangefinderDevice::getNames();
-  const char ** opticalFlowDevChoices    = Device::OpticalFlowDevice::getNames();
-  const char ** oledDevChoices           = Device::OledDevice::getNames();
+  const char * const * busDevChoices            = Device::BusDevice::getNames();
+  const char * const * gyroDevChoices           = Device::GyroDevice::getNames();
+  const char * const * baroDevChoices           = Device::BaroDevice::getNames();
+  const char * const * magDevChoices            = Device::MagDevice::getNames();
+  const char * const * rangefinderDevChoices    = Device::RangefinderDevice::getNames();
+  const char * const * opticalFlowDevChoices    = Device::OpticalFlowDevice::getNames();
+  const char * const * oledDevChoices           = Device::OledDevice::getNames();
 
-  const char ** fusionModeChoices        = FusionConfig::getModeNames();
+  const char * const * fusionModeChoices        = FusionConfig::getModeNames();
   static const char * const * protocolChoices = EscDriver::getProtocolNames();
 
-  static const char* gyroDlpfChoices[]   = { PSTR("256Hz"), PSTR("188Hz"), PSTR("98Hz"), PSTR("42Hz"), PSTR("20Hz"), PSTR("10Hz"), PSTR("5Hz"), PSTR("EXPERIMENTAL"), NULL };
-  static const char* debugModeChoices[]  = {  PSTR("NONE"), PSTR("CYCLETIME"), PSTR("BATTERY"), PSTR("GYRO_FILTERED"), PSTR("ACCELEROMETER"), PSTR("PIDLOOP"), PSTR("GYRO_SCALED"), PSTR("RC_INTERPOLATION"),
+  static const char * const gyroDlpfChoices[]   = { PSTR("256Hz"), PSTR("188Hz"), PSTR("98Hz"), PSTR("42Hz"), PSTR("20Hz"), PSTR("10Hz"), PSTR("5Hz"), PSTR("EXPERIMENTAL"), NULL };
+  static const char * const debugModeChoices[]  = {  PSTR("NONE"), PSTR("CYCLETIME"), PSTR("BATTERY"), PSTR("GYRO_FILTERED"), PSTR("ACCELEROMETER"), PSTR("PIDLOOP"), PSTR("GYRO_SCALED"), PSTR("RC_INTERPOLATION"),
                                               PSTR("ANGLERATE"), PSTR("ESC_SENSOR"), PSTR("SCHEDULER"), PSTR("STACK"), PSTR("ESC_SENSOR_RPM"), PSTR("ESC_SENSOR_TMP"), PSTR("ALTITUDE"), PSTR("FFT"),
                                               PSTR("FFT_TIME"), PSTR("FFT_FREQ"), PSTR("RX_FRSKY_SPI"), PSTR("RX_SFHSS_SPI"), PSTR("GYRO_RAW"), PSTR("DUAL_GYRO_RAW"), PSTR("DUAL_GYRO_DIFF"),
                                               PSTR("MAX7456_SIGNAL"), PSTR("MAX7456_SPICLOCK"), PSTR("SBUS"), PSTR("FPORT"), PSTR("RANGEFINDER"), PSTR("RANGEFINDER_QUALITY"), PSTR("LIDAR_TF"),
@@ -341,28 +362,31 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
                                               PSTR("DSHOT_RPM_TELEMETRY"), PSTR("RPM_FILTER"), PSTR("D_MIN"), PSTR("AC_CORRECTION"), PSTR("AC_ERROR"), PSTR("DUAL_GYRO_SCALED"), PSTR("DSHOT_RPM_ERRORS"),
                                               PSTR("CRSF_LINK_STATISTICS_UPLINK"), PSTR("CRSF_LINK_STATISTICS_PWR"), PSTR("CRSF_LINK_STATISTICS_DOWN"), PSTR("BARO"), PSTR("GPS_RESCUE_THROTTLE_PID"),
                                               PSTR("DYN_IDLE"), PSTR("FF_LIMIT"), PSTR("FF_INTERPOLATED"), PSTR("BLACKBOX_OUTPUT"), PSTR("GYRO_SAMPLE"), PSTR("RX_TIMING"), NULL };
-  static const char* filterTypeChoices[] = { PSTR("PT1"), PSTR("BIQUAD"), PSTR("PT2"), PSTR("PT3"), PSTR("NOTCH"), PSTR("NOTCH_DF1"), PSTR("BPF"), PSTR("FO"), PSTR("FIR2"), PSTR("MEDIAN3"), PSTR("NONE"), NULL };
-  static const char* alignChoices[]      = { PSTR("DEFAULT"), PSTR("CW0"), PSTR("CW90"), PSTR("CW180"), PSTR("CW270"), PSTR("CW0_FLIP"), PSTR("CW90_FLIP"), PSTR("CW180_FLIP"), PSTR("CW270_FLIP"), PSTR("CUSTOM"), NULL };
-  static const char* mixerTypeChoices[]  = { PSTR("NONE"), PSTR("TRI"), PSTR("QUADP"), PSTR("QUADX"), PSTR("BI"),
+  static const char * const filterTypeChoices[] = { PSTR("PT1"), PSTR("BIQUAD"), PSTR("PT2"), PSTR("PT3"), PSTR("NOTCH"), PSTR("NOTCH_DF1"), PSTR("BPF"), PSTR("FO"), PSTR("FIR2"), PSTR("MEDIAN3"), PSTR("NONE"), NULL };
+  static const char * const alignChoices[]      = { PSTR("DEFAULT"), PSTR("CW0"), PSTR("CW90"), PSTR("CW180"), PSTR("CW270"), PSTR("CW0_FLIP"), PSTR("CW90_FLIP"), PSTR("CW180_FLIP"), PSTR("CW270_FLIP"), PSTR("CUSTOM"), NULL };
+  static const char * const mixerTypeChoices[]  = { PSTR("NONE"), PSTR("TRI"), PSTR("QUADP"), PSTR("QUADX"), PSTR("BI"),
                                               PSTR("GIMBAL"), PSTR("Y6"), PSTR("HEX6"), PSTR("FWING"), PSTR("Y4"),
                                               PSTR("HEX6X"), PSTR("OCTOX8"), PSTR("OCTOFLATP"), PSTR("OCTOFLATX"), PSTR("AIRPLANE"),
                                               PSTR("HELI120"), PSTR("HELI90"), PSTR("VTAIL4"), PSTR("HEX6H"), PSTR("PPMSERVO"),
                                               PSTR("DUALCOPTER"), PSTR("SINGLECOPTER"), PSTR("ATAIL4"), PSTR("CUSTOM"), PSTR("CUSTOMAIRPLANE"),
                                               PSTR("CUSTOMTRI"), PSTR("QUADX1234"), NULL };
-  static const char* interpolChoices[]   = { PSTR("NONE"), PSTR("DEFAULT"), PSTR("AUTO"), PSTR("MANUAL"), NULL };
-  static const char* inputRateTypeChoices[] = { PSTR("BETAFLIGHT"), PSTR("RACEFLIGHT"), PSTR("KISS"), PSTR("ACTUAL"), PSTR("QUICK"), NULL };
-  static const char* throtleLimitTypeChoices[] = { PSTR("NONE"), PSTR("SCALE"), PSTR("CLIP"), NULL };
-  static const char* inputFilterChoices[] = { PSTR("INTERPOLATION"), PSTR("FILTER"), NULL };
-  static const char* inputItermRelaxChoices[] = { PSTR("OFF"), PSTR("RP"), PSTR("RPY"), PSTR("RP_INC"), PSTR("RPY_INC"), NULL };
+  static const char * const interpolChoices[]   = { PSTR("NONE"), PSTR("DEFAULT"), PSTR("AUTO"), PSTR("MANUAL"), NULL };
+  static const char * const inputRateTypeChoices[] = { PSTR("BETAFLIGHT"), PSTR("RACEFLIGHT"), PSTR("KISS"), PSTR("ACTUAL"), PSTR("QUICK"), NULL };
+  static const char * const throtleLimitTypeChoices[] = { PSTR("NONE"), PSTR("SCALE"), PSTR("CLIP"), NULL };
+  static const char * const inputFilterChoices[] = { PSTR("INTERPOLATION"), PSTR("FILTER"), NULL };
+  static const char * const inputItermRelaxChoices[] = { PSTR("OFF"), PSTR("RP"), PSTR("RPY"), PSTR("RP_INC"), PSTR("RPY_INC"), NULL };
 
-  static const char* voltageSourceChoices[] = { PSTR("NONE"), PSTR("ADC"), NULL };
-  static const char* currentSourceChoices[] = { PSTR("NONE"), PSTR("ADC"), NULL };
-  static const char* blackboxDevChoices[] = { PSTR("NONE"), PSTR("FLASH"), PSTR("SD_CARD"), PSTR("SERIAL"), NULL };
-  static const char* blackboxModeChoices[] = { PSTR("NORMAL"), PSTR("TEST"), PSTR("ALWAYS"), NULL };
-  static const char* ledTypeChoices[] = { PSTR("SIMPLE"), PSTR("STRIP"), NULL };
+  static const char * const voltageSourceChoices[] = { PSTR("NONE"), PSTR("ADC"), NULL };
+  static const char * const currentSourceChoices[] = { PSTR("NONE"), PSTR("ADC"), NULL };
+  static const char * const blackboxDevChoices[] = { PSTR("NONE"), PSTR("FLASH"), PSTR("SD_CARD"), PSTR("SERIAL"), NULL };
+  static const char * const blackboxModeChoices[] = { PSTR("NORMAL"), PSTR("TEST"), PSTR("ALWAYS"), NULL };
+  static const char * const ledTypeChoices[] = { PSTR("SIMPLE"), PSTR("STRIP"), NULL };
 
   size_t i = 0;
-  static const Param params[] = {
+  static Param * params = nullptr;
+  if(params) return params;
+
+  const Param paramsTmp[] = {
 
     Param(PSTR("feature_gps"), &c.featureMask, 7),
     Param(PSTR("feature_dyn_notch"), &c.featureMask, 29),
@@ -901,6 +925,10 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
 
     Param() // terminate
   };
+
+  const size_t paramsCount = sizeof(paramsTmp) / sizeof(Param);
+  params = new Param[paramsCount];
+  for(size_t p = 0; p < paramsCount; ++p) params[p] = paramsTmp[p];
   return params;
 }
   bool Cli::process(const char c, CliCmd& cmd, Stream& stream)
@@ -982,6 +1010,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
 
   if(strcmp_P(cmd.args[0], PSTR("help")) == 0)
   {
+#if ESPFC_CLI_VERBOSE_HELP
     static const char * const helps[] = {
       PSTR("available commands:"),
       PSTR(" help"), PSTR(" dump"), PSTR(" get param"), PSTR(" set param value ..."), PSTR(" cal [gyro]"),
@@ -996,6 +1025,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     {
       s.println(FPSTR(*ptr));
     }
+#endif
   }
   else if(strcmp_P(cmd.args[0], PSTR("version")) == 0)
   {
@@ -1005,6 +1035,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
 #if defined(ESPFC_WIFI) || defined(ESPFC_WIFI_ALT)
   else if(strcmp_P(cmd.args[0], PSTR("wifi")) == 0)
   {
+#if ESPFC_CLI_VERBOSE_HELP
     s.print(F("ST IP4: tcp://"));
     s.print(WiFi.localIP());
     s.print(F(":"));
@@ -1024,11 +1055,13 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     s.print(F("CHANNEL: "));
     s.println(WiFi.channel());
     //WiFi.printDiag(s);
+#endif
   }
 #endif
 #if defined(ESPFC_FREE_RTOS)
   else if(strcmp_P(cmd.args[0], PSTR("tasks")) == 0)
   {
+#if ESPFC_CLI_VERBOSE_HELP
     printVersion(s);
     s.println();
 
@@ -1037,10 +1070,12 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     s.print(F("num tasks: "));
     s.print(numTasks);
     s.println();
+#endif
   }
 #endif
   else if(strcmp_P(cmd.args[0], PSTR("devinfo")) == 0)
   {
+#if ESPFC_CLI_VERBOSE_HELP
     printVersion(s);
     s.println();
 
@@ -1054,6 +1089,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     s.print(sizeof(ModelState));
     s.print(F(", "));
     s.println(targetFreeHeap());
+#endif
   }
   else if(strcmp_P(cmd.args[0], PSTR("get")) == 0)
   {
@@ -1119,6 +1155,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
 
     if(!cmd.args[1])
     {
+#if ESPFC_CLI_VERBOSE_HELP
       s.print(F("# "));
       s.print(isFront ? F("range_front") : F("range_bottom"));
       s.print(F(" "));
@@ -1131,6 +1168,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
       s.println(cfg.enabled ? 1 : 0);
       s.println(F("# usage: <cmd> [bus dev addr enabled]"));
       s.println(F("# bus/dev accepts index or enum name"));
+#endif
       return;
     }
 
@@ -1139,7 +1177,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     if(cmd.args[1])
     {
       int bus = parseChoice(cmd.args[1], busChoices);
-      if(bus < 0) bus = String(cmd.args[1]).toInt();
+      if(bus < 0) bus = parseIntArg(cmd.args[1]);
       if(bus >= BUS_NONE && bus < BUS_MAX) cfg.bus = bus;
       else ok = false;
     }
@@ -1147,21 +1185,21 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     if(cmd.args[2])
     {
       int dev = parseChoice(cmd.args[2], devChoices);
-      if(dev < 0) dev = String(cmd.args[2]).toInt();
+      if(dev < 0) dev = parseIntArg(cmd.args[2]);
       if(dev >= Device::RANGEFINDER_DEFAULT && dev < Device::RANGEFINDER_MAX) cfg.dev = dev;
       else ok = false;
     }
 
     if(cmd.args[3])
     {
-      int addr = String(cmd.args[3]).toInt();
+      int addr = parseIntArg(cmd.args[3]);
       if(addr >= 0 && addr < 128) cfg.address = addr;
       else ok = false;
     }
 
     if(cmd.args[4])
     {
-      int en = String(cmd.args[4]).toInt();
+      int en = parseIntArg(cmd.args[4]);
       if(en == 0 || en == 1) cfg.enabled = en;
       else ok = false;
     }
@@ -1171,8 +1209,10 @@ void Cli::execute(CliCmd& cmd, Stream& s)
 
     if(!ok)
     {
+#if ESPFC_CLI_VERBOSE_HELP
       s.println(F("NOT OK: invalid argument"));
       s.println(F("# usage: range_bottom|range_front [bus dev addr enabled]"));
+#endif
     }
 
     s.print(F("OK "));
@@ -1547,6 +1587,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
   }
   else if(strcmp_P(cmd.args[0], PSTR("status")) == 0)
   {
+#if ESPFC_CLI_VERBOSE_HELP
     printVersion(s);
     s.println();
     s.println(F("STATUS: "));
@@ -1711,9 +1752,11 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     s.print(F("      uptime: "));
     s.print(millis() * 0.001, 1);
     s.println();
+#endif
   }
   else if(strcmp_P(cmd.args[0], PSTR("stats")) == 0)
   {
+#if ESPFC_CLI_VERBOSE_HELP
     printVersion(s);
     s.println();
     printStats(s);
@@ -1756,6 +1799,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     s.print(_model.state.stats.getCpuLoad(), 1);
     s.print(F("%"));
     s.println();
+#endif
   }
   else if(strcmp_P(cmd.args[0], PSTR("reboot")) == 0 || strcmp_P(cmd.args[0], PSTR("exit")) == 0)
   {
@@ -1838,12 +1882,12 @@ void Cli::execute(CliCmd& cmd, Stream& s)
       size_t addr = 0;
       if(cmd.args[2])
       {
-        addr = String(cmd.args[2]).toInt();
+        addr = parseIntArg(cmd.args[2]);
       }
       size_t size = 0;
       if(cmd.args[3])
       {
-        size = String(cmd.args[3]).toInt();
+        size = parseIntArg(cmd.args[3]);
       }
       size = Utils::clamp(size, 8u, 128 * 1024u);
       size_t chunk_size = 256;

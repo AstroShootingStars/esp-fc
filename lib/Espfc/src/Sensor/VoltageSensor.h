@@ -27,6 +27,7 @@ class VoltageSensor: public BaseSensor
     Utils::Filter _vFilter;
     Utils::Filter _iFilterFast;
     Utils::Filter _iFilter;
+    float _consumedMahAcc = 0.0f;
     State _state;
 };
 

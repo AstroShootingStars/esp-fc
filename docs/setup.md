@@ -40,6 +40,140 @@ Go to the `CLI` tab and type `get pin`. This command will show what pins are ass
 
 ![CLI Pins](/docs/images/bfc/bfc_cli_pins.png)
 
+## Power and Battery CLI quick-start
+
+Use this when wiring analog voltage/current sensors and calibrating values for the Power & Battery tab.
+
+### 1) Board default ADC pins
+
+| Board | Voltage (`pin_input_adc_0`) | Current (`pin_input_adc_1`) |
+|---|---:|---:|
+| ESP32 | 36 | 39 |
+| ESP32-S2 | 1 | 4 |
+| ESP32-S3 (all variants) | 1 | 4 |
+| ESP32-C3 | 0 | 1 |
+| ESP8266 | 17 (A0) | not available by default |
+| RP2040 / RP2350 | 26 | 27 |
+
+> [!NOTE]
+> Firmware now auto-selects a safe ADC fallback if your configured ADC pin is missing/conflicting. If no safe pin exists, that source is disabled.
+
+### 2) Enable sources
+
+Open CLI and apply:
+
+```bash
+set vbat_source 1
+set ibat_source 1
+save
+```
+
+If your target has no usable second ADC (for example many ESP8266 builds), set:
+
+```bash
+set ibat_source 0
+save
+```
+
+### 3) Verify assigned pins
+
+```bash
+get pin_input_adc_0
+get pin_input_adc_1
+```
+
+If needed, remap manually and save:
+
+```bash
+set pin_input_adc_0 <gpio>
+set pin_input_adc_1 <gpio>
+save
+```
+
+### 4) Calibrate voltage and current
+
+Start with defaults, then tune against a multimeter:
+
+```bash
+set vbat_scale 100
+set vbat_mul 1
+set vbat_div 10
+set ibat_scale 100
+set ibat_offset 0
+save
+```
+
+Calibration loop:
+
+1. Connect battery and compare FC voltage reading vs multimeter.
+2. Increase `vbat_scale` if FC voltage is low; decrease if high.
+3. With known current load, tune `ibat_scale` to match measured current.
+4. If current is shifted at zero/idle, adjust `ibat_offset`.
+5. Save after each adjustment and re-check.
+
+### 5) Set battery warning thresholds
+
+```bash
+set vbat_cell_warn 350
+save
+```
+
+`350` means 3.50 V per cell warning threshold.
+
+For full wiring and supported sensor details, see [Wiring Guide](wiring.md#power-and-battery-sensors-voltage-and-current).
+
+### Battery sensor troubleshooting
+
+If readings look wrong after wiring and calibration, check these common cases.
+
+1. **Voltage reads 0.0 V**
+	- Verify `vbat_source` is `1`.
+	- Verify ADC pin mapping with `get pin_input_adc_0`.
+	- Confirm divider output is wired to the configured ADC pin.
+	- Confirm battery ground and FC ground are shared.
+
+2. **Current reads 0.00 A always**
+	- Verify `ibat_source` is `1`.
+	- Verify ADC pin mapping with `get pin_input_adc_1`.
+	- Check board capability: some targets may not have a usable second ADC by default.
+	- Confirm sensor OUT pin is analog voltage output (not digital protocol).
+
+3. **Voltage is consistently too high/too low**
+	- Tune `vbat_scale` against a trusted multimeter.
+	- Re-check `vbat_mul` and `vbat_div` values.
+	- Ensure the divider resistor ratio matches your wiring.
+
+4. **Current offset at idle (non-zero with motors off)**
+	- Tune `ibat_offset` until idle current is near zero.
+	- Re-check sensor supply voltage and reference grounding.
+
+5. **Noisy or jumping readings**
+	- Keep ADC signal wiring short and away from ESC/motor power lines.
+	- Use twisted pair or shielded cable for sensor signal+ground where practical.
+	- Ensure all grounds are common and low-impedance.
+
+6. **Cell count unstable at plug-in**
+	- Wait a few seconds after connect; initial samples are used for cell detection.
+	- Verify battery connector and divider wiring quality.
+
+7. **Settings revert after reboot**
+	- Ensure `save` was executed in CLI.
+	- Re-open CLI and verify values with `get vbat_` and `get ibat_`.
+
+Useful quick checks:
+
+```bash
+get vbat_source
+get ibat_source
+get pin_input_adc_0
+get pin_input_adc_1
+get vbat_scale
+get vbat_mul
+get vbat_div
+get ibat_scale
+get ibat_offset
+```
+
 ## Board capability auto-sanitization
 
 ESP-FC now automatically sanitizes configuration based on active board IO and runtime capabilities so Betaflight changes do not leave the FC in an invalid state.
