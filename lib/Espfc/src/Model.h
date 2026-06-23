@@ -485,8 +485,12 @@ class Model
         SERIAL_FUNCTION_BLACKBOX | SERIAL_FUNCTION_TELEMETRY_FRSKY | SERIAL_FUNCTION_TELEMETRY_HOTT |
         SERIAL_FUNCTION_TELEMETRY_IBUS | SERIAL_FUNCTION_VTX_SMARTAUDIO | SERIAL_FUNCTION_FRSKY_OSD;
 
-      uint32_t featureAllowMask = FEATURE_RX_PPM | FEATURE_RX_SERIAL | FEATURE_MOTOR_STOP | FEATURE_GPS |
-        FEATURE_TELEMETRY | FEATURE_RX_SPI;// | FEATURE_AIRMODE;
+      uint32_t featureAllowMask = FEATURE_RX_PPM | FEATURE_RX_UDP | FEATURE_INFLIGHT_ACC_CAL | FEATURE_RX_SERIAL |
+        FEATURE_MOTOR_STOP | FEATURE_SERVO_TILT | FEATURE_SOFTSERIAL | FEATURE_GPS | FEATURE_OPTICALFLOW |
+        FEATURE_RANGEFINDER | FEATURE_TELEMETRY | FEATURE_3D | FEATURE_RX_PARALLEL_PWM | FEATURE_RX_MSP |
+        FEATURE_RSSI_ADC | FEATURE_LED_STRIP | FEATURE_DASHBOARD | FEATURE_OSD | FEATURE_CHANNEL_FORWARDING |
+        FEATURE_TRANSPONDER | FEATURE_AIRMODE | FEATURE_RX_SPI | FEATURE_ESC_SENSOR | FEATURE_ANTI_GRAVITY |
+        FEATURE_DYNAMIC_FILTER;
 
 #ifdef ESPFC_SERIAL_SOFT_0
       featureAllowMask |= FEATURE_SOFTSERIAL;
@@ -623,6 +627,15 @@ class Model
       }
 
       config.buzzer.beeperMask &= BUZZER_ALLOWED_MASK;
+      config.beeper.beeperOffFlags &= BUZZER_ALLOWED_MASK;
+      config.beeper.dshotBeaconOffFlags &= DSHOT_BEACON_ALLOWED_MASK;
+      if(config.buzzer.beeperMask != BUZZER_ALLOWED_MASK && config.beeper.beeperOffFlags == 0)
+      {
+        config.beeper.beeperOffFlags = BUZZER_ALLOWED_MASK & ~config.buzzer.beeperMask;
+      }
+      config.buzzer.beeperMask = BUZZER_ALLOWED_MASK & ~config.beeper.beeperOffFlags;
+      config.beeper.dshotBeaconTone = constrain(config.beeper.dshotBeaconTone, 1, 5);
+      config.fpvCamAngleDegrees = constrain(config.fpvCamAngleDegrees, 0, 90);
 
       config.wireless.port = constrain(config.wireless.port, 1, 65535);
       config.wireless.otaEnabled = constrain(config.wireless.otaEnabled, 0, 1);

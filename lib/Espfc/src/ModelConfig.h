@@ -239,13 +239,29 @@ enum Axis {
 
 enum Feature {
   FEATURE_RX_PPM     = 1 << 0,
+  FEATURE_RX_UDP     = 1 << 1,
+  FEATURE_INFLIGHT_ACC_CAL = 1 << 2,
   FEATURE_RX_SERIAL  = 1 << 3,
   FEATURE_MOTOR_STOP = 1 << 4,
+  FEATURE_SERVO_TILT = 1 << 5,
   FEATURE_SOFTSERIAL = 1 << 6,
   FEATURE_GPS        = 1 << 7,
+  FEATURE_OPTICALFLOW = 1 << 8,
+  FEATURE_RANGEFINDER = 1 << 9,
   FEATURE_TELEMETRY  = 1 << 10,
+  FEATURE_3D         = 1 << 12,
+  FEATURE_RX_PARALLEL_PWM = 1 << 13,
+  FEATURE_RX_MSP     = 1 << 14,
+  FEATURE_RSSI_ADC   = 1 << 15,
+  FEATURE_LED_STRIP   = 1 << 16,
+  FEATURE_DASHBOARD   = 1 << 17,
+  FEATURE_OSD        = 1 << 18,
+  FEATURE_CHANNEL_FORWARDING = 1 << 20,
+  FEATURE_TRANSPONDER = 1 << 21,
   FEATURE_AIRMODE    = 1 << 22,
   FEATURE_RX_SPI     = 1 << 25,
+  FEATURE_ESC_SENSOR = 1 << 27,
+  FEATURE_ANTI_GRAVITY = 1 << 28,
   FEATURE_DYNAMIC_FILTER = 1 << 29,
 };
 
@@ -422,10 +438,21 @@ constexpr uint32_t BUZZER_ALLOWED_MASK =
   buzzerEventFlag(BUZZER_CAM_CONNECTION_CLOSE) |
   buzzerEventFlag(BUZZER_ARMING_GPS_NO_FIX);
 
+constexpr uint32_t DSHOT_BEACON_ALLOWED_MASK =
+  buzzerEventFlag(BUZZER_RX_SET) |
+  buzzerEventFlag(BUZZER_RX_LOST);
+
 struct BuzzerConfig
 {
   int8_t inverted = true;
   int32_t beeperMask = (int32_t)BUZZER_ALLOWED_MASK;
+};
+
+struct BeeperConfig
+{
+  uint32_t beeperOffFlags = 0;
+  uint8_t dshotBeaconTone = 1;
+  uint32_t dshotBeaconOffFlags = DSHOT_BEACON_ALLOWED_MASK;
 };
 
 enum PidIndex {
@@ -1053,6 +1080,7 @@ struct ArmingConfig
   uint8_t disarmKillSwitch = 0;
 #endif
   uint8_t smallAngle = 25;
+  uint8_t gyroCalOnFirstArm = 0;
 };
 
 struct RangefinderTempSensorConfig
@@ -1302,6 +1330,8 @@ class ModelConfig
     uint8_t rescueConfigDelay = 30;
     int16_t boardAlignment[3] = {0, 0, 0};
     char modelName[MODEL_NAME_LEN + 1];
+    BeeperConfig beeper;
+    uint8_t fpvCamAngleDegrees = 0;
 
     ModelConfig()
     {

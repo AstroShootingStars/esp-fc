@@ -249,7 +249,8 @@ public:
     uint8_t whoami = 0;
     uint8_t len = _bus->readByte(_addr, MPU6050_RA_WHO_AM_I, &whoami);
     // D("mpu6050:whoami", _addr, whoami, len);
-    return len == 1 && (whoami == 0x68 || whoami == 0x72);
+    // Accept AD0 low/high responses (0x68/0x69). Some clones may also expose 0x72.
+    return len == 1 && (whoami == 0x68 || whoami == 0x69 || whoami == 0x72);
   }
 
   uint8_t _dlpf;

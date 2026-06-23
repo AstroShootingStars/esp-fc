@@ -223,6 +223,33 @@ void test_msp_osd_config_roundtrip()
   TEST_ASSERT_EQUAL_UINT8(2, rsp.data[profileCountOffset + 1]);
 }
 
+void test_msp_board_info_payload_shape()
+{
+  Model model;
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  proc.processCommand(makeCmd(MSP_BOARD_INFO, nullptr, 0), rsp, serial);
+
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_EQUAL_UINT16(51, rsp.len);
+
+  // 4-byte FC identifier, then board version/type/capabilities.
+  TEST_ASSERT_NOT_EQUAL(0u, rsp.data[0] | rsp.data[1] | rsp.data[2] | rsp.data[3]);
+  TEST_ASSERT_EQUAL_UINT8(0, rsp.data[8]);  // target name length
+  TEST_ASSERT_EQUAL_UINT8(0, rsp.data[9]);  // board name length
+  TEST_ASSERT_EQUAL_UINT8(0, rsp.data[10]); // manufacturer id length
+
+  for(size_t i = 11; i < 43; i++)
+  {
+    TEST_ASSERT_EQUAL_UINT8(0, rsp.data[i]); // signature bytes
+  }
+
+  TEST_ASSERT_EQUAL_UINT8(0, rsp.data[43]); // mcu type id
+  TEST_ASSERT_EQUAL_UINT8(0, rsp.data[44]); // configuration state
+}
+
 int main(int argc, char **argv)
 {
   UNITY_BEGIN();
@@ -233,6 +260,7 @@ int main(int argc, char **argv)
   RUN_TEST(test_msp_v2_parse_no_payload);
   RUN_TEST(test_msp_v2_parse_payload);
   RUN_TEST(test_msp_osd_config_roundtrip);
+  RUN_TEST(test_msp_board_info_payload_shape);
 
   return UNITY_END();
 }

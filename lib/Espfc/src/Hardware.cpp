@@ -5,6 +5,7 @@
 #include "Device/GyroBMI160.h"
 #include "Device/GyroDevice.h"
 #include "Device/GyroICM20602.h"
+#include "Device/GyroITG3205.h"
 #include "Device/GyroLSM6DSO.h"
 #include "Device/GyroMPU6050.h"
 #include "Device/GyroMPU6500.h"
@@ -46,6 +47,7 @@ static Espfc::Device::GyroMPU9250 mpu9250;
 static Espfc::Device::GyroLSM6DSO lsm6dso;
 static Espfc::Device::GyroICM20602 icm20602;
 static Espfc::Device::GyroBMI160 bmi160;
+static Espfc::Device::GyroITG3205 itg3205;
 static Espfc::Device::Mag::MagHMC5883L hmc5883l;
 static Espfc::Device::Mag::MagQMC5883L qmc5883l;
 static Espfc::Device::Mag::MagQMC5883P qmc5883p;
@@ -100,12 +102,8 @@ void Hardware::initBus()
   int i2cResult =
       i2cBus.begin(_model.config.pin[PIN_I2C_0_SDA], _model.config.pin[PIN_I2C_0_SCL], _model.config.i2cSpeed * 1000ul);
   i2cBus.onError = std::bind(&Hardware::onI2CError, this);
-  _model.logger.info()
-      .log(F("I2C"))
-      .log(_model.config.pin[PIN_I2C_0_SDA])
-      .log(_model.config.pin[PIN_I2C_0_SCL])
-      .log(_model.config.i2cSpeed)
-      .logln(i2cResult);
+  (void)i2cResult;
+
 #endif
 }
 
@@ -114,6 +112,18 @@ void Hardware::detectGyro()
   if (_model.config.gyro.dev == GYRO_NONE) return;
 
   Device::GyroDevice* detectedGyro = nullptr;
+  auto scanGyroI2c = [&]() -> Device::GyroDevice* {
+    Device::GyroDevice* gyro = nullptr;
+    _model.logger.info().log(F("I2C")).log(F("scanning for gyro...")).logln("");
+    if (!gyro && detectDevice(mpu9250, i2cBus)) gyro = &mpu9250;
+    if (!gyro && detectDevice(mpu6500, i2cBus)) gyro = &mpu6500;
+    if (!gyro && detectDevice(icm20602, i2cBus)) gyro = &icm20602;
+    if (!gyro && detectDevice(bmi160, i2cBus)) gyro = &bmi160;
+    if (!gyro && detectDevice(itg3205, i2cBus)) gyro = &itg3205;
+    if (!gyro && detectDevice(mpu6050, i2cBus)) gyro = &mpu6050;
+    if (!gyro && detectDevice(lsm6dso, i2cBus)) gyro = &lsm6dso;
+    return gyro;
+  };
 #if defined(ESPFC_SPI_0)
   if (_model.config.pin[PIN_SPI_CS0] != -1)
   {
@@ -130,12 +140,29 @@ void Hardware::detectGyro()
 #if defined(ESPFC_I2C_0)
   if (!detectedGyro && _model.config.pin[PIN_I2C_0_SDA] != -1 && _model.config.pin[PIN_I2C_0_SCL] != -1)
   {
-    if (!detectedGyro && detectDevice(mpu9250, i2cBus)) detectedGyro = &mpu9250;
-    if (!detectedGyro && detectDevice(mpu6500, i2cBus)) detectedGyro = &mpu6500;
-    if (!detectedGyro && detectDevice(icm20602, i2cBus)) detectedGyro = &icm20602;
-    if (!detectedGyro && detectDevice(bmi160, i2cBus)) detectedGyro = &bmi160;
-    if (!detectedGyro && detectDevice(mpu6050, i2cBus)) detectedGyro = &mpu6050;
-    if (!detectedGyro && detectDevice(lsm6dso, i2cBus)) detectedGyro = &lsm6dso;
+    detectedGyro = scanGyroI2c();
+
+#if defined(ESP32S3)
+    // Some ESP32-S3 boards route user I2C to GPIO21/GPIO22.
+    // Retry there if the configured bus did not find a gyro.
+    if (!detectedGyro && _model.config.pin[PIN_I2C_0_SDA] == 9 && _model.config.pin[PIN_I2C_0_SCL] == 10)
+    {
+      const int altSda = 21;
+      const int altScl = 22;
+      const int altI2cResult = i2cBus.begin(altSda, altScl, _model.config.i2cSpeed * 1000ul);
+      if (altI2cResult)
+      {
+        _model.logger.info().log(F("I2C")).log(F("retrying gyro on alt pins")).log(altSda).logln(altScl);
+        detectedGyro = scanGyroI2c();
+        if (detectedGyro)
+        {
+          _model.config.pin[PIN_I2C_0_SDA] = altSda;
+          _model.config.pin[PIN_I2C_0_SCL] = altScl;
+        }
+      }
+    }
+#endif
+
     if (detectedGyro) gyroSlaveBus.begin(&i2cBus, detectedGyro->getAddress());
   }
 #endif
@@ -145,6 +172,10 @@ void Hardware::detectGyro()
   _model.state.gyro.dev = detectedGyro;
   _model.state.gyro.present = (bool)detectedGyro;
   _model.state.accel.present = _model.state.gyro.present && _model.config.accel.dev != GYRO_NONE;
+  if (detectedGyro && detectedGyro->getType() == GYRO_ITG3205)
+  {
+    _model.state.accel.present = ((Device::GyroITG3205*)detectedGyro)->accelAvailable() && _model.config.accel.dev != GYRO_NONE;
+  }
   _model.state.gyro.clock = detectedGyro->getRate();
 }
 

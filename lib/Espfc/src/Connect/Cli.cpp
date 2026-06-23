@@ -611,6 +611,7 @@ const Cli::Param * Cli::initialize(ModelConfig& c)
     Param(PSTR("arming_disarm_kill_switch"), &c.arming.disarmKillSwitch),
   #endif
     Param(PSTR("arming_small_angle"), &c.arming.smallAngle),
+    Param(PSTR("arming_gyro_cal_on_first_arm"), &c.arming.gyroCalOnFirstArm),
 
     Param(PSTR("vtx_power"), &c.vtx.power),
     Param(PSTR("vtx_channel"), &c.vtx.channel),

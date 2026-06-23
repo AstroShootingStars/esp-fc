@@ -71,7 +71,8 @@ Espfc::Espfc espfc;
       gyroTimerInit(gyroTimerIsr, espfc.getGyroInterval());
       while(true)
       {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for timer isr notification
+        // Use timeout as fallback: waits for timer ISR, or wakes every 2ms if gyro not detected
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2));
         espfc.update(true);
       }
     }
