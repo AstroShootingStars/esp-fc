@@ -178,6 +178,16 @@ class Model
       return state.baro.present && config.baro.dev != BARO_NONE;
     }
 
+    bool altitudeHoldReady() const
+    {
+      return baroActive();
+    }
+
+    bool landingAssistReady() const
+    {
+      return accelActive();
+    }
+
     bool opticalFlowActive() const
     {
       return state.opticalFlow.present && config.opticalFlow.dev != Device::OPFLOW_NONE;

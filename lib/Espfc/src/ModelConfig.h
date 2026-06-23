@@ -753,6 +753,14 @@ struct RangefinderConfig
   uint8_t address = 0;                    // 0=auto/default I2C address
   uint8_t position = RANGEFINDER_BOTTOM;  // BOTTOM or FRONT
   uint8_t enabled = 1;                    // Individual enable flag
+  
+  // Thermal compensation (lidar drift correction)
+  uint8_t tempCompensationEnabled = 0;    // Enable temperature-based distance correction
+  int8_t tempSensorType = 0;              // 0=none, 1=NTC_ADC, 2=BMP280_INTERNAL, 3=VL53L0X_INTERNAL
+  int16_t tempCoefficient = -30;          // mm/°C thermal drift coefficient (negative = shrinks with heat)
+  int16_t referenceTemp = 20;             // Reference temperature (°C) at calibration
+  int16_t referenceDistance = 0;          // Reference distance (mm) at calibration (0=auto-calibrate)
+  int16_t calibrationOffset = 0;          // Manual calibration offset (mm)
 };
 
 struct OpticalFlowConfig
@@ -1045,6 +1053,17 @@ struct ArmingConfig
   uint8_t disarmKillSwitch = 0;
 #endif
   uint8_t smallAngle = 25;
+};
+
+struct RangefinderTempSensorConfig
+{
+  int8_t ntcAdcPin = -1;                  // ADC pin for NTC thermistor (-1 = disabled)
+  int16_t ntcR0 = 10000;                  // NTC nominal resistance at 25°C (Ohms)
+  uint16_t ntcBCoeff = 3950;              // NTC B coefficient (K)
+  int16_t ntcVref = 3300;                 // ADC reference voltage (mV)
+  int16_t ntcPullupR = 10000;             // Pull-up resistor (Ohms)
+  int8_t i2cTempSensorType = 0;           // I2C temp sensor: 0=none, 1=TMP102, 2=BME280, 3=BMP280_WITH_TEMP
+  uint8_t i2cTempAddress = 0;             // I2C address for temp sensor (0=auto-detect)
 };
 
 struct LandingAssistConfig

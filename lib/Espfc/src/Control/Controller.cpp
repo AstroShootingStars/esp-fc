@@ -108,7 +108,7 @@ void FAST_CODE_ATTR Controller::applyLandingAssist()
 {
   const auto& lac = _model.config.landingAssist;
   auto& state = _model.state;
-  if(!lac.enabled)
+  if(!lac.enabled || !_model.landingAssistReady())
   {
     _landingTouchdownPending = false;
     _landingTouchdownStartMs = 0;

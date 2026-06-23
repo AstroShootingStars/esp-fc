@@ -315,15 +315,262 @@ If you are using any analog protocol (PWM, OneShot, Multishot), you also need to
 
 This option informs FC that your motors rotating in reverse order. This option desn't reverse motor direction. It has to be configured with ESC configurator or by swapping motor wires.
 
-### ESC protocol
+## Motors and ESC Configuration
 
-You can select here protocol according to that you ESC can handle. For multirotor it is recommended to use `DSHOT150` or `DSHOT300`. Older ESCs may not support digital protocols, in this case it is recommended to use `OneShot125` at least. `Brushed` protocol is for driving brushed motors through FET drivers.
+### Brushed vs Brushless Motors
 
-It is not recomended to use `PWM` for multirotors.
+ESP-FC supports both brushed and brushless motor types. Understanding the differences is critical for proper configuration.
 
-### Motor PWM speed separated from PID speed
+#### **Brushless Motors** (Recommended for multirotors)
 
-This option allows to separate PWM frequency. If your pid loop is set to 1k, but ESC can accept maximum 333Hz. PWM is limitted to 480Hz.
+**Characteristics:**
+- **Commutation**: Electronic commutation via ESC (ESC controls timing)
+- **Efficiency**: 85–90% efficient
+- **Power**: High power-to-weight ratio
+- **Speed Range**: Wide RPM range (3000–40,000+ RPM typical)
+- **Cost**: Higher ($20–$100+ per motor)
+- **Maintenance**: No brushes; virtually maintenance-free
+- **Noise**: Quieter operation
+
+**Suitable ESCs/Protocols:**
+- ✅ DShot (150/300/600/ProShot) — **Recommended for high-performance multirotors** (digital, bidirectional, telemetry capable)
+- ✅ OneShot (125/42) — Traditional analog protocol, older ESCs
+- ✅ Multishot — Faster analog variant
+- ❌ PWM — Not recommended for multirotors (poor throttle resolution)
+- ❌ Brushed — Not suitable (requires brushed motor)
+
+**Wiring:**
+- Three motor wires (A, B, C) to ESC
+- ESC power: BEC (Battery Eliminator Circuit) supplies power to FC
+- ESC signal: PWM/DShot signal from FC GPIO
+- **Phase order matters**: If motor spins backward, swap any two of the three wires
+
+**Configuration in Betaflight:**
+```
+1. Motors tab: Select motor type (usually "Brushless")
+2. ESC protocol: Select appropriate protocol (DSHOT300 recommended)
+3. Motor direction: Configure in ESC software, not in FC
+4. Throttle calibration: Usually automatic with DShot; manual for analog protocols
+```
+
+#### **Brushed Motors** (Legacy/Micro quadcopters)
+
+**Characteristics:**
+- **Commutation**: Mechanical brushes on rotating commutator
+- **Efficiency**: 75–80% efficient
+- **Power**: Lower power-to-weight (typically <20g frames)
+- **Speed Range**: Limited RPM range (few thousand RPM)
+- **Cost**: Lower ($1–$10 per motor)
+- **Maintenance**: Brushes wear; periodic replacement needed
+- **Noise**: Audible buzzing noise
+
+**Suitable ESCs/Protocols:**
+- ✅ Brushed — **Direct PWM control** to FET driver (not a traditional ESC)
+- ❌ DShot/OneShot — Not suitable (designed for brushless)
+
+**Wiring:**
+- Two motor wires (±) to FET driver output
+- FET driver connected to FC GPIO (PWM signal)
+- FET driver power: Directly from battery
+- **Polarity matters**: Reversed wires = reversed direction (easily fixable)
+- **Capacitor**: 470µF/16V capacitor recommended across motor leads to reduce EMI
+
+**Configuration in Betaflight:**
+```
+1. Motors tab: Select motor type ("Brushed" if available)
+2. ESC protocol: Set to "Brushed"
+3. Motor direction: Swap motor leads if spinning backward
+4. Throttle calibration: Not applicable (direct PWM)
+```
+
+**Typical Brushed FET Driver Wiring (ESP32 example):**
+```
+                Battery (+)
+                    |
+            ┌───────┴────────┐
+            |                |
+            D                |
+            | (MOSFET)       |
+            S────────────M────┴──────Motor (−)
+            |
+            G (GPIO27) ← FC PWM output
+            |
+           GND ──────────────Battery (−)
+                      |
+                   Motor (+)
+```
+
+---
+
+### ESC Protocols Comparison
+
+| Protocol | Type | Use Case | DShot Telemetry | Frame Rate | Notes |
+|---|---|---|---|---|---|
+| **PWM** | Analog | Legacy/testing only | No | 50 Hz | Poor throttle resolution; not recommended for multirotors |
+| **OneShot125** | Analog | Older ESCs | No | 125 Hz | Better resolution than PWM; standard for 2010s era |
+| **OneShot42** | Analog | High-speed analog ESCs | No | 420 Hz | Faster refresh; improves responsiveness |
+| **Multishot** | Analog | Experimental/optimized | No | 2 kHz+ | Between OneShot and DShot; rare |
+| **Brushed** | Direct PWM | Brushed motors / FET drivers | No | Variable | Direct PWM to FET/driver; async-only |
+| **DShot150** | Digital | Standard brushless (4S–6S) | Yes (6S+) | 150 Hz | Most common; good for all modern ESCs |
+| **DShot300** | Digital | High-performance | Yes | 300 Hz | Better latency; recommended for racing |
+| **DShot600** | Digital | Extreme performance | Yes | 600 Hz | Highest bandwidth; 32k ESC required |
+| **ProShot** | Digital | Future-proofing | Yes | 32 kHz+ | Next-gen protocol; requires compatible ESCs |
+
+---
+
+### ESC Protocol Selection
+
+**For Brushless Motors:**
+
+1. **Racing / High-Performance** → `DSHOT300` or `DSHOT600`
+   - Best low-latency response
+   - Bidirectional DShot for telemetry and active braking
+   - Requires modern high-speed ESC (≥24k firmware or 32k)
+
+2. **Standard Multirotors** → `DSHOT150` ⭐ **Recommended**
+   - Works with virtually all modern ESCs
+   - Reliable and proven
+   - DShot telemetry available
+   - Good balance of performance and compatibility
+
+3. **Older ESCs** → `OneShot125` or `OneShot42`
+   - For pre-DShot era ESCs
+   - Still functional; no telemetry
+   - Slight responsiveness penalty vs DShot
+
+4. **DO NOT USE** → `PWM`
+   - Obsolete for multirotors
+   - Poor throttle resolution
+   - High latency
+
+**For Brushed Motors:**
+
+→ Always use `Brushed` protocol
+   - Direct PWM output to FET driver
+   - Fixed async operation (no sync option)
+   - Typical PWM frequency: 16 kHz (can adjust via `set output_motor_rate`)
+
+---
+
+### Motor Configuration CLI Commands
+
+**Check current configuration:**
+```
+get output_
+```
+
+**Set motor protocol (brushless example):**
+```
+set output_motor_protocol DSHOT300
+save
+```
+
+**Set motor protocol (brushed example):**
+```
+set output_motor_protocol BRUSHED
+save
+```
+
+**Set motor PWM frequency (if needed for analog protocols):**
+```
+set output_motor_rate 480    # PWM frequency in Hz
+save
+```
+
+**Adjust motor min throttle (minimum command):**
+```
+set output_min_throttle 1050
+save
+```
+
+**Available Protocol Options:**
+- `PWM`
+- `ONESHOT125`
+- `ONESHOT42`
+- `MULTISHOT`
+- `BRUSHED`
+- `DSHOT150` ⭐
+- `DSHOT300`
+- `DSHOT600`
+- `PROSHOT`
+
+---
+
+### Motor Calibration
+
+#### **Analog Protocols (OneShot, Brushed)**
+
+Before first flight, ESCs must be calibrated to recognize min/max throttle signals:
+
+1. **Remove all propellers** ⚠️
+2. **Enable test mode** in Betaflight Motors tab
+3. **Move throttle slider to 100%** and connect battery
+4. ESCs emit calibration beep sequence
+5. **Move throttle slider to 0%**
+6. ESCs emit confirmation beeps
+7. Calibration complete
+
+**If using brushed motors with PWM driver:**
+- Calibration typically not required (direct PWM)
+- FET driver threshold is fixed by hardware
+
+#### **DShot Protocols**
+
+- **No calibration required** ✅
+- ESC detects throttle range automatically
+- Motors spin immediately after arming (if armed)
+
+---
+
+### Motor Direction Configuration
+
+#### **Brushless Motors**
+
+Motor direction is controlled by the **ESC firmware**, not the FC. To reverse direction:
+1. **Swap any two of the three motor wires** (e.g., swap A↔B)
+2. Or use **ESC configurator software** (BLHeli, ESC Pro, etc.) to reverse electronically
+
+The `Motor direction is reversed` option in Betaflight simply informs the FC that your motor order is opposite to expected. It does **not** physically reverse motors.
+
+#### **Brushed Motors**
+
+Motor direction is controlled by **motor polarity**:
+1. **Reverse the two motor wires** (swap + and −)
+2. No software configuration needed
+
+---
+
+### Motor Speed Separated from PID Loop
+
+Modern ESCs can operate at different frequencies than your PID loop:
+
+```
+set gyro_sync_denom 1        # PID loop = 8 kHz / 1 = 8 kHz
+set output_motor_rate 480    # Motor PWM = 480 Hz (independent)
+```
+
+This allows:
+- **High PID frequency** (1–8 kHz) for responsive control
+- **Lower motor rate** if your ESC has limitations
+- Better performance with legacy analog ESCs
+
+**Recommended settings:**
+- Modern DShot ESCs: Leave motor rate on auto (protocol determines it)
+- Analog ESCs: Set `output_motor_rate` to ESC max (typically 480 Hz)
+
+---
+
+### ESC Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| Motors don't spin | Protocol mismatch or throttle inverted | Verify protocol in setup; check throttle direction in receiver tab |
+| Motor spins wrong direction | Motor wires or ESC phase reversed | Swap two motor wires on that ESC |
+| Jerky/unstable throttle | PWM frequency too low or ESC overheating | Increase motor_rate (if analog); reduce PID loop rate; check ESC temps |
+| DShot telemetry missing | ESC/protocol incompatible | Verify DShot300+; ESC must support telemetry firmware (≥24k) |
+| Brushed motor twitching | FET driver oscillating or low battery | Add 470µF capacitor across motor leads; ensure good power connections |
+
+
 
 ## Flight modes
 

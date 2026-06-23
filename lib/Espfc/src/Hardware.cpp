@@ -72,6 +72,7 @@ int Hardware::begin()
   detectMag();
   detectBaro();
   detectRangefinder();
+  detectTemperatureSensor();
   detectOpticalFlow();
   detectOled();
   return 1;
@@ -263,6 +264,19 @@ void Hardware::detectRangefinder()
   Device::RangefinderDevice* bottom = detectByConfig(_model.config.rangefinder[RANGEFINDER_BOTTOM]);
   Device::RangefinderDevice* front = detectByConfig(_model.config.rangefinder[RANGEFINDER_FRONT]);
 
+  const auto& bottomCfg = _model.config.rangefinder[RANGEFINDER_BOTTOM];
+  const auto& frontCfg = _model.config.rangefinder[RANGEFINDER_FRONT];
+  const bool duplicateRangefinderConfig = bottomCfg.enabled && frontCfg.enabled &&
+    bottomCfg.bus == frontCfg.bus &&
+    bottomCfg.dev == frontCfg.dev &&
+    bottomCfg.address == frontCfg.address &&
+    bottomCfg.address > 0;
+
+  if(duplicateRangefinderConfig)
+  {
+    front = nullptr;
+  }
+
   _model.state.rangefinder[RANGEFINDER_BOTTOM].dev = bottom;
   _model.state.rangefinder[RANGEFINDER_BOTTOM].present = (bool)bottom;
   _model.state.rangefinder[RANGEFINDER_BOTTOM].rate = bottom ? bottom->getRate() : 0;
@@ -270,6 +284,70 @@ void Hardware::detectRangefinder()
   _model.state.rangefinder[RANGEFINDER_FRONT].dev = front;
   _model.state.rangefinder[RANGEFINDER_FRONT].present = (bool)front;
   _model.state.rangefinder[RANGEFINDER_FRONT].rate = front ? front->getRate() : 0;
+}
+
+void Hardware::detectTemperatureSensor()
+{
+  // Temperature sensor detection is optional and graceful - if not found, thermal compensation is simply disabled.
+  // Try to detect temperature sensors only if thermal compensation is enabled on at least one rangefinder.
+  
+  bool tempCompensationNeeded = false;
+  for(size_t i = 0; i < RANGEFINDER_COUNT; i++)
+  {
+    if(_model.config.rangefinder[i].tempCompensationEnabled)
+    {
+      tempCompensationNeeded = true;
+      break;
+    }
+  }
+  
+  if(!tempCompensationNeeded) return;  // No detection needed if thermal compensation is disabled
+  
+  // Try to detect I2C temperature sensors (TMP102, BME280, BMP280)
+#if defined(ESPFC_I2C_0)
+  if(_model.config.pin[PIN_I2C_0_SDA] != -1 && _model.config.pin[PIN_I2C_0_SCL] != -1)
+  {
+    // For now, log that I2C temperature sensor detection is available
+    // Actual I2C temp sensor implementations (TMP102, BME280, BMP280) can be added later
+    // This structure allows graceful fallback if sensor not found
+    _model.logger.info().log(F("TempSensor")).logln(F("I2C capable"));
+  }
+#endif
+  
+  // Try to detect NTC thermistor on configured ADC pin
+  // NTC detection: if ADC pin is configured and not -1, assume potential for thermistor
+  // Actual ADC reading will happen at runtime when thermal compensation is enabled
+#ifdef ESPFC_ADC_0
+  if(_model.config.pin[PIN_INPUT_ADC_0] != -1 && _model.config.rangefinder[0].tempSensorType == 1) // 1 = NTC_ADC
+  {
+    // Configure ADC pin for thermistor reading
+    // Actual initialization deferred to first use (lazy init)
+    _model.logger.info()
+        .log(F("TempSensor"))
+        .log(F("NTC"))
+        .logln(_model.config.pin[PIN_INPUT_ADC_0]);
+  }
+#endif
+  
+  // Log thermal compensation configuration status
+  for(size_t i = 0; i < RANGEFINDER_COUNT; i++)
+  {
+    if(_model.config.rangefinder[i].tempCompensationEnabled)
+    {
+      const char* sensorNames[] = {"NONE", "NTC_ADC", "BMP280", "VL53L0X"};
+      const char* sensorName = (_model.config.rangefinder[i].tempSensorType < 4) 
+                                ? sensorNames[_model.config.rangefinder[i].tempSensorType]
+                                : "UNKNOWN";
+      
+      _model.logger.info()
+          .log(F("RF"))
+          .log((int)i)
+          .log(F("TempComp"))
+          .log(sensorName)
+          .log(F("coeff="))
+          .logln(_model.config.rangefinder[i].tempCoefficient);
+    }
+  }
 }
 
 void Hardware::detectOpticalFlow()

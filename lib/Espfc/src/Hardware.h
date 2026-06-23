@@ -23,6 +23,7 @@ class Hardware
     void detectMag();
     void detectBaro();
     void detectRangefinder();
+    void detectTemperatureSensor();
     void detectOpticalFlow();
     void detectOled();
     void updateOled();

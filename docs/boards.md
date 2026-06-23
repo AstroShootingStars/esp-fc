@@ -6,16 +6,27 @@ This page provides detailed hardware specifications for all supported targets, i
 
 Source of truth: target headers in `lib/Espfc/src/Target/Target*.h`, applied to runtime defaults via `ModelConfig::pin[PIN_OUTPUT_n]`.
 
-| Board | pin_output_0 (Motor 1) | pin_output_1 (Motor 2) | pin_output_2 (Motor 3) | pin_output_3 (Motor 4) | Extra output slots |
-|---|---:|---:|---:|---:|---|
-| ESP32 | GPIO27 | GPIO25 | GPIO4 | GPIO12 | pin_output_4..7 exist, default `-1` |
-| ESP32-S2 | GPIO39 | GPIO40 | GPIO41 | GPIO42 | None |
-| ESP32-S3 | GPIO39 | GPIO40 | GPIO41 | GPIO42 | None |
-| ESP32-C3 | GPIO2 | GPIO3 | GPIO4 | GPIO5 | None |
-| ESP8266 | GPIO16 (D0) | GPIO14 (D5) | GPIO12 (D6) | GPIO15 (D8) | None |
-| RP2040 / RP2350 | GPIO2 | GPIO3 | GPIO4 | GPIO5 | pin_output_4..7 exist, default `-1` |
+| Board | Motor 1 | Motor 2 | Motor 3 | Motor 4 | Extra Outputs | PWM Controller |
+|---|---:|---:|---:|---:|---|---|
+| **ESP32** | GPIO27 | GPIO25 | GPIO4 | GPIO12 | Outputs 4–7 configurable (default `-1`) | Hardware PWM |
+| **ESP32-S2** | GPIO39 | GPIO40 | GPIO41 | GPIO42 | None (4-output fixed) | Hardware PWM |
+| **ESP32-S3** (all variants) | GPIO39 | GPIO40 | GPIO41 | GPIO42 | None (4-output fixed) | Hardware PWM |
+| — ESP32-S3 (lolin_s3_mini) | GPIO39 | GPIO40 | GPIO41 | GPIO42 | — | — |
+| — ESP32-S3-DevKitC | GPIO39 | GPIO40 | GPIO41 | GPIO42 | — | — |
+| — ESP32-S3-WROOM | GPIO39 | GPIO40 | GPIO41 | GPIO42 | — | — |
+| — ESP32-S3-N8R8 | GPIO39 | GPIO40 | GPIO41 | GPIO42 | — | — |
+| — ESP32-S3-N8R16 | GPIO39 | GPIO40 | GPIO41 | GPIO42 | — | — |
+| **ESP32-C3** | GPIO2 | GPIO3 | GPIO4 | GPIO5 | None (4-output fixed) | Hardware PWM |
+| **ESP8266** | GPIO16 (D0) | GPIO14 (D5) | GPIO12 (D6) | GPIO15 (D8) | None (4-output fixed) | Software PWM (≤400 Hz) |
+| **RP2040** (Pico) | GPIO2 | GPIO3 | GPIO4 | GPIO5 | Outputs 4–7 configurable (default `-1`) | Hardware PWM |
+| **RP2350** (Pico 2) | GPIO2 | GPIO3 | GPIO4 | GPIO5 | Outputs 4–7 configurable (default `-1`) | Hardware PWM |
 
-Use `set pin_output_n <gpio>` to remap a motor output, or `-1` to unmap.
+**Configuration:**
+- Use `set pin_output_n <gpio>` to remap a motor output to a different GPIO
+- Use `set pin_output_n -1` to disable/unmap a motor output
+- **ESP32-S3 variants** (devkitc, wroom, n8r8, n8r16) share identical pin configuration
+- **ESP8266** uses software PWM with limited frequency (≤400 Hz); hardware PWM not available
+- **RP2040/RP2350** support up to 8 motor outputs (configure extras via `set pin_output_4..7`)
 
 ## Default VTX Control Port Map
 
@@ -161,6 +172,53 @@ SmartAudio is the default VTX control protocol. Wire the VTX control line to the
 
 ---
 
+## ESP32-S3-N8R8 & ESP32-S3-N8R16 (BOX / Smart Home Boards)
+
+**Overview**: ESP32-S3 variants optimized for compact form factors with built-in sensors. N8R8/N8R16 refer to 8MB-Flash with 8MB/16MB PSRAM variants. These use the same target configuration as lolin_s3_mini (1.3MB flash partition).
+
+### Serial Ports
+- **UART0**: TX=GPIO43, RX=GPIO44 (default: SmartAudio VTX control)
+- **UART1**: TX=GPIO16, RX=GPIO15 (default: GPS)
+- **UART2**: TX=GPIO18, RX=GPIO17 (default: RX_SERIAL for receiver)
+- **USB CDC**: Not available (compact form factor)
+- **Soft-Serial 0**: Virtual UART with WiFi bridge enabled
+
+### Communication Buses
+- **SPI**: Bus 1 — SCK=GPIO12, MOSI=GPIO11, MISO=GPIO13 (gyro, barometer)
+- **I2C**: SCL=GPIO10, SDA=GPIO9 (software-based, sensors)
+
+### Sensors
+- **Gyroscope**: SPI (CS=GPIO8) or I2C
+- **Barometer**: SPI (CS=GPIO7) or I2C
+- **ADC Channels**: 2 available
+
+### Motor Outputs
+- **Motor/ESC pins**: GPIO39, GPIO40, GPIO41, GPIO42 (4 outputs)
+
+### Audio/LED/Buttons
+- **Buzzer**: GPIO5
+- **LED**: GPIO15
+- **Button**: GPIO6
+
+### Features
+- ✅ Receiver input: Serial RX_SERIAL via UART2
+- ✅ Default VTX control: SmartAudio on UART0 TX=GPIO43
+- ✅ Motor Stop: Enabled
+- ✅ Dynamic filter: Supported
+- ✅ WiFi OTA update: Yes (soft-serial bridge)
+- ✅ ESP-NOW wireless: Yes
+- ⚠️ DShot telemetry: Supported
+
+### Memory & Performance
+- **RAM**: ~512 KB (26–30% typical usage)
+- **PSRAM**: 8 MB (N8R8) or 16 MB (N8R16) for additional buffering
+- **Flash**: 1.3 MB for firmware (same as S3 mini)
+- **Gyro sampling**: I2C max 2 kHz, SPI max 4 kHz
+
+**Notes**: N8R8/N8R16 boards are particularly well-suited for autonomous missions or heavy telemetry logging due to PSRAM availability.
+
+---
+
 ## ESP32-C3
 
 **Overview**: Ultra-compact RISC-V single-core with 320 KB RAM, WiFi, USB-C.
@@ -292,37 +350,163 @@ SmartAudio is the default VTX control protocol. Wire the VTX control line to the
 
 ## RP2350 (Raspberry Pi Pico 2)
 
-**Note**: RP2350 is a newer variant of RP2040 with the same target file. Key differences:
+**Overview**: Dual-core ARM Cortex-M33 microcontroller with 520 KB RAM, 4 MB Flash, and excellent performance for USB-standalone flight control. Faster variant of RP2040.
 
-### Key Differences from RP2040
-- **Dual-core ARM Cortex-M33** (faster than M0+)
-- **SPI sampling**: max 4 kHz (vs. 1 kHz on RP2040)
-- **Port mappings**: Identical to RP2040 target file
-- **WiFi/Bluetooth**: Still not available (no wireless modules)
+### Serial Ports
+- **UART0** (Serial1): TX=GPIO0, RX=GPIO1 (default: SmartAudio VTX control)
+- **UART1** (Serial2): TX=GPIO8, RX=GPIO9 (default: RX_SERIAL for receiver)
+- **USB CDC**: Native USB for MSP and debugging
+- **Soft-Serial**: Not available on RP2350
 
-All port, sensor, and feature information matches RP2040 above, except SPI sampling speed.
+### Communication Buses
+- **SPI**: Bus 1 — SCK=GPIO14, MOSI=GPIO15, MISO=GPIO12 (gyro, barometer)
+- **I2C**: SDA=GPIO16, SCL=GPIO17 (sensors)
+
+### Sensors
+- **Gyroscope**: SPI (CS=GPIO13) or I2C
+- **Barometer**: SPI (CS=GPIO11) or I2C
+- **ADC Channels**: 2 available (GPIO26, GPIO27)
+
+### Motor Outputs
+- **Motor/ESC pins**: GPIO2, GPIO3, GPIO4, GPIO5 (4 outputs, 8 slots configurable)
+
+### Audio/LED/Buttons
+- **Buzzer**: Not configured
+- **LED**: Not configured
+- **Button**: Not configured
+
+### Features
+- ✅ Receiver input: Serial RX_SERIAL via UART1
+- ❌ PPM receiver: Not configured (USB-standalone focus)
+- ✅ Default VTX control: SmartAudio on UART0 TX=GPIO0
+- ✅ Motor Stop: Enabled
+- ✅ GPS Support: Enabled (excellent headroom with 4MB flash and 520KB RAM)
+- ✅ Telemetry (CRSF): Enabled for long-range setups
+- ✅ Dynamic filter: Supported
+- ❌ WiFi OTA: Not available (no wireless modules)
+- ❌ Bluetooth OTA: Not available
+- ❌ Soft-serial: Not available
+- ✅ DShot telemetry: Supported
+- ✅ Multi-core support: Yes (dual-core ARM M33)
+
+### Memory & Performance
+- **RAM**: 520 KB total (excellent; only 6.7% used by firmware)
+- **Flash**: 4 MB total (93.3% headroom available for user data)
+- **CPU**: Dual-core ARM Cortex-M33 @ 150 MHz (excellent performance)
+- **Gyro sampling**: I2C max 1 kHz, SPI max 4 kHz (faster than RP2040)
+
+### Key Advantages
+- **Excellent flash and RAM headroom**: Most feature-rich board with maximum available features enabled by default
+- **High-performance ARM M33**: Dual-core execution enables background tasks without affecting flight stability
+- **USB-standalone**: Perfect for bench testing or tethered flight applications
+- **GPS & Telemetry ready**: Supports autonomous missions and real-time telemetry out-of-the-box
 
 ---
 
 ## Feature Comparison Table
 
-| Feature | ESP32 | ESP32-S2 | ESP32-S3 | ESP32-C3 | ESP8266 | RP2040 |
-|---|---|---|---|---|---|---|
-| **UART Ports** | 3 full | 2 full | 3 full | 1 full | 1 full + 1 TX-only | 2 full |
-| **I2C** | Yes | Yes | Yes | Yes (I2C only) | Yes | Yes |
-| **SPI** | Yes | Yes | Yes | No | No | Yes |
-| **USB CDC** | No | Yes | Optional | Yes | No | Yes |
-| **WiFi OTA** | Yes | No | Yes | Yes | Yes | No |
-| **Bluetooth OTA** | Optional* | No | No | No | No | No |
-| **Soft-Serial WiFi** | Yes | No** | Yes | Yes | Yes | No |
-| **DShot Telemetry** | Yes | Yes | Yes | Yes | No | Yes |
-| **Dual-Core** | Yes | No | Yes | No | No | Yes (ARM M0+) or Yes (ARM M33 on RP2350) |
-| **Total RAM** | 512 KB | 320 KB | 512 KB | 320 KB | 80 KB | 264 KB |
-| **Typical Usage** | General purpose | RAM-constrained | Balanced | Compact I2C | Legacy | USB-standalone |
+| Feature | ESP32 | ESP32-S2 | ESP32-S3 | ESP32-C3 | ESP8266 | RP2040 | RP2350 |
+|---|---|---|---|---|---|---|---|
+| **UART Ports** | 3 full | 2 full | 3 full | 1 full | 1 full + 1 TX-only | 2 full | 2 full |
+| **I2C** | Yes | Yes | Yes | Yes (I2C only) | Yes | Yes | Yes |
+| **SPI** | Yes | Yes | Yes | No | No | Yes | Yes |
+| **USB CDC** | No | Yes | Optional | Yes | No | Yes | Yes |
+| **WiFi OTA** | Yes | No | Yes | Yes | Yes | No | No |
+| **Bluetooth OTA** | Optional* | No | No | No | No | No | No |
+| **Soft-Serial WiFi** | Yes | No** | Yes | Yes | Yes | No | No |
+| **DShot Telemetry** | Yes | Yes | Yes | Yes | No | Yes | Yes |
+| **Flash Storage** | 1.3 MB | 1.3 MB | 1.3 MB (mini) / 3.3 MB (devkitc/wroom) | 1.3 MB | 1 MB | 2 MB | 4 MB |
+| **Receiver Input** | ✅ Serial | ✅ Serial | ✅ Serial | ✅ Serial | ✅ PPM | ✅ Serial | ✅ Serial |
+| **Motor Stop** | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled |
+| **GPS Support** | Available | Available | Available | Available | ✅ Enabled | ✅ Enabled | ✅ Enabled |
+| **Telemetry (CRSF)** | Available | Available | Available | Available | ✅ Enabled | ✅ Enabled | ✅ Enabled |
+| **Dynamic Filter** | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled |
+| **Dual-Core** | Yes | No | Yes | No | No | Yes (ARM M0+) | Yes (ARM M33) |
+| **Total RAM** | 512 KB | 320 KB | 512 KB | 320 KB | 80 KB | 264 KB | 520 KB |
+| **Flash Usage** | 84.7% | 76.5% | 81.5% | 87.3% | 52.7% | 13.6% | 6.7% |
+| **Typical Usage** | General purpose | RAM-constrained | Balanced | Compact I2C | Legacy | USB-standalone | High-performance USB |
 
 **Notes:**
 - *ESP32 Bluetooth OTA requires `ESPFC_BT_OTA` build flag and Bluetooth stack support
 - **ESP32-S2 soft-serial WiFi disabled to preserve RAM
+- GPS Support: "Available" = feature can be enabled but not default; "✅ Enabled" = feature enabled by default
+- Telemetry (CRSF): Feature flag determines if CRSF telemetry output is available when using CRSF receiver
+- Flash Usage: Percentage of total flash used by compiled firmware (lower = more room for user data)
+
+---
+
+## Feature Enablement Strategy
+
+### How Feature Flags Work
+
+ESP-FC uses compile-time feature masks to control which features are available on each board. The `ESPFC_FEATURE_MASK` in each target header (e.g., `TargetESP32.h`) defines the default set of enabled features.
+
+Features are categorized by complexity and resource requirements:
+
+| Feature | Purpose | Flash Impact | RAM Impact | Hardware Requirements |
+|---|---|---|---|---|
+| **FEATURE_MOTOR_STOP** | Safety: Stop motors when throttle is below 5% | None (logic already compiled) | None | None; always recommended |
+| **FEATURE_GPS** | Altitude hold, position hold, return-to-home | ~5–10 KB | Minimal | UART port for GPS module (typically UART1) |
+| **FEATURE_TELEMETRY** | CRSF telemetry output for long-range transmitters | ~2–3 KB | None | Uses same UART as GPS receiver protocol |
+| **FEATURE_DYNAMIC_FILTER** | Runtime-adaptive gyro filtering (enabled for loop rates ≥ 1 kHz) | ~2–3 KB | None | Enabled only if gyro sampling ≥ 1 kHz |
+
+### Board-Specific Feature Recommendations
+
+**Ultra-Compact Boards (Limited RAM/Flash)**
+- **ESP32-C3** (87.3% flash, 320 KB RAM): Minimal feature set
+  - ✅ Enabled: Motor Stop, Dynamic Filter (only at 1 kHz+)
+  - ❌ Recommended: GPS, Telemetry (insufficient headroom; I2C-only sensors also limit receiver options)
+  - **Action**: Keep defaults; use CLI to manually enable GPS if needed for testing
+
+**Tight Budget Boards (Flash > 75%)**
+- **ESP32** (84.7% flash, 512 KB RAM), **ESP32-S3** (81.5% flash, 512 KB RAM), **ESP32-S3-N8R8/N8R16** (81.4% flash with standard partition)
+  - ✅ Enabled: Motor Stop, Dynamic Filter
+  - ⚠️ Available: GPS and Telemetry (can be manually enabled via CLI if needed for specific missions)
+  - **Action**: Sufficient for most flights; GPS/Telemetry can be enabled for extended flights if desirable
+
+**RAM-Constrained (< 350 KB)**
+- **ESP32-S2** (320 KB RAM, 76.5% flash)
+  - ✅ Enabled: Motor Stop, Dynamic Filter
+  - ⚠️ Available: GPS, Telemetry (soft-serial WiFi bridge disabled to preserve RAM)
+  - **Action**: Use USB or standard serial ports; no WiFi OTA available
+
+**Moderate Headroom (Flash 50–70%)**
+- **ESP8266** (52.7% flash, 80 KB RAM)
+  - ✅ Enabled: Motor Stop, GPS, Telemetry, Dynamic Filter (excellent flash headroom)
+  - ⚠️ Constraint: Only 80 KB RAM (very tight); single UART limits simultaneous RX + GPS
+  - **Action**: GPS/Telemetry enabled; recommend PPM receiver + soft-serial GPS
+
+**Excellent Headroom (Flash < 20%)**
+- **RP2040** (13.6% flash, 264 KB RAM), **RP2350** (6.7% flash, 520 KB RAM)
+  - ✅ Enabled: Motor Stop, GPS, Telemetry, Dynamic Filter
+  - ✅ Bonus: Can add additional custom features if needed (>80% headroom available)
+  - **Action**: Maximum feature set; ideal for autonomous missions, logging, and advanced telemetry
+
+### How to Check/Modify Features
+
+**CLI Commands** (in Betaflight Configurator):
+```
+# View all features
+get | grep feature
+
+# Enable a feature (example: GPS)
+set feature_gps 1
+save
+
+# Disable a feature
+set feature_gps 0
+save
+```
+
+**To Recompile with Different Feature Defaults**:
+Edit the target header file (e.g., `lib/Espfc/src/Target/TargetESP32.h`):
+```
+// Current: Motor Stop + Dynamic Filter only
+#define ESPFC_FEATURE_MASK (FEATURE_RX_SERIAL | FEATURE_MOTOR_STOP | FEATURE_DYNAMIC_FILTER)
+
+// Modified: Add GPS + Telemetry (if flash headroom available)
+#define ESPFC_FEATURE_MASK (FEATURE_RX_SERIAL | FEATURE_MOTOR_STOP | FEATURE_GPS | FEATURE_TELEMETRY | FEATURE_DYNAMIC_FILTER)
+```
 
 ---
 
