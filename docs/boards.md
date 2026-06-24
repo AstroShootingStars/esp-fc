@@ -439,6 +439,49 @@ Default buzzer pins are assigned only where the target header defines `ESPFC_BUZ
 | **Total RAM** | 512 KB | 320 KB | 512 KB | 320 KB | 80 KB | 264 KB | 520 KB |
 | **Flash Usage** | 84.7% | 76.5% | 81.5% | 87.3% | 52.7% | 13.6% | 6.7% |
 | **Typical Usage** | General purpose | RAM-constrained | Balanced | Compact I2C | Legacy | USB-standalone | High-performance USB |
+@@
+@@### Complete Feature Support Matrix by Board
+@@
+@@| Feature | Purpose | ESP32 | ESP32-S2 | ESP32-S3 | ESP32-C3 | ESP8266 | RP2040 | RP2350 | Configure Via |
+@@|---|---|---|---|---|---|---|---|---|---|
+@@| **Motor PWM Output** | ESC control | ✅ 8 configurable | ✅ 4 fixed | ✅ 4 fixed | ✅ 4 fixed | ✅ 4 fixed | ✅ 8 configurable | ✅ 8 configurable | GUI + CLI |
+@@| **SBUS Receiver** | Serial protocol | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **IBUS Receiver** | Serial protocol | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **CRSF Receiver** | Long-range protocol | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **PPM Receiver** | Pulse-position modulation | ✅ GPIO35 | ❌ No | ✅ GPIO6 | ❌ No | ✅ GPIO13 | ❌ No | ❌ No | CLI |
+@@| **ESP-NOW** | Wireless link | ✅ Yes | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ❌ No | CLI |
+@@| **Gyro I2C** | Primary sensor | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **Gyro SPI** | Alternative sensor | ✅ Yes (CS=GPIO5) | ✅ Yes (CS=GPIO10) | ✅ Yes (CS=GPIO8) | ❌ No SPI | ❌ No SPI | ✅ Yes (CS=GPIO13) | ✅ Yes (CS=GPIO13) | GUI |
+@@| **Barometer I2C** | Altitude measurement | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **Barometer SPI** | Alternative sensor | ✅ Yes (CS=GPIO13) | ✅ Yes (CS=GPIO7) | ✅ Yes (CS=GPIO7) | ❌ No SPI | ❌ No SPI | ✅ Yes (CS=GPIO11) | ✅ Yes (CS=GPIO11) | GUI |
+@@| **Magnetometer I2C** | Compass | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **GPS (UART)** | Position/altitude | ✅ Available | ✅ Available | ✅ Available | ✅ Available | ✅ Enabled | ✅ Enabled | ✅ Enabled | GUI |
+@@| **GPS (UART1)** | Default GPS port | GPIO16/17 | GPIO16/17 | GPIO15/16 | ❌ N/A | ❌ N/A | GPIO9/8 | GPIO9/8 | CLI |
+@@| **CRSF Telemetry Out** | TX telemetry | ✅ Available | ✅ Available | ✅ Available | ✅ Available | ✅ Enabled | ✅ Enabled | ✅ Enabled | GUI |
+@@| **SmartAudio VTX** | VTX control | ✅ Yes (UART1) | ✅ Yes (UART0) | ✅ Yes (UART0) | ✅ Yes (UART0) | ✅ Yes (UART1) | ✅ Yes (UART0) | ✅ Yes (UART0) | GUI |
+@@| **DShot ESC Protocol** | Modern PWM | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ Partial | ✅ Yes | ✅ Yes | GUI |
+@@| **DShot Telemetry** | RPM feedback | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes | ✅ Yes | CLI |
+@@| **Rangefinder (sonar)** | Altitude below 5m | ✅ Available | ✅ Available | ✅ Available | ⚠️ Limited GPIO | ⚠️ No GPIO left | ✅ Available | ✅ Available | CLI |
+@@| **Optical Flow** | Ground speed | ✅ Available | ✅ Available | ✅ Available | ⚠️ Limited GPIO | ⚠️ No GPIO left | ✅ Available | ✅ Available | CLI |
+@@| **Blackbox Logging** | Flight data recording | ✅ Available | ✅ Available | ✅ Available | ✅ Available | ✅ Enabled | ✅ Enabled | ✅ Enabled | GUI + CLI |
+@@| **OSD (On-Screen Display)** | AIO board integration | ✅ Yes (MSP) | ✅ Yes (MSP) | ✅ Yes (MSP) | ✅ Yes (MSP) | ✅ Yes (MSP) | ✅ Yes (MSP) | ✅ Yes (MSP) | GUI |
+@@| **Motor Stop** | Failsafe disarm | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | ✅ Enabled | GUI |
+@@| **Low Battery Alarm** | Power monitoring | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **Buzzer / Beeper** | Audio alerts | ✅ GPIO26 | ✅ GPIO5 | ✅ GPIO5 | ❌ Not assigned | ❌ Not assigned | ❌ Not assigned | ❌ Not assigned | CLI |
+@@| **LED Indicator** | Status light | ✅ GPIO2 | ✅ GPIO15 | ✅ GPIO15 | ❌ Not assigned | ❌ Not assigned | ❌ Not assigned | ❌ Not assigned | CLI |
+@@| **Board Button** | ARM/disarm shortcut | ❌ Not assigned | ❌ Not assigned | ✅ GPIO6 (WROOM) | ❌ Not assigned | ❌ Not assigned | ❌ Not assigned | ❌ Not assigned | CLI |
+@@| **WiFi OTA Firmware** | Wireless update | ✅ Yes (soft-serial) | ❌ No (RAM constrained) | ✅ Yes (soft-serial) | ✅ Yes (soft-serial) | ✅ Yes (soft-serial) | ❌ No WiFi | ❌ No WiFi | CLI |
+@@| **Bluetooth OTA** | BT wireless update | ✅ Optional** | ❌ No | ❌ No | ❌ No | ❌ No | ❌ No | ❌ No | CLI (if enabled) |
+@@| **USB OTA Firmware** | USB update method | ❌ No USB | ✅ Yes (USB CDC) | ⚠️ Optional | ✅ Yes (USB CDC) | ❌ No USB | ✅ Yes (USB CDC) | ✅ Yes (USB CDC) | Build system |
+@@| **CLI Configuration** | Command-line config | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full | CLI tab in BFC |
+@@| **Sensor Calibration** | Gyro/Mag calibration | ✅ Automatic | ✅ Automatic | ✅ Automatic | ✅ Automatic | ✅ Automatic | ✅ Automatic | ✅ Automatic | GUI |
+@@| **Dynamic Filter** | Adaptive gyro LPF | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **Gyro LPF Presets** | Filter tuning | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **PID Tuning** | Flight control gains | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **RC Rates & Expo** | Input response | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **Failsafe Config** | Loss-of-signal behavior | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@| **Arming Conditions** | Safety interlocks | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | GUI |
+@@
 
 **Notes:**
 - *ESP32 Bluetooth OTA requires `ESPFC_BT_OTA` build flag and Bluetooth stack support
@@ -600,6 +643,233 @@ These features can **only be configured via CLI** (type `get` / `set` in Betafli
 | **Blackbox / Flash** | `logs`, `flash [erase/test/print]` | Dataflash logging control |
 | **Dump/Export Config** | `dump` | Export all settings as CLI commands |
 | **Presets / Tuning Profiles** | `load <preset_name>` | Pre-tuned setups for different frame types |
+@@
+@@---
+@@
+@@## Sensor Wiring Quick-Reference Guide
+@@
+@@### Standard I2C Sensor Wiring (All Boards)
+@@
+@@**MPU6050/MPU6500 + HMC5883L Gyro/Accel/Mag I2C Setup** (most common):
+@@```
+@@Gyroscope (MPU6050/6500)  Magnetometer (HMC5883L)   Flight Controller
+@@├─ VCC ─────────────────┬──────────── VCC ────────────→ 3.3V
+@@├─ GND ─────────────────┴──────────── GND ────────────→ GND
+@@├─ SCL ─────────────────────────────→ SCL ────────────→ Board I2C SCL pin
+@@├─ SDA ─────────────────────────────→ SDA ────────────→ Board I2C SDA pin
+@@├─ INT ──────────────────────────────────────────────→ (Optional: GPIO interrupt)
+@@└─ AD0 ───────────────────────────────────────────→ GND (selects 0x68 address)
+@@                                                       (leave floating or high for 0x69)
+@@```
+@@
+@@**Barometer (BMP280) Addition**:
+@@```
+@@BMP280        Flight Controller
+@@├─ VCC ────→ 3.3V
+@@├─ GND ────→ GND
+@@├─ SCL ────→ Board I2C SCL pin (same as gyro)
+@@├─ SDA ────→ Board I2C SDA pin (same as gyro)
+@@└─ SDO ────→ GND (selects 0x76) or VCC (selects 0x77)
+@@```
+@@
+@@### SPI Sensor Wiring (ESP32, ESP32-S3, RP2040, RP2350)
+@@
+@@**MPU6500 (SPI) + BMP280 (SPI) on ESP32**:
+@@```
+@@Gyroscope (MPU6500 SPI)  Barometer (BMP280 SPI)   Flight Controller
+@@├─ VCC ───────────────┬──────────── VCC ────────────→ 3.3V
+@@├─ GND ───────────────┴──────────── GND ────────────→ GND
+@@├─ SCL ───────────────────────────→ SCK ────────────→ GPIO18 (shared)
+@@├─ SDA ───────────────────────────→ MOSI ──────────→ GPIO23 (shared)
+@@├─ AD0 ─────────────────────────────────────────→ GND
+@@├─ CS ────────────────────────────────────────────→ GPIO5 (Gyro select)
+@@│
+@@└─ MISO ────────────────────────────────────────→ GPIO19 (shared)
+@@                                     │
+@@                                     ├─ CS ─────→ GPIO13 (Baro select)
+@@                                     └─ SDO ────→ GND (default 0x76)
+@@```
+@@
+@@**Notes on SPI**:
+@@- All sensors on same bus share SCK, MOSI, MISO lines
+@@- Each sensor needs its own **CS (Chip Select)** pin
+@@- CS goes LOW to activate sensor, HIGH to deselect
+@@- Max frequency: 4 MHz on ESP32, 1 MHz on RP2040, 4 MHz on RP2350
+@@
+@@### Board-Specific Pin Reference for I2C
+@@
+@@```
+@@ESP32:   SCL=GPIO22  SDA=GPIO21
+@@ESP32-S2: SCL=GPIO9  SDA=GPIO8
+@@ESP32-S3: SCL=GPIO10 SDA=GPIO9
+@@ESP32-C3: SCL=GPIO6  SDA=GPIO8
+@@ESP8266: SCL=GPIO5 (D1)  SDA=GPIO4 (D2)
+@@RP2040:  SCL=GPIO17 SDA=GPIO16
+@@RP2350:  SCL=GPIO17 SDA=GPIO16
+@@```
+@@
+@@### GPS Module Wiring
+@@
+@@**GPS (UART) Example on ESP32**:
+@@```
+@@GPS Module          Flight Controller
+@@├─ VCC ──────────→ 5V (or 3.3V; check module)
+@@├─ GND ──────────→ GND
+@@├─ TX  ──────────→ GPIO16 (FC RX for GPS data)
+@@└─ RX  ──────────→ GPIO17 (FC TX for GPS config)
+@@```
+@@
+@@**Default GPS UART per board**:
+@@- **ESP32**: UART2 (TX=GPIO17, RX=GPIO16) - configured as UART2_RX_SERIAL
+@@- **ESP32-S2**: UART1 (TX=GPIO17, RX=GPIO16)
+@@- **ESP32-S3**: UART1 (TX=GPIO16, RX=GPIO15)
+@@- **ESP32-C3**: ❌ No dedicated GPS port; use soft-serial or remapping
+@@- **ESP8266**: Soft-serial only (WiFi bridge); GPIO13 as RX
+@@- **RP2040**: UART1 (TX=GPIO8, RX=GPIO9)
+@@- **RP2350**: UART1 (TX=GPIO8, RX=GPIO9)
+@@
+@@### Receiver (RC Input) Wiring
+@@
+@@**SBUS/IBUS/CRSF Serial Receiver Example on ESP32**:
+@@```
+@@Receiver (TX only, e.g. FrSky X4R-SB)   Flight Controller
+@@├─ VCC (5V or 3.3V) ──────────────────→ 5V or 3.3V
+@@├─ GND ────────────────────────────────→ GND
+@@└─ DATA/TX ────────────────────────────→ GPIO16 (RX_SERIAL on UART2)
+@@```
+@@
+@@**Default RX_SERIAL port per board**:
+@@- **ESP32**: UART2 RX=GPIO16 (shares GPS UART TX=GPIO17)
+@@- **ESP32-S2**: UART1 RX=GPIO16
+@@- **ESP32-S3**: UART2 RX=GPIO17
+@@- **ESP32-C3**: ❌ No dedicated RX port; use soft-serial or remapping (limited GPIO)
+@@- **ESP8266**: UART0 RX=GPIO3 (shares MSP)
+@@- **RP2040**: UART1 RX=GPIO9
+@@- **RP2350**: UART1 RX=GPIO9
+@@
+@@### VTX SmartAudio Wiring
+@@
+@@**SmartAudio Module (e.g., TBS Unify Pro Nano) on ESP32**:
+@@```
+@@VTX SmartAudio       Flight Controller
+@@├─ +5V ─────────────→ 5V
+@@├─ GND ─────────────→ GND
+@@└─ SA (control) ────→ GPIO33 (UART1 TX on ESP32)
+@@```
+@@
+@@**Default VTX SmartAudio UART by board**:
+@@- **ESP32**: UART1 TX=GPIO33
+@@- **ESP32-S2**: UART0 TX=GPIO43
+@@- **ESP32-S3**: UART0 TX=GPIO43
+@@- **ESP32-C3**: UART0 TX=GPIO21
+@@- **ESP8266**: UART1 TX=GPIO2 (D4) — TX-only
+@@- **RP2040**: UART0 TX=GPIO0
+@@- **RP2350**: UART0 TX=GPIO0
+@@
+@@### Quick Decision Table: Which Sensor Bus?
+@@
+@@| Your Setup | Recommendation | Board Compatibility | Notes |
+@@|---|---|---|---|
+@@| **Basic drone, I2C gyro** | Use I2C | All boards | Simplest wiring; max 2 kHz gyro rate |
+@@| **Acro drone, fast gyro needed** | Use SPI | ESP32, ESP32-S2/S3, RP2040/RP2350 | 4 MHz = 4 kHz gyro; better stability |
+@@| **Ultra-compact, minimal GPIO** | I2C only | ESP32-C3, ESP8266 | No SPI; must use I2C sensors |
+@@| **High-performance FPV** | SPI + DShot + CRSF | Any board with SPI | SPI gyro + DShot ESCs + CRSF RX = optimal responsiveness |
+@@| **Budget build** | I2C + PWM ESCs | ESP8266 | Works well for casual flying; lower update rates acceptable |
+@@
+@@### Troubleshooting I2C Sensor Not Found
+@@
+@@If Betaflight Configurator shows "No Gyro Detected":
+@@
+@@1. **Check wiring**: Verify SCL/SDA pins match your board (see pin reference above)
+@@2. **Check power**: Sensor should be **3.3V only** (not 5V); verify with multimeter
+@@3. **Check I2C addresses**: Use CLI command `i2cdetect` (if available) or connect to BFC Sensors tab
+@@4. **Check pull-ups**: I2C lines need 4.7kΩ pull-up resistors to 3.3V (usually on gyro breakboard)
+@@5. **Check AD0 pin**: If using MPU6050 variant, AD0 should be grounded for address 0x68 (default)
+@@6. **Check sensor orientation**: Gyro must be physically oriented correctly; see board alignment in BFC
+@@
+@@### Troubleshooting SPI Sensor Not Found
+@@
+@@1. **Check CS pin**: Each sensor needs its own CS pin; verify mapping in firmware
+@@2. **Check SPI frequency**: Reduce to 1 MHz if using long wires or low-quality breadboards
+@@3. **Check SPI mode**: Firmware uses **Mode 3** (CPOL=1, CPHA=1) — double-check sensor datasheet
+@@4. **Check power and GND**: Both power and GND must be connected; use **short wires < 5cm**
+@@
+@@## Sensor Pin Reference and I2C Address Map
+@@
+@@### Default I2C Addresses (7-bit format)
+@@
+@@| Sensor Type | Typical Address | Variants | Notes |
+@@|---|---|---|---|
+@@| **Gyroscope + Accel** | — | — | — |
+@@| MPU6050 / MPU6500 / ICM20602 | `0x68` | `0x69` (if AD0 pin high) | Most common gyro; dual-address support |
+@@| MPU9250 | `0x68` | `0x69` | Includes onboard magnetometer |
+@@| BMI160 | `0x68` | `0x69` | Bosch 6-axis IMU |
+@@| LSM6DSO | `0x6A` | `0x6B` | STMicroelectronics 6-axis |
+@@| ITG3205 | `0x68` | — | Legacy gyro-only |
+@@| **Magnetometer** | — | — | — |
+@@| HMC5883L | `0x1E` | — | Popular external mag; I2C |
+@@| AK8963 (inside MPU9250) | `0x0C` | — | Integrated in MPU9250 only |
+@@| QMC5883L/QMC5883P | `0x0D` | — | Budget alternative |
+@@| **Barometer** | — | — | — |
+@@| BMP085 | `0x77` | — | Legacy barometer |
+@@| BMP280 | `0x76` | `0x77` (if SDO pin high) | Very common; dual-address |
+@@| SPL06 | `0x76` | `0x77` | Compact barometer |
+@@| MS5611 | `0x76` | `0x77` | High-precision barometer |
+@@
+@@### I2C/SPI Bus Pin Map by Board
+@@
+@@| Board | I2C (SCL / SDA) | SPI (SCK / MOSI / MISO) | Gyro CS | Baro CS | Notes |
+@@|---|---|---|---|---|---|
+@@| **ESP32** | GPIO22 / GPIO21 | GPIO18 / GPIO23 / GPIO19 | GPIO5 | GPIO13 | 4 MHz SPI; I2C 400 kHz |
+@@| **ESP32-S2** | GPIO9 / GPIO8 | GPIO12 / GPIO11 / GPIO13 | GPIO10 | GPIO7 | 2 MHz SPI; I2C 400 kHz |
+@@| **ESP32-S3** | GPIO10 / GPIO9 | GPIO12 / GPIO11 / GPIO13 | GPIO8 | GPIO7 | 4 MHz SPI; I2C 400 kHz |
+@@| **ESP32-C3** | GPIO6 / GPIO8 | ❌ Not available | N/A | N/A | I2C only; no SPI |
+@@| **ESP8266** | GPIO5 (D1) / GPIO4 (D2) | ❌ Not configured | N/A | N/A | I2C only; 400 kHz |
+@@| **RP2040** | GPIO17 / GPIO16 | GPIO14 / GPIO15 / GPIO12 | GPIO13 | GPIO11 | 1 MHz SPI; I2C 400 kHz |
+@@| **RP2350** | GPIO17 / GPIO16 | GPIO14 / GPIO15 / GPIO12 | GPIO13 | GPIO11 | 4 MHz SPI; I2C 400 kHz (faster) |
+@@
+@@### I2C Sensor Auto-Discovery Sequence
+@@
+@@When I2C is used, the firmware scans for sensors in this order (first match wins):
+@@
+@@1. **Gyro/Accel I2C Address 0x68** (MPU6050, MPU6500, ICM20602, etc.)
+@@2. **Gyro/Accel I2C Address 0x69** (AD0 pin high variant)
+@@3. **Magnetometer 0x1E** (HMC5883L)
+@@4. **Magnetometer 0x0D** (QMC5883L)
+@@5. **Magnetometer 0x0C** (AK8963; requires MPU9250 gyro)
+@@6. **Barometer 0x76** (BMP280, SPL06, MS5611 default)
+@@7. **Barometer 0x77** (BMP280, SPL06 alternative; BMP085)
+@@
+@@### SPI Sensor Configuration
+@@
+@@**SPI Protocol**: Mode 3 (CPOL=1, CPHA=1), 8-bit frames.  
+@@**Typical setup** (gyro + baro on same SPI bus):
+@@- Gyro CS pin → Board-specific (see table)
+@@- Baro CS pin → Board-specific (see table)
+@@- SCK, MOSI, MISO → All sensors share same lines
+@@
+@@**Example wiring (ESP32)**:
+@@```
+@@  Gyro (MPU6500 SPI)       Barometer (BMP280 SPI)
+@@  ├─ CS:   GPIO5            ├─ CS:   GPIO13
+@@  ├─ SCK:  GPIO18           ├─ SCK:  GPIO18 (shared)
+@@  ├─ MOSI: GPIO23           ├─ MOSI: GPIO23 (shared)
+@@  └─ MISO: GPIO19           └─ MISO: GPIO19 (shared)
+@@```
+@@
+@@### GPIO Availability After Default Config
+@@
+@@| Board | Total GPIO | Default Assigned | Available | Expansion Notes |
+@@|---|---:|---:|---|---|
+@@| **ESP32** | 34 | 24 | ~10 | Good; can add rangefinder, optical flow, extra UART |
+@@| **ESP32-S2** | 43 | 22 | ~21 | Good; some strapping pins reserved |
+@@| **ESP32-S3** | 48 | 24 | ~24 | Excellent; very flexible for custom sensors |
+@@| **ESP32-C3** | 22 | 18 | ~4 | Very tight; minimal expansion possible |
+@@| **ESP8266** | 11 | 11 | ~0 | **Fully saturated**; no spare pins (use pin remapping) |
+@@| **RP2040** | 30 | 18 | ~12 | Good; USB alternative for config |
+@@| **RP2350** | 30 | 18 | ~12 | Good; extra RAM/flash helps with custom code |
+@@
+@@
 
 ---
 
