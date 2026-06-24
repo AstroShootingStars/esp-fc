@@ -502,6 +502,8 @@ struct GpsState
   bool frameError = false;
   bool wasLocked = false;
   bool homeSet = false;
+  uint32_t rxBytes = 0;
+  uint32_t parsedMessages = 0;
   uint32_t interval;
   uint32_t lastMsgTs;
   GpsSupportState support;

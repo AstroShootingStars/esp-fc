@@ -2033,6 +2033,13 @@ void Cli::printGpsStatus(Stream& s, bool full) const
   s.print(_model.state.gps.numCh);
   s.println(F(" ch)"));
 
+  s.print(F("    RX: "));
+  s.print(_model.state.gps.rxBytes);
+  s.print(F(" bytes, "));
+  s.print(_model.state.gps.parsedMessages);
+  s.print(F(" msgs, frameErr="));
+  s.println(_model.state.gps.frameError);
+
   s.printf("GNSS  ID Sig Used Quality");
   s.println();
   for (size_t i = 0; i < _model.state.gps.numCh; i++)

@@ -52,6 +52,7 @@ int GpsSensor::update()
   size_t read = 0;
   while ((read = _port->readMany(buff, sizeof(buff))))
   {
+    _model.state.gps.rxBytes += read;
     for (size_t i = 0; i < read; i++)
     {
       updated |= processUbx(buff[i]);
@@ -98,6 +99,8 @@ void GpsSensor::processNmea(uint8_t c)
 
 void GpsSensor::onMessage()
 {
+  _model.state.gps.parsedMessages++;
+
   if(_state == DETECT_BAUD)
   {
     _state = GET_VERSION;
