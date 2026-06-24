@@ -389,8 +389,8 @@ void IRAM_ATTR EscDriverEsp32::writeDshotCommand(uint32_t channel, int32_t pulse
   }
 
   pulse = constrain(pulse, 0, 2000);
-  // scale to dshot commands (0 or 48-2047)
-  int value = dshotConvert(pulse);
+  // values 1..47 are reserved DShot commands, otherwise scale throttle to 48..2047
+  int value = (pulse > 0 && pulse < 48) ? pulse : dshotConvert(pulse);
   uint16_t frame = dshotEncode(value, _dshot_tlm);
 
   Slot& slot = _channel[channel];

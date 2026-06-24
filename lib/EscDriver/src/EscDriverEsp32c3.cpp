@@ -331,8 +331,8 @@ void IRAM_ATTR EscDriverEsp32c3::dshotWrite()
     if(_slots[c].pin > 16 || _slots[c].pin < 0) continue;
     mask_t mask = (1U << _slots[c].pin);
     int pulse = constrain(_slots[c].pulse, 0, 2000);
-    // scale to dshot commands (0 or 48-2047)
-    int value = dshotConvert(pulse);
+    // values 1..47 are reserved DShot commands, otherwise scale throttle to 48..2047
+    int value = (pulse > 0 && pulse < 48) ? pulse : dshotConvert(pulse);
     uint16_t frame = dshotEncode(value);
     for(size_t i = 0; i < DSHOT_BIT_COUNT; i++)
     {

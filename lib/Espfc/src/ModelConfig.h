@@ -442,6 +442,17 @@ constexpr uint32_t DSHOT_BEACON_ALLOWED_MASK =
   buzzerEventFlag(BUZZER_RX_SET) |
   buzzerEventFlag(BUZZER_RX_LOST);
 
+enum DshotBeaconTone : uint8_t
+{
+  DSHOT_BEACON_TONE_1 = 1,
+  DSHOT_BEACON_TONE_2 = 2,
+  DSHOT_BEACON_TONE_3 = 3,
+  DSHOT_BEACON_TONE_4 = 4,
+  DSHOT_BEACON_TONE_5 = 5,
+  DSHOT_BEACON_TONE_MIN = DSHOT_BEACON_TONE_1,
+  DSHOT_BEACON_TONE_MAX = DSHOT_BEACON_TONE_5,
+};
+
 struct BuzzerConfig
 {
   int8_t inverted = true;
@@ -451,7 +462,7 @@ struct BuzzerConfig
 struct BeeperConfig
 {
   uint32_t beeperOffFlags = 0;
-  uint8_t dshotBeaconTone = 1;
+  uint8_t dshotBeaconTone = DSHOT_BEACON_TONE_1;
   uint32_t dshotBeaconOffFlags = DSHOT_BEACON_ALLOWED_MASK;
 };
 
@@ -735,6 +746,7 @@ struct GyroConfig
   int8_t dev = GYRO_AUTO;
   int8_t dlpf = GYRO_DLPF_256;
   int8_t align = ALIGN_DEFAULT;
+  uint8_t enableMask = 1;
   int16_t bias[3] = { 0, 0, 0 };
   FilterConfig filter{FILTER_PT1, 100};
   FilterConfig filter2{FILTER_PT1, 213};
@@ -767,6 +779,7 @@ struct MagConfig
   int8_t bus = BUS_AUTO;
   int8_t dev = MAG_DEFAULT;
   int8_t align = ALIGN_DEFAULT;
+  int16_t customAlign[3] = { 0, 0, 0 };
   int16_t declination = 0; // degrees * 10
   int16_t offset[3] = { 0, 0, 0 };
   int16_t scale[3] = { 1000, 1000, 1000 };
@@ -907,6 +920,7 @@ struct ControllerConfig
 {
   int8_t tpaScale = 10;
   int16_t tpaBreakpoint = 1650;
+  uint8_t pidController = 1;
 };
 
 constexpr size_t SERVO_MIX_RULES_MAX = 16; // Protocol-visible rule slots
@@ -1056,6 +1070,10 @@ struct GpsConfig
 {
   uint8_t minSats = 8;
   uint8_t setHomeOnce = 1;
+  uint8_t provider = 1;
+  uint8_t sbasMode = 0;
+  uint8_t autoConfig = 1;
+  uint8_t autoBaud = 1;
 
   // GNSS Constellation Configuration (M10 multi-band support)
   uint8_t gnssMode = 0;          // 0=Auto, 1=GPS only, 2=GPS+GLO, 3=GPS+GAL, 4=GPS+BDS, 5=All

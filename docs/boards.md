@@ -41,6 +41,20 @@ SmartAudio is the default VTX control protocol. Wire the VTX control line to the
 | ESP8266 | UART1 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO2 (D4) | -1 | TX-only, suitable for SmartAudio |
 | RP2040 / RP2350 | UART0 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO0 | GPIO1 | USB CDC remains default MSP link |
 
+## Default Buzzer / Beeper Pin Map
+
+Default buzzer pins are assigned only where the target header defines `ESPFC_BUZZER_PIN`. The listed pins do not overlap with the other default feature pins for that board.
+
+| Board | Default buzzer pin | Conflict check | Status |
+|---|---:|---|---|
+| ESP32 | GPIO26 | No overlap with default motor, serial, SPI, I2C, LED, or ADC pins | Configured |
+| ESP32-S2 | GPIO5 | No overlap with default motor, serial, SPI, I2C, LED, or ADC pins | Configured |
+| ESP32-S3 | GPIO5 | No overlap with default motor, serial, SPI, I2C, LED, or ADC pins | Configured |
+| ESP32-C3 | -1 | Not configured by default | Unassigned |
+| ESP8266 | -1 | Not configured by default | Unassigned |
+| RP2040 | -1 | Not configured by default | Unassigned |
+| RP2350 | -1 | Not configured by default | Unassigned |
+
 ## ESP32 (Classic)
 
 **Overview**: Full-featured classic ESP32 with dual-core, WiFi, Bluetooth, and comprehensive I/O.

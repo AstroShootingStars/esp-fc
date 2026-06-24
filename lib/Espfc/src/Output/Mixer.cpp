@@ -239,6 +239,7 @@ void FAST_CODE_ATTR Mixer::writeOutput(const MixerConfig& mixer, float * out)
   Utils::Stats::Measure mixerMeasure(_model.state.stats, COUNTER_MIXER_WRITE);
 
   bool stop = _stop();
+  const uint8_t beaconCommand = stop ? dshotBeaconCommand() : 0;
   for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
   {
     const OutputChannelConfig& och = _model.config.output.channel[i];
@@ -276,8 +277,9 @@ void FAST_CODE_ATTR Mixer::writeOutput(const MixerConfig& mixer, float * out)
 #else
   const size_t motorIndex = motorSlot;
 #endif
-      if(_motor) _motor->write(motorIndex, _model.state.output.us[i]);
-  motorSlot++;
+      const int motorOutput = beaconCommand ? beaconCommand : _model.state.output.us[i];
+      if(_motor) _motor->write(motorIndex, motorOutput);
+      motorSlot++;
     }
   }
 
@@ -385,6 +387,24 @@ float inline Mixer::erpmToHz(float erpm)
 float inline Mixer::erpmToRpm(float erpm)
 {
   return erpmToHz(erpm) * EscDriver::SECONDS_PER_MINUTE;
+}
+
+uint8_t inline Mixer::dshotBeaconCommand() const
+{
+  if(!_model.state.mixer.digitalOutput) return 0;
+
+  const uint32_t offFlags = _model.config.beeper.dshotBeaconOffFlags;
+  if(_model.isModeActive(MODE_FAILSAFE) && !(offFlags & buzzerEventFlag(BUZZER_RX_LOST)))
+  {
+    return _model.config.beeper.dshotBeaconTone;
+  }
+
+  if(_model.isModeActive(MODE_BUZZER) && !(offFlags & buzzerEventFlag(BUZZER_RX_SET)))
+  {
+    return _model.config.beeper.dshotBeaconTone;
+  }
+
+  return 0;
 }
 
 bool Mixer::_stop(void)

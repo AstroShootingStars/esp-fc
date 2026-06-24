@@ -643,7 +643,7 @@ class Model
         config.beeper.beeperOffFlags = BUZZER_ALLOWED_MASK & ~config.buzzer.beeperMask;
       }
       config.buzzer.beeperMask = BUZZER_ALLOWED_MASK & ~config.beeper.beeperOffFlags;
-      config.beeper.dshotBeaconTone = constrain(config.beeper.dshotBeaconTone, 1, 5);
+      config.beeper.dshotBeaconTone = constrain(config.beeper.dshotBeaconTone, DSHOT_BEACON_TONE_MIN, DSHOT_BEACON_TONE_MAX);
       config.fpvCamAngleDegrees = constrain(config.fpvCamAngleDegrees, 0, 90);
 
       config.wireless.port = constrain(config.wireless.port, 1, 65535);
@@ -833,6 +833,18 @@ class Model
       config.osd.cameraFrameHeight = constrain(config.osd.cameraFrameHeight, 0, 30);
       config.osd.linkQualityAlarm = constrain(config.osd.linkQualityAlarm, 0, 1000);
       config.osd.rssiDbmAlarm = constrain(config.osd.rssiDbmAlarm, 0, 1000);
+      config.gyro.enableMask = config.gyro.enableMask ? 1 : 0;
+      for(size_t i = 0; i < 3; i++)
+      {
+        config.mag.customAlign[i] = constrain(config.mag.customAlign[i], (int16_t)-3600, (int16_t)3600);
+      }
+      config.gps.provider = constrain(config.gps.provider, 0, 3);
+      config.gps.sbasMode = constrain(config.gps.sbasMode, 0, 2);
+      config.gps.autoConfig = constrain(config.gps.autoConfig, 0, 1);
+      config.gps.autoBaud = constrain(config.gps.autoBaud, 0, 1);
+      config.gps.enableSBAS = constrain(config.gps.enableSBAS, 0, 1);
+      config.gps.enableGalileo = constrain(config.gps.enableGalileo, 0, 1);
+      config.controller.pidController = constrain(config.controller.pidController, (uint8_t)0, (uint8_t)3);
       config.dterm.feedForwardTransition = constrain(config.dterm.feedForwardTransition, 0, 100);
       config.level.horizonStrength = constrain(config.level.horizonStrength, 0, 200);
       config.input.throttleExpo = constrain(config.input.throttleExpo, 0, 100);

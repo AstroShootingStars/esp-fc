@@ -233,7 +233,7 @@ void EscDriverRP2040::dshotWriteDMA()
     if(!_slots[i].active()) continue;
 
     uint16_t pulse = constrain(_slots[i].pulse, 0, 2000);
-    uint16_t value = dshotConvert(pulse);
+    uint16_t value = (pulse > 0 && pulse < 48) ? pulse : dshotConvert(pulse);
     uint16_t frame = dshotEncode(value);
 
     int slice = _slots[i].slice;

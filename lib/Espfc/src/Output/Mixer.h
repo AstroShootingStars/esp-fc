@@ -21,6 +21,7 @@ class Mixer
     void readTelemetry();
     float inline erpmToHz(float erpm);
     float inline erpmToRpm(float erpm);
+    uint8_t inline dshotBeaconCommand() const;
     bool inline _stop(void);
 
   private:

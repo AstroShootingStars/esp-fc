@@ -163,6 +163,7 @@ constexpr uint8_t MSP_DP_DRAW_SCREEN = 4;
 constexpr uint8_t MSP_DP_OPTIONS = 5;
 constexpr uint8_t MSP_DP_SYS = 6;
 constexpr uint8_t MSP_DP_FONTCHAR_WRITE = 7;
+constexpr uint8_t MSP_OSD_CHAR_BITMAP_BYTES = 54;
 
 constexpr uint8_t ESPFC_OSD_WARNING_COUNT = 16;
 
@@ -255,6 +256,8 @@ static bool isTransientSetCommand(uint16_t cmd)
     case MSP_SET_ARMING_DISABLED:
     case MSP_SET_PASSTHROUGH:
     case MSP_SET_RTC:
+    case MSP_DISPLAYPORT:
+    case MSP_OSD_CHAR_WRITE:
       return true;
     default:
       return false;
@@ -265,7 +268,69 @@ static bool shouldAutoPersistSetCommand(uint16_t cmd)
 {
   if(cmd == MSP_EEPROM_WRITE || cmd == MSP_RESET_CONF || cmd == MSP_REBOOT) return false;
   if(isTransientSetCommand(cmd)) return false;
-  return true;
+
+  switch(cmd)
+  {
+    case MSP_SET_LOOP_TIME:
+    case MSP_SET_NAME:
+    case MSP2_SET_TEXT:
+    case MSP_SET_MODE_RANGE:
+    case MSP_SET_FEATURE_CONFIG:
+    case MSP_SET_BATTERY_CONFIG:
+    case MSP_SET_VOLTAGE_METER_CONFIG:
+    case MSP_SET_CURRENT_METER_CONFIG:
+    case MSP_SET_ACC_TRIM:
+    case MSP_SET_MIXER_CONFIG:
+    case MSP_SET_SENSOR_CONFIG:
+    case MSP_SET_SENSOR_ALIGNMENT:
+    case MSP2_ESPFC_SET_SENSOR_OFFSET:
+    case MSP2_ESPFC_SET_SENSOR_SCALE:
+    case MSP_SET_CF_SERIAL_CONFIG:
+    case MSP2_COMMON_SET_SERIAL_CONFIG:
+    case MSP_SET_BLACKBOX_CONFIG:
+    case MSP_SET_BEEPER_CONFIG:
+    case MSP_SET_BOARD_ALIGNMENT_CONFIG:
+    case MSP_SET_RX_MAP:
+    case MSP_SET_RSSI_CONFIG:
+    case MSP_SET_MOTOR_CONFIG:
+    case MSP_SET_MOTOR_3D_CONFIG:
+    case MSP_SET_ARMING_CONFIG:
+    case MSP_SET_RC_DEADBAND:
+    case MSP2_ESPFC_SET_LANDING_ASSIST_CONFIG:
+    case MSP2_ESPFC_SET_ALT_FUSION_CONFIG:
+    case MSP_SET_RX_CONFIG:
+    case MSP_SET_FAILSAFE_CONFIG:
+    case MSP_SET_RXFAIL_CONFIG:
+    case MSP_SET_RC_TUNING:
+    case MSP_SET_ADVANCED_CONFIG:
+    case MSP_SET_COMPASS_CONFIG:
+    case MSP_SET_FILTER_CONFIG:
+    case MSP_SET_PID:
+    case MSP_SET_PID_ADVANCED:
+    case MSP_SET_SERVO_CONFIGURATION:
+    case MSP2_ESPFC_SET_OBSTACLE_AVOIDANCE_CONFIG:
+    case MSP2_ESPFC_SET_RANGEFINDER_CONFIG:
+    case MSP2_ESPFC_SET_RANGEFINDER_CONFIG_LEGACY:
+    case MSP_SET_VTX_CONFIG:
+    case MSP_COPY_PROFILE:
+    case MSP_SET_PID_CONTROLLER:
+    case MSP_SET_OSD_CONFIG:
+    case MSP_SET_OSD_VIDEO_CONFIG:
+    case MSP_SET_ADJUSTMENT_RANGE:
+    case MSP_SET_SERVO_MIX_RULE:
+    case MSP_SET_LED_COLORS:
+    case MSP_SET_LED_STRIP_CONFIG:
+    case MSP_SET_LED_STRIP_MODECOLOR:
+    case MSP_SET_VTXTABLE_BAND:
+    case MSP_SET_VTXTABLE_POWERLEVEL:
+    case MSP2_SET_MOTOR_OUTPUT_REORDERING:
+    case MSP_SET_GPS_CONFIG:
+    case MSP_SET_GPS_RESCUE:
+    case MSP_SET_GPS_RESCUE_PIDS:
+      return true;
+    default:
+      return false;
+  }
 }
 
 static Espfc::SerialSpeed fromBaudIndex(SerialSpeedIndex index)
@@ -1122,10 +1187,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       // API >= 1.47 format expected by Betaflight Configurator:
       // gyro_detection_flags, gyro_enable_mask, mag_align_roll/pitch/yaw (decidegrees)
       r.writeU8(_model.state.gyro.present ? 1 : 0); // DETECTED_GYRO_1 flag
-      r.writeU8(_model.config.gyro.dev == GYRO_NONE ? 0 : 1); // enable first gyro slot
-      r.writeU16(0); // mag custom roll (decidegrees)
-      r.writeU16(0); // mag custom pitch (decidegrees)
-      r.writeU16(0); // mag custom yaw (decidegrees)
+      r.writeU8(_model.config.gyro.enableMask); // enable first gyro slot / active mask
+      r.writeU16(_model.config.mag.customAlign[0]); // mag custom roll (decidegrees)
+      r.writeU16(_model.config.mag.customAlign[1]); // mag custom pitch (decidegrees)
+      r.writeU16(_model.config.mag.customAlign[2]); // mag custom yaw (decidegrees)
       break;
 
     case MSP_SET_SENSOR_ALIGNMENT:
@@ -1136,11 +1201,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         // API >= 1.47 payload: gyro_enable_mask + mag custom roll/pitch/yaw
         if(m.remain() >= 7)
         {
-          uint8_t gyroEnableMask = m.readU8();
-          (void)gyroEnableMask;
-          m.readU16(); // mag custom roll (unsupported)
-          m.readU16(); // mag custom pitch (unsupported)
-          m.readU16(); // mag custom yaw (unsupported)
+          _model.config.gyro.enableMask = m.readU8();
+          _model.config.mag.customAlign[0] = (int16_t)m.readU16();
+          _model.config.mag.customAlign[1] = (int16_t)m.readU16();
+          _model.config.mag.customAlign[2] = (int16_t)m.readU16();
         }
         // Legacy payload: gyro_to_use + gyro1/gyro2 align
         else if(m.remain() >= 3)
@@ -1187,6 +1251,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         _model.config.mag.offset[2] = std::clamp<int16_t>(m.readU16(), -1000, 1000);
       }
       _model.onAccChange();
+      _model.reload();
       break;
 
     case MSP2_ESPFC_SENSOR_SCALE:
@@ -1222,6 +1287,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         _model.config.mag.scale[2] = std::clamp<int16_t>(m.readU16(), 500, 2000);
       }
       _model.onAccChange();
+      _model.reload();
       break;
 
     case MSP2_SENSOR_RANGEFINDER:
@@ -1349,8 +1415,9 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(1); // blackboxGetRateNum()); // unused
       r.writeU8(1); // blackboxGetRateDenom());
       r.writeU16(_model.config.blackbox.pDenom);//blackboxGetPRatio()); // p_denom
-      //r.writeU8(_model.config.blackbox.pDenom); // sample_rate
-      //r.writeU32(~_model.config.blackbox.fieldsMask);
+      r.writeU8(_model.config.blackbox.pDenom); // sample_rate / legacy compatibility
+      r.writeU32(~_model.config.blackbox.fieldsMask);
+      r.writeU8(_model.config.blackbox.mode);
       break;
 
     case MSP_SDCARD_SUMMARY:
@@ -1377,16 +1444,16 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
             (void)(rateNum + rateDenom);
         }
         _model.config.blackbox.pDenom = pRatio;
-
-        /*if (m.remain() >= 1) {
+        if (m.remain() >= 1) {
             _model.config.blackbox.pDenom = m.readU8();
-        } else if(pRatio > 0) {
-            _model.config.blackbox.pDenom = blackboxCalculateSampleRate(pRatio);
-            //_model.config.blackbox.pDenom = pRatio;
         }
         if (m.remain() >= 4) {
           _model.config.blackbox.fieldsMask = ~m.readU32();
-        }*/
+        }
+        if (m.remain() >= 1) {
+          _model.config.blackbox.mode = m.readU8();
+        }
+        _model.reload();
       }
       break;
 
@@ -2007,7 +2074,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_PID_CONTROLLER:
-      r.writeU8(1); // betaflight controller id
+      r.writeU8(_model.config.controller.pidController); // controller id
       break;
 
     case MSP_PIDNAMES:
@@ -2597,7 +2664,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SET_PID_CONTROLLER:
-      if(m.remain()) m.readU8();
+      if(m.remain()) _model.config.controller.pidController = m.readU8();
       break;
 
     case MSP_SET_RESET_CURR_PID:
@@ -3069,15 +3136,16 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SET_GPS_CONFIG:
-      m.readU8(); // provider
-      m.readU8(); // sbas mode
-      m.readU8(); // auto config
-      m.readU8(); // auto baud
-      if (m.remain() >= 2) {
-          // Added in API version 1.43
-          _model.config.gps.setHomeOnce = m.readU8(); // gps_set_home_point_once
-          m.readU8(); // gps_ublox_use_galileo
+      if(m.remain() >= 1) _model.config.gps.provider = m.readU8();
+      if(m.remain() >= 1)
+      {
+        _model.config.gps.sbasMode = m.readU8();
+        _model.config.gps.enableSBAS = _model.config.gps.sbasMode > 0 ? 1 : 0;
       }
+      if(m.remain() >= 1) _model.config.gps.autoConfig = m.readU8();
+      if(m.remain() >= 1) _model.config.gps.autoBaud = m.readU8();
+      if (m.remain() >= 1) _model.config.gps.setHomeOnce = m.readU8();
+      if (m.remain() >= 1) _model.config.gps.enableGalileo = m.readU8();
       _model.reload();
       break;
 
@@ -3116,13 +3184,12 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_GPS_CONFIG:
-      r.writeU8(1); // provider
-      r.writeU8(0); // sbasMode, 0: auto
-      r.writeU8(1); // autoConfig, 0: off, 1: on
-      r.writeU8(1); // autoBaud, 0: off, 1: on
-      // Added in API version 1.43
+      r.writeU8(_model.config.gps.provider);
+      r.writeU8(_model.config.gps.sbasMode);
+      r.writeU8(_model.config.gps.autoConfig);
+      r.writeU8(_model.config.gps.autoBaud);
       r.writeU8(_model.config.gps.setHomeOnce); // gps_set_home_point_once
-      r.writeU8(1); // gps_ublox_use_galileo
+      r.writeU8(_model.config.gps.enableGalileo); // gps_ublox_use_galileo
       break;
 
     case MSP_PROTOCOL_VERSION:
@@ -3210,8 +3277,16 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_OSD_CHAR_READ:
-      // No font storage/display hardware; return an empty character response instead of an error.
-      r.writeU8(0);
+      // No persistent font storage yet; return BF-compatible empty glyph payload.
+      {
+        const uint8_t charIndex = m.remain() > 0 ? m.readU8() : 0;
+        while(m.remain() > 0) m.readU8();
+        r.writeU8(charIndex);
+        for(size_t i = 0; i < MSP_OSD_CHAR_BITMAP_BYTES; i++)
+        {
+          r.writeU8(0);
+        }
+      }
       break;
 
     case MSP_OSD_CONFIG:
@@ -3492,6 +3567,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           case MSP_DP_SYS:
           case MSP_DP_FONTCHAR_WRITE:
             _model.config.osd.enabled = 1;
+            _model.config.osd.mspDisplayport = 1;
             break;
           default:
             break;
@@ -3502,6 +3578,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_OSD_CHAR_WRITE:
       _model.config.osd.enabled = 1;
+      _model.config.osd.mspDisplayport = 1;
       while(m.remain() > 0) m.readU8();
       break;
 
