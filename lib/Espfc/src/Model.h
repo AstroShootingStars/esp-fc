@@ -1026,6 +1026,8 @@ class Model
       {
         state.output.disarmed[i] = config.output.channel[i].servo ? config.output.channel[i].neutral : config.output.minCommand; // ROBOT
       }
+      state.output.disarmedOverrideTime = 0;
+      state.output.disarmedOverrideActive = false;
 
       state.buzzer.beeperMask = config.buzzer.beeperMask;
 

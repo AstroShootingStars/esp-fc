@@ -55,6 +55,16 @@ inline int targetSerialInit(T& dev, const SerialDeviceConfig& conf)
   return 1;
 }
 
+#if defined(ESP32S3) || defined(ESP32C3) || defined(ESP32S2)
+template<>
+inline int targetSerialInit(USBCDC& dev, const SerialDeviceConfig& conf)
+{
+  (void)conf;
+  dev.begin(conf.baud);
+  return 1;
+}
+#endif
+
 template<typename T>
 inline int targetSPIInit(T& dev, int8_t sck, int8_t mosi, int8_t miso, int8_t ss)
 {

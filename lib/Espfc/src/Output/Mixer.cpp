@@ -7,6 +7,73 @@ namespace Espfc {
 
 namespace Output {
 
+namespace {
+
+constexpr uint32_t DISARMED_OVERRIDE_TIMEOUT_MS = 500u;
+
+bool isRxReadyForMotorOutput(const Model& model)
+{
+  return model.state.input.frameCount >= 5
+    && !model.state.input.rxLoss
+    && !model.state.input.rxFailSafe
+    && model.state.input.channelsValid;
+}
+
+int16_t getSafeDisarmedMotorOutput(const Model& model)
+{
+  return model.state.mixer.digitalOutput ? 0 : model.config.output.minCommand;
+}
+
+void clearStaleDisarmedOverride(Model& model)
+{
+  if(!model.state.output.disarmedOverrideActive)
+  {
+    return;
+  }
+
+  const uint32_t nowMs = millis();
+  if((uint32_t)(nowMs - model.state.output.disarmedOverrideTime) <= DISARMED_OVERRIDE_TIMEOUT_MS)
+  {
+    return;
+  }
+
+  model.state.output.disarmedOverrideActive = false;
+  for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
+  {
+    model.state.output.disarmed[i] = model.config.output.channel[i].servo
+      ? model.config.output.channel[i].neutral
+      : model.config.output.minCommand;
+  }
+}
+
+int16_t resolveDisarmedOutput(const Model& model, const OutputChannelConfig& channel, int16_t requested)
+{
+  if(channel.servo)
+  {
+    return requested;
+  }
+
+  if(model.state.output.disarmedOverrideActive)
+  {
+    return requested;
+  }
+
+  if(model.state.mixer.digitalOutput)
+  {
+    // DShot disarm command is 0; using minCommand can still produce idle spin on some ESCs.
+    return 0;
+  }
+
+  if(!isRxReadyForMotorOutput(model))
+  {
+    return getSafeDisarmedMotorOutput(model);
+  }
+
+  return requested;
+}
+
+}
+
 Mixer::Mixer(Model& model): _model(model), _motor(NULL), _servo(NULL) {}
 
 int Mixer::begin()
@@ -238,6 +305,8 @@ void FAST_CODE_ATTR Mixer::writeOutput(const MixerConfig& mixer, float * out)
 {
   Utils::Stats::Measure mixerMeasure(_model.state.stats, COUNTER_MIXER_WRITE);
 
+  clearStaleDisarmedOverride(_model);
+
   bool stop = _stop();
   const uint8_t beaconCommand = stop ? dshotBeaconCommand() : 0;
   for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
@@ -245,7 +314,9 @@ void FAST_CODE_ATTR Mixer::writeOutput(const MixerConfig& mixer, float * out)
     const OutputChannelConfig& och = _model.config.output.channel[i];
     if(i >= mixer.count || stop)
     {
-      _model.state.output.us[i] = och.servo && _model.state.output.disarmed[i] == 1000 ? och.neutral : _model.state.output.disarmed[i];
+      const int16_t disarmedOutput = resolveDisarmedOutput(_model, och, _model.state.output.disarmed[i]);
+
+      _model.state.output.us[i] = och.servo && disarmedOutput == 1000 ? och.neutral : disarmedOutput;
     }
     else
     {
@@ -392,6 +463,7 @@ float inline Mixer::erpmToRpm(float erpm)
 uint8_t inline Mixer::dshotBeaconCommand() const
 {
   if(!_model.state.mixer.digitalOutput) return 0;
+  if(!_model.isModeActive(MODE_ARMED)) return 0;
 
   const uint32_t offFlags = _model.config.beeper.dshotBeaconOffFlags;
   if(_model.isModeActive(MODE_FAILSAFE) && !(offFlags & buzzerEventFlag(BUZZER_RX_LOST)))

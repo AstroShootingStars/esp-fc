@@ -266,22 +266,10 @@ void SerialManager::processMsp(SerialPortState& ss)
   }
 
 #ifdef ESPFC_SERIAL_USB
-  if(_current == SERIAL_USB && handledCommands == 0)
-  {
-    _msp.traceEvent("USB n=%u p=%u d=%u\n", (unsigned)readLen, (unsigned)consumedBytes, (unsigned)droppedBytes);
-    if(droppedSampleLen)
-    {
-      _msp.traceEvent("USB bx=%02X %02X %02X %02X %02X %02X %02X %02X\n",
-        droppedSampleLen > 0 ? droppedSample[0] : 0,
-        droppedSampleLen > 1 ? droppedSample[1] : 0,
-        droppedSampleLen > 2 ? droppedSample[2] : 0,
-        droppedSampleLen > 3 ? droppedSample[3] : 0,
-        droppedSampleLen > 4 ? droppedSample[4] : 0,
-        droppedSampleLen > 5 ? droppedSample[5] : 0,
-        droppedSampleLen > 6 ? droppedSample[6] : 0,
-        droppedSampleLen > 7 ? droppedSample[7] : 0);
-    }
-  }
+  (void)consumedBytes;
+  (void)droppedBytes;
+  (void)droppedSample;
+  (void)droppedSampleLen;
 #endif
 }
 

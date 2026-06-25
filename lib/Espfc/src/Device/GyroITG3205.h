@@ -146,11 +146,8 @@ public:
       return true;
     }
 
-    // Fallback for clones that report unexpected WHO_AM_I values:
-    // if gyro output registers are readable, treat device as present.
-    uint8_t raw[6] = {0};
-    int8_t rawLen = _bus->readFast(_addr, ITG3205_RA_GYRO_XOUT_H, 6, raw);
-    return rawLen == 6;
+    // Be strict here to avoid false positives on floating/no-gyro buses.
+    return false;
   }
 
 private:

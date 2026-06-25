@@ -318,7 +318,6 @@ static bool shouldAutoPersistSetCommand(uint16_t cmd)
     case MSP_SET_LOOP_TIME:
     case MSP_SET_NAME:
     case MSP2_SET_TEXT:
-    case MSP_SET_MODE_RANGE:
     case MSP_SET_FEATURE_CONFIG:
     case MSP_SET_BATTERY_CONFIG:
     case MSP_SET_VOLTAGE_METER_CONFIG:
@@ -592,31 +591,31 @@ struct ModeBoxMapEntry {
 
 static constexpr ModeBoxMapEntry MODE_BOX_MAP[] = {
   { Espfc::MODE_ARMED, 0 },
-  { Espfc::MODE_AIRMODE, 27 },
   { Espfc::MODE_ANGLE, 1 },
   { Espfc::MODE_HORIZON, 2 },
   { Espfc::MODE_ALTHOLD, 3 },
-  { Espfc::MODE_BUZZER, 13 },
-  { Espfc::MODE_FAILSAFE, 26 },
-  { Espfc::MODE_BLACKBOX, 22 },
-  { Espfc::MODE_BLACKBOX_ERASE, 30 },
   { Espfc::MODE_MAG, 5 },
   { Espfc::MODE_HEADFREE, 6 },
   { Espfc::MODE_HEADADJ, 7 },
-  { Espfc::MODE_CALIB, 16 },
-  { Espfc::MODE_GPS_RESCUE, 44 },
-  { Espfc::MODE_PREARM, 35 },
-  { Espfc::MODE_FLIP_OVER_AFTER_CRASH, 28 },
-  { Espfc::MODE_USER1, 39 },
-  { Espfc::MODE_USER2, 40 },
-  { Espfc::MODE_USER3, 41 },
-  { Espfc::MODE_USER4, 42 },
-  { Espfc::MODE_ACRO_TRAINER, 45 },
-  { Espfc::MODE_LAUNCH_CONTROL, 47 },
-  { Espfc::MODE_MSP_OVERRIDE, 48 },
-  { Espfc::MODE_STICK_COMMANDS_DISABLE, 49 },
-  { Espfc::MODE_BEEPER_MUTE, 50 },
-  { Espfc::MODE_PARALYZE, 43 },
+  { Espfc::MODE_BUZZER, 13 },
+  { Espfc::MODE_CALIB, 17 },
+  { Espfc::MODE_BLACKBOX, 26 },
+  { Espfc::MODE_FAILSAFE, 27 },
+  { Espfc::MODE_AIRMODE, 28 },
+  { Espfc::MODE_BLACKBOX_ERASE, 31 },
+  { Espfc::MODE_FLIP_OVER_AFTER_CRASH, 35 },
+  { Espfc::MODE_PREARM, 36 },
+  { Espfc::MODE_USER1, 40 },
+  { Espfc::MODE_USER2, 41 },
+  { Espfc::MODE_USER3, 42 },
+  { Espfc::MODE_USER4, 43 },
+  { Espfc::MODE_PARALYZE, 45 },
+  { Espfc::MODE_GPS_RESCUE, 46 },
+  { Espfc::MODE_ACRO_TRAINER, 47 },
+  { Espfc::MODE_LAUNCH_CONTROL, 49 },
+  { Espfc::MODE_MSP_OVERRIDE, 50 },
+  { Espfc::MODE_STICK_COMMANDS_DISABLE, 51 },
+  { Espfc::MODE_BEEPER_MUTE, 52 },
 };
 
 static constexpr const char * MODE_BOX_NAMES =
@@ -641,6 +640,20 @@ static uint8_t modeToBoxId(uint8_t mode)
     if(MODE_BOX_MAP[i].mode == mode) return MODE_BOX_MAP[i].boxId;
   }
   return mode;
+}
+
+static uint32_t modeMaskToBoxMask(uint32_t modeMask)
+{
+  uint32_t boxMask = 0;
+  for(size_t i = 0; i < sizeof(MODE_BOX_MAP) / sizeof(MODE_BOX_MAP[0]) && i < 32; i++)
+  {
+    const uint8_t mode = MODE_BOX_MAP[i].mode;
+    if(modeMask & (1u << mode))
+    {
+      boxMask |= (1u << i);
+    }
+  }
+  return boxMask;
 }
 
 static uint8_t fromGyroDlpf(uint8_t t)
@@ -826,6 +839,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_STATUS:
       {
         const uint16_t loopTimeUs = deriveLoopTimeUs(_model);
+        const uint32_t armModeBit = ((uint32_t)1u << MODE_ARMED);
+        const uint32_t switchStatusMask = _model.state.mode.maskSwitch & ~armModeBit;
+        const uint32_t runtimeStatusMask = _model.state.mode.mask & (~_model.state.mode.maskPresent | armModeBit);
+        const uint32_t modeStatusMask = switchStatusMask | runtimeStatusMask;
+        const uint32_t boxModeMask = modeMaskToBoxMask(modeStatusMask);
         r.writeU16(loopTimeUs);
         r.writeU16(_model.state.i2cErrorCount); // i2c error count
         // Report runtime-active sensors for status icons.
@@ -837,7 +855,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           ((0) << 4) |
           (((_model.gyroActive()) ? 1 : 0) << 5);
         r.writeU16(sensorMask);
-        r.writeU32(_model.state.mode.mask); // flight mode flags
+        r.writeU32(boxModeMask); // flight mode flags in BOXNAMES/BOXIDS order
         r.writeU8(0); // pid profile
         if (m.cmd == MSP_STATUS_EX) {
           r.writeU16(lrintf(_model.state.stats.getCpuLoad()));
@@ -970,21 +988,28 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         size_t i = m.readU8();
         if(i < ACTUATOR_CONDITIONS)
         {
-          const uint8_t boxId = m.readU8();
-          int16_t mappedMode = boxIdToMode(boxId);
-          if(mappedMode < 0 && boxId < MODE_COUNT)
+          if(m.remain() < 4)
           {
-            mappedMode = boxId;
+            r.result = -1;
+            break;
           }
+
+          const uint8_t boxId = m.readU8();
+          const uint8_t auxIndex = m.readU8();
+          const uint8_t startStep = m.readU8();
+          const uint8_t endStep = m.readU8();
+
+          int16_t mappedMode = boxIdToMode(boxId);
           if(mappedMode < 0)
           {
             r.result = -1;
             break;
           }
+
           _model.config.conditions[i].id = mappedMode;
-          _model.config.conditions[i].ch = constrain(m.readU8() + AXIS_AUX_1, AXIS_AUX_1, AXIS_AUX_1 + INPUT_CHANNELS - 4 - 1);
-          _model.config.conditions[i].min = constrain(m.readU8() * 25 + 900, 900, 2100);
-          _model.config.conditions[i].max = constrain(m.readU8() * 25 + 900, 900, 2100);
+          _model.config.conditions[i].ch = constrain(auxIndex + AXIS_AUX_1, AXIS_AUX_1, AXIS_AUX_1 + INPUT_CHANNELS - 4 - 1);
+          _model.config.conditions[i].min = constrain(startStep * 25 + 900, 900, 2100);
+          _model.config.conditions[i].max = constrain(endStep * 25 + 900, 900, 2100);
           if(_model.config.conditions[i].min > _model.config.conditions[i].max)
           {
             std::swap(_model.config.conditions[i].min, _model.config.conditions[i].max);
@@ -2350,9 +2375,20 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       {
         _model.setGpsHome(true);
       }
-      for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
       {
-        _model.state.output.disarmed[i] = m.readU16();
+        bool anyOverride = false;
+        const size_t motorCount = _model.state.currentMixer.count;
+        for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
+        {
+          const int16_t value = m.readU16();
+          _model.state.output.disarmed[i] = value;
+          if(i < motorCount && !_model.config.output.channel[i].servo && value > _model.config.output.minCommand)
+          {
+            anyOverride = true;
+          }
+        }
+        _model.state.output.disarmedOverrideTime = millis();
+        _model.state.output.disarmedOverrideActive = anyOverride;
       }
       break;
 

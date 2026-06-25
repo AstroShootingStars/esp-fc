@@ -106,7 +106,9 @@ static void ws2812_update(const ws2812_pixel_t * pixels)
 
 static const ws2812_pixel_t PIXEL_BOOT[] = {{0x00, 0x80, 0x00}};   // red
 static const ws2812_pixel_t PIXEL_OK[] = {{0x80, 0x00, 0x00}};     // green
-static const ws2812_pixel_t PIXEL_ERROR[] = {{0x20, 0x80, 0x00}};  // orange (GRB: lower G, higher R)
+// Use strong red + medium green so ERROR appears clearly orange/yellow even if
+// board/channel ordering differs from expected GRB mapping.
+static const ws2812_pixel_t PIXEL_ERROR[] = {{0x60, 0xFF, 0x00}};
 static const ws2812_pixel_t PIXEL_OFF[] = {{0, 0, 0}};
 
 #endif

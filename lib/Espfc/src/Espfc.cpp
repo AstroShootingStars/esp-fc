@@ -5,6 +5,65 @@
 
 namespace Espfc {
 
+namespace {
+
+void applyDefaultLedConfig(Model& model)
+{
+#if defined(ESPFC_LED_PIN) && (ESPFC_LED_PIN >= 0)
+#if defined(ESPFC_LED_FORCE_DEFAULT) && (ESPFC_LED_FORCE_DEFAULT)
+  model.config.pin[PIN_LED_BLINK] = ESPFC_LED_PIN;
+#if defined(ESPFC_LED_TYPE)
+  model.config.led.type = ESPFC_LED_TYPE;
+#endif
+#else
+  if(model.config.pin[PIN_LED_BLINK] < 0)
+  {
+    model.config.pin[PIN_LED_BLINK] = ESPFC_LED_PIN;
+#if defined(ESPFC_LED_TYPE)
+    model.config.led.type = ESPFC_LED_TYPE;
+#endif
+  }
+#endif
+#endif
+}
+
+void runBootLedAnimation(Model& model)
+{
+  // Show explicit boot state (red blink) on both simple and strip LEDs.
+  model.state.led.setStatus(Connect::LED_BOOT, true);
+  for(size_t i = 0; i < 4; i++)
+  {
+    delay(80);
+    model.state.led.update();
+  }
+}
+
+void updateBootLedStatus(Model& model)
+{
+  const bool gyroDetected = model.state.gyro.present && model.state.gyro.dev != nullptr;
+  const bool accelRequired = model.config.accel.dev != GYRO_NONE;
+  const bool accelDetected = !accelRequired || model.state.accel.present;
+  const bool baroRequired = model.config.baro.dev != BARO_NONE;
+  const bool baroDetected = !baroRequired || model.state.baro.present;
+
+  // Requested LED policy:
+  // - green blink on successful boot
+  // - orange blink when gyro is missing
+  const bool bootSensorsDetected = gyroDetected;
+  if(model.config.led.type == Connect::LED_STRIP || model.config.led.type == Connect::LED_SIMPLE)
+  {
+    model.state.led.setStatus(bootSensorsDetected ? Connect::LED_OK : Connect::LED_ERROR, true);
+  }
+
+  model.logger.info()
+      .log(F("BOOT SENSORS g/a/b"))
+      .log((int)gyroDetected)
+      .log((int)accelDetected)
+      .logln((int)baroDetected);
+}
+
+}
+
 Espfc::Espfc():
   _hardware{_model}, _controller{_model}, _telemetry{_model}, _input{_model, _telemetry}, _actuator{_model}, _sensor{_model},
   _mixer{_model}, _blackbox{_model}, _buzzer{_model}, _serial{_model, _telemetry}
@@ -20,39 +79,19 @@ int Espfc::load()
 
 int Espfc::begin()
 {
-#if defined(ESPFC_LED_PIN) && (ESPFC_LED_PIN >= 0)
-#if defined(ESPFC_LED_FORCE_DEFAULT) && (ESPFC_LED_FORCE_DEFAULT)
-  _model.config.pin[PIN_LED_BLINK] = ESPFC_LED_PIN;
-#if defined(ESPFC_LED_TYPE)
-  _model.config.led.type = ESPFC_LED_TYPE;
-#endif
-#else
-  if(_model.config.pin[PIN_LED_BLINK] < 0)
-  {
-    _model.config.pin[PIN_LED_BLINK] = ESPFC_LED_PIN;
-#if defined(ESPFC_LED_TYPE)
-    _model.config.led.type = ESPFC_LED_TYPE;
-#endif
-  }
-#endif
-#endif
+  applyDefaultLedConfig(_model);
 
   _model.state.led.begin(_model.config.pin[PIN_LED_BLINK], _model.config.led.type, _model.config.led.invert);
+
+  // Allow external regulators/sensors to settle before peripheral probing.
+  delay(250);
 
   // Bring up serial/MSP first so configurator handshakes are available immediately after reset.
   _serial.begin();      // requires _model.load()
 
-  if(_model.config.led.type == Connect::LED_STRIP)
-  {
-    _model.state.led.setStatus(Connect::LED_BOOT, true);
+  // Short boot animation for RGB onboard LED while subsystems initialize.
+  runBootLedAnimation(_model);
 
-    // Short boot animation for RGB onboard LED while subsystems initialize.
-    for(size_t i = 0; i < 4; i++)
-    {
-      delay(80);
-      _model.state.led.update();
-    }
-  }
   //_model.logStorageResult();
   _hardware.begin();    // requires _model.load()
   _model.begin();       // requires _hardware.begin()
@@ -64,23 +103,7 @@ int Espfc::begin()
   _blackbox.begin();    // requires _serial.begin(), _actuator.begin()
   _buzzer.begin();
 
-  const bool gyroDetected = _model.state.gyro.present && _model.state.gyro.dev != nullptr;
-  const bool accelRequired = _model.config.accel.dev != GYRO_NONE;
-  const bool accelDetected = !accelRequired || _model.state.accel.present;
-  const bool baroRequired = _model.config.baro.dev != BARO_NONE;
-  const bool baroDetected = !baroRequired || _model.state.baro.present;
-  // LED readiness should reflect critical flight sensors only.
-  const bool bootSensorsDetected = gyroDetected && accelDetected;
-  if(_model.config.led.type == Connect::LED_STRIP || _model.config.led.type == Connect::LED_SIMPLE)
-  {
-    _model.state.led.setStatus(bootSensorsDetected ? Connect::LED_ON : Connect::LED_ERROR, true);
-  }
-
-  _model.logger.info()
-      .log(F("BOOT SENSORS g/a/b"))
-      .log((int)gyroDetected)
-      .log((int)accelDetected)
-      .logln((int)baroDetected);
+  updateBootLedStatus(_model);
 
   _model.state.buzzer.push(BUZZER_SYSTEM_INIT);
 

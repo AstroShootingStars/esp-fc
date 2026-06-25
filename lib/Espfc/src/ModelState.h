@@ -167,6 +167,8 @@ struct OutputState
   float ch[OUTPUT_CHANNELS];
   int16_t us[OUTPUT_CHANNELS];
   int16_t disarmed[OUTPUT_CHANNELS];
+  uint32_t disarmedOverrideTime;
+  bool disarmedOverrideActive;
   bool saturated;
   OutputTelemetryState telemetry;
 };

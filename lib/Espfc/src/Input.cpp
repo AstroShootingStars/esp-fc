@@ -34,7 +34,8 @@ int Input::begin()
   for(size_t c = 0; c < INPUT_CHANNELS; ++c)
   {
     if(_device) _filter[c].begin(FilterConfig(_device->needAverage() ? FILTER_FIR2 : FILTER_NONE, 1), _model.state.loopTimer.rate);
-    int16_t v = c == AXIS_THRUST ? PWM_RANGE_MIN : PWM_RANGE_MID;
+    // Default all channels low until first valid RX frames arrive.
+    int16_t v = PWM_RANGE_MIN;
     _model.state.input.raw[c] = v;
     _model.state.input.buffer[c] = v;
     _model.state.input.bufferPrevious[c] = v;

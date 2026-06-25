@@ -518,7 +518,12 @@ bool Actuator::canActivateMode(FlightMode mode)
   switch(mode)
   {
     case MODE_ARMED:
-      return !_model.armingDisabled() && _model.isThrottleLow();
+      return !_model.armingDisabled()
+        && _model.isThrottleLow()
+        && !_model.state.input.rxLoss
+        && !_model.state.input.rxFailSafe
+        && _model.state.input.channelsValid
+        && _model.state.input.frameCount >= 5;
     case MODE_ANGLE:
     case MODE_HORIZON:
       return _model.accelActive();
@@ -651,10 +656,9 @@ void Actuator::updateRescueConfig()
 
 void Actuator::updateLed()
 {
-  const bool accelRequired = _model.config.accel.dev != GYRO_NONE;
-  const bool sensorsReady = _model.state.gyro.present && (!accelRequired || _model.state.accel.present);
+  const bool gyroReady = _model.state.gyro.present && _model.state.gyro.dev != nullptr;
 
-  if(!sensorsReady)
+  if(!gyroReady)
   {
     static uint32_t ledSensorDiagTs = 0;
     const uint32_t now = millis();
