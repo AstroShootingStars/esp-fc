@@ -2,6 +2,12 @@
 #define _ESPFC_SERIAL_DEVICE_ADAPTER_H_
 
 #include "Device/SerialDevice.h"
+#if defined(ESP32C3) || defined(ESP32S3)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include "hal/usb_serial_jtag_ll.h"
+#pragma GCC diagnostic pop
+#endif
 #ifdef ESPFC_SERIAL_SOFT_0_WIFI
 #include <WiFiClient.h>
 #endif

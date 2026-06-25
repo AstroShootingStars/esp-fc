@@ -26,8 +26,6 @@ public:
 private:
   static Device::SerialDevice * getSerialPortById(SerialPort portId);
   void processMsp(SerialPortState& ss);
-  bool detectBetaflightApiRequest(uint8_t byte, size_t portIndex);
-  void sendBetaflightApiVersion(Device::SerialDevice& stream) const;
 
   void next()
   {
@@ -37,7 +35,6 @@ private:
 
   Model& _model;
   size_t _current;
-  uint8_t _bfApiHandshakeState[SERIAL_UART_COUNT];
 
   Connect::MspProcessor _msp;
   Connect::OsdDisplayport _osd;

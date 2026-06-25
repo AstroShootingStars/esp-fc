@@ -32,7 +32,6 @@ SerialManager::SerialManager(Model& model, TelemetryManager& telemetry): _model(
   , _wireless(model)
 #endif
 {
-  std::fill_n(_bfApiHandshakeState, SERIAL_UART_COUNT, 0);
 }
 
 int SerialManager::begin()
@@ -44,7 +43,7 @@ int SerialManager::begin()
     Device::SerialDevice * port = getSerialPortById((SerialPort)i);
     const SerialPortConfig& spc = _model.config.serial[i];
 
-    if(!port || !spc.functionMask)
+    if(port == nullptr || !spc.functionMask)
     {
       continue;
     }
@@ -136,7 +135,9 @@ int SerialManager::begin()
 
     if(i == ESPFC_SERIAL_DEBUG_PORT)
     {
+#if !defined(ESPFC_SERIAL_USB) || (ESPFC_SERIAL_DEBUG_PORT != SERIAL_USB)
       initDebugStream(port);
+#endif
     }
     if(spc.functionMask & SERIAL_FUNCTION_TELEMETRY_IBUS)
     {
@@ -212,28 +213,30 @@ void SerialManager::processMsp(SerialPortState& ss)
   size_t len = ss.stream->available();
   if(!len) return;
 
+  size_t consumedBytes = 0;
+  size_t droppedBytes = 0;
+  size_t handledCommands = 0;
+  uint8_t droppedSample[8] = {0};
+  size_t droppedSampleLen = 0;
+
   uint8_t buff[64] = {0};
   len = std::min(len, (size_t)sizeof(buff));
-  ss.stream->readMany(buff, len);
+  const size_t readLen = ss.stream->readMany(buff, len);
+  if(!readLen) return;
   char * c = (char*)&buff[0];
+  len = readLen;
   while(len--)
   {
     const uint8_t byte = static_cast<uint8_t>(*c);
-    bool consumed = _msp.parse(*c, ss.mspRequest);
 
-    if(detectBetaflightApiRequest(byte, _current) && !consumed)
-    {
-      sendBetaflightApiVersion(*ss.stream);
-      ss.mspRequest = Connect::MspMessage();
-      ss.mspResponse = Connect::MspResponse();
-      c++;
-      continue;
-    }
+    bool consumed = _msp.parse(*c, ss.mspRequest);
 
     if(consumed)
     {
+      consumedBytes++;
       if(ss.mspRequest.isReady() && ss.mspRequest.isCmd())
       {
+        handledCommands++;
         _msp.processCommand(ss.mspRequest, ss.mspResponse, *ss.stream);
         _msp.sendResponse(ss.mspResponse, *ss.stream);
         _msp.postCommand();
@@ -243,64 +246,43 @@ void SerialManager::processMsp(SerialPortState& ss)
     }
     else
     {
+      droppedBytes++;
+      if(droppedSampleLen < sizeof(droppedSample))
+      {
+        droppedSample[droppedSampleLen++] = byte;
+      }
+
+      (void)byte;
+#ifdef ESPFC_SERIAL_USB
+      if(_current != SERIAL_USB)
+      {
+        _cli.process(*c, ss.cliCmd, *ss.stream);
+      }
+#else
       _cli.process(*c, ss.cliCmd, *ss.stream);
+#endif
     }
     c++;
   }
-}
 
-bool SerialManager::detectBetaflightApiRequest(uint8_t byte, size_t portIndex)
-{
-  uint8_t& state = _bfApiHandshakeState[portIndex];
-
-  switch(state)
+#ifdef ESPFC_SERIAL_USB
+  if(_current == SERIAL_USB && handledCommands == 0)
   {
-    case 0: // '$'
-      state = byte == '$' ? 1 : 0;
-      break;
-    case 1: // 'M'
-      state = byte == 'M' ? 2 : (byte == '$' ? 1 : 0);
-      break;
-    case 2: // '<'
-      state = byte == '<' ? 3 : (byte == '$' ? 1 : 0);
-      break;
-    case 3: // payload size = 0
-      state = byte == 0x00 ? 4 : (byte == '$' ? 1 : 0);
-      break;
-    case 4: // command = MSP_API_VERSION (1)
-      state = byte == MSP_API_VERSION ? 5 : (byte == '$' ? 1 : 0);
-      break;
-    case 5: // checksum = 0x01
-      state = 0;
-      return byte == 0x01;
-    default:
-      state = 0;
-      break;
+    _msp.traceEvent("USB n=%u p=%u d=%u\n", (unsigned)readLen, (unsigned)consumedBytes, (unsigned)droppedBytes);
+    if(droppedSampleLen)
+    {
+      _msp.traceEvent("USB bx=%02X %02X %02X %02X %02X %02X %02X %02X\n",
+        droppedSampleLen > 0 ? droppedSample[0] : 0,
+        droppedSampleLen > 1 ? droppedSample[1] : 0,
+        droppedSampleLen > 2 ? droppedSample[2] : 0,
+        droppedSampleLen > 3 ? droppedSample[3] : 0,
+        droppedSampleLen > 4 ? droppedSample[4] : 0,
+        droppedSampleLen > 5 ? droppedSample[5] : 0,
+        droppedSampleLen > 6 ? droppedSample[6] : 0,
+        droppedSampleLen > 7 ? droppedSample[7] : 0);
+    }
   }
-
-  return false;
-}
-
-void SerialManager::sendBetaflightApiVersion(Device::SerialDevice& stream) const
-{
-  const uint8_t payloadSize = 3;
-  const uint8_t cmd = MSP_API_VERSION;
-  const uint8_t protocolVersion = MSP_PROTOCOL_VERSION;
-  const uint8_t apiMajor = API_VERSION_MAJOR;
-  const uint8_t apiMinor = API_VERSION_MINOR;
-  const uint8_t checksum = payloadSize ^ cmd ^ protocolVersion ^ apiMajor ^ apiMinor;
-
-  const uint8_t response[9] = {
-    '$', 'M', '>',
-    payloadSize,
-    cmd,
-    protocolVersion,
-    apiMajor,
-    apiMinor,
-    checksum
-  };
-
-  stream.write(response, sizeof(response));
+#endif
 }
 
 Device::SerialDevice * SerialManager::getSerialPortById(SerialPort portId)

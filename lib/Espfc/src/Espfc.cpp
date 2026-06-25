@@ -39,6 +39,9 @@ int Espfc::begin()
 
   _model.state.led.begin(_model.config.pin[PIN_LED_BLINK], _model.config.led.type, _model.config.led.invert);
 
+  // Bring up serial/MSP first so configurator handshakes are available immediately after reset.
+  _serial.begin();      // requires _model.load()
+
   if(_model.config.led.type == Connect::LED_STRIP)
   {
     _model.state.led.setStatus(Connect::LED_BOOT, true);
@@ -50,8 +53,6 @@ int Espfc::begin()
       _model.state.led.update();
     }
   }
-
-  _serial.begin();      // requires _model.load()
   //_model.logStorageResult();
   _hardware.begin();    // requires _model.load()
   _model.begin();       // requires _hardware.begin()

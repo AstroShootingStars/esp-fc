@@ -2,6 +2,8 @@
 #include "Hardware.h"
 #include <platform.h>
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 #include <limits>
 #if defined(ESPFC_MULTI_CORE) && defined(ESPFC_FREE_RTOS)
 #include <driver/timer.h>
@@ -144,10 +146,52 @@ extern "C" {
 #define MSP_SET_COMPASS_CONFIG 224
 #endif
 
+#ifndef MSP_IDENT
+#define MSP_IDENT 100
+#endif
+
 // Extended receiver protocol support - using standard Betaflight MSP commands only
 // Custom extensions disabled to maintain Betaflight configurator compatibility
 
 namespace {
+
+constexpr size_t MSP_TRACE_BUF_SIZE = 512;
+char mspTraceBuf[MSP_TRACE_BUF_SIZE] = {0};
+size_t mspTraceLen = 0;
+
+static void appendMspTrace(const char* fmt, ...)
+{
+  if(!fmt) return;
+
+  char line[96] = {0};
+  va_list args;
+  va_start(args, fmt);
+  const int written = vsnprintf(line, sizeof(line), fmt, args);
+  va_end(args);
+
+  if(written <= 0) return;
+
+  const size_t addLen = std::min<size_t>((size_t)written, sizeof(line) - 1);
+  if(addLen >= MSP_TRACE_BUF_SIZE)
+  {
+    return;
+  }
+
+  if(mspTraceLen + addLen >= MSP_TRACE_BUF_SIZE)
+  {
+    mspTraceLen = 0;
+    mspTraceBuf[0] = '\0';
+  }
+
+  memcpy(&mspTraceBuf[mspTraceLen], line, addLen);
+  mspTraceLen += addLen;
+  mspTraceBuf[mspTraceLen] = '\0';
+}
+
+static const char* getMspTrace()
+{
+  return mspTraceLen ? mspTraceBuf : "";
+}
 
 constexpr uint8_t OSD_FLAGS_OSD_FEATURE = (1 << 0);
 constexpr uint8_t OSD_FLAGS_OSD_HARDWARE_FRSKYOSD = (1 << 3);
@@ -682,6 +726,20 @@ namespace Connect {
 
 MspProcessor::MspProcessor(Model& model): _model(model) {}
 
+void MspProcessor::traceEvent(const char* format, ...)
+{
+  if(!format) return;
+
+  char line[96] = {0};
+  va_list args;
+  va_start(args, format);
+  const int written = vsnprintf(line, sizeof(line), format, args);
+  va_end(args);
+
+  if(written <= 0) return;
+  appendMspTrace("%s", line);
+}
+
 bool MspProcessor::parse(char c, MspMessage& msg)
 {
   _parser.parse(c, msg);
@@ -696,6 +754,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
   r.cmd = m.cmd;
   r.version = m.version;
   r.result = 1;
+  if(m.cmd != MSP_DEBUGMSG)
+  {
+    appendMspTrace("RX c=%u v=%u n=%u\n", (unsigned)m.cmd, (unsigned)m.version, (unsigned)m.expected);
+  }
   switch(m.cmd)
   {
     case MSP_API_VERSION:
@@ -706,7 +768,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_BOARD_INFO:
       {
-        r.writeData(flightControllerIdentifier, FLIGHT_CONTROLLER_IDENTIFIER_LENGTH);
+        r.writeData(boardIdentifier, BOARD_IDENTIFIER_LENGTH);
         r.writeU16(1); // board version
         r.writeU8(0);   // board type
         r.writeU8(0);   // target capabilities
@@ -719,9 +781,9 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           r.writeData(safeText, (int)textLen);
         };
 
-        writeBoardInfoText(""); // target name
-        writeBoardInfoText(""); // board name
-        writeBoardInfoText(""); // manufacturer id
+        writeBoardInfoText(targetName); // target name
+        writeBoardInfoText(boardIdentifier); // board name
+        writeBoardInfoText("ESPF"); // manufacturer id
         const uint8_t boardInfoSignature[32] = {};
         r.writeData((const char*)boardInfoSignature, sizeof(boardInfoSignature));
         r.writeU8(0);            // mcu type id
@@ -738,6 +800,14 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(FC_VERSION_MAJOR);
       r.writeU8(FC_VERSION_MINOR);
       r.writeU8(FC_VERSION_PATCH_LEVEL);
+      break;
+
+    case MSP_IDENT:
+      // Legacy fallback for older configurator handshake paths.
+      r.writeU8(0); // MultiWii version (deprecated)
+      r.writeU8(0); // mixer mode (deprecated)
+      r.writeU8(MSP_PROTOCOL_VERSION);
+      r.writeU32(0); // capability flags
       break;
 
     case MSP_BUILD_INFO:
@@ -769,28 +839,18 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         r.writeU16(sensorMask);
         r.writeU32(_model.state.mode.mask); // flight mode flags
         r.writeU8(0); // pid profile
-        r.writeU16(lrintf(_model.state.stats.getCpuLoad()));
         if (m.cmd == MSP_STATUS_EX) {
+          r.writeU16(lrintf(_model.state.stats.getCpuLoad()));
           r.writeU8(RATE_PROFILE_COUNT); // max profile count
           r.writeU8(_model.config.activeRateProfile); // current rate profile index
-        } else {  // MSP_STATUS
-          // Report actual gyro cycle time (us). Some configurator builds use this
-          // to derive and display gyro update frequency.
-          uint16_t gyroCycleUs = _model.state.gyro.timer.interval;
-          if(gyroCycleUs == 0) gyroCycleUs = _model.state.loopTimer.interval;
-          if(gyroCycleUs == 0 && _model.state.gyro.rate > 0) gyroCycleUs = (uint16_t)(1000000ul / (uint32_t)_model.state.gyro.rate);
-          if(gyroCycleUs == 0) gyroCycleUs = deriveLoopTimeUs(_model);
-          r.writeU16(gyroCycleUs);
-          r.writeU8(_model.state.gyro.present ? 1 : 0); // detected gyro type (required by BF configurator)
+          // flight mode flags (above 32 bits)
+          r.writeU8(0); // count
+
+          // Write arming disable flags
+          r.writeU8(ARMING_DISABLED_FLAGS_COUNT);  // 1 byte, flag count
+          r.writeU32(_model.state.mode.armingDisabledFlags);  // 4 bytes, flags
+          r.writeU8(0); // reboot required
         }
-
-        // flight mode flags (above 32 bits)
-        r.writeU8(0); // count
-
-        // Write arming disable flags
-        r.writeU8(ARMING_DISABLED_FLAGS_COUNT);  // 1 byte, flag count
-        r.writeU32(_model.state.mode.armingDisabledFlags);  // 4 bytes, flags
-        r.writeU8(0); // reboot required
       }
       break;
 
@@ -938,7 +998,6 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         {
           r.result = -1;
         }
-        _model.reload();
       }
       break;
 
@@ -3417,7 +3476,18 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_DEBUGMSG:
-      r.writeU8(0); // empty C-string
+      {
+        const char* trace = getMspTrace();
+        const size_t len = std::min<size_t>(strlen(trace), r.remain() > 1 ? (size_t)r.remain() - 1 : 0);
+        if(len > 0)
+        {
+          r.writeData(trace, (int)len);
+        }
+        r.writeU8(0); // C-string terminator
+        // Return-and-clear behavior so the next poll captures only new traffic.
+        mspTraceLen = 0;
+        mspTraceBuf[0] = '\0';
+      }
       break;
 
     case MSP_SERVO_MIX_RULES:
@@ -3661,7 +3731,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     default:
-      r.result = 0;
+      r.result = -1;
       break;
   }
 
@@ -3670,6 +3740,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
   if(r.result == 1 && shouldAutoPersistSetCommand(m.cmd))
   {
     _model.save();
+  }
+
+  if(m.cmd != MSP_DEBUGMSG)
+  {
+    appendMspTrace("TX c=%u r=%d l=%u\n", (unsigned)r.cmd, (int)r.result, (unsigned)r.len);
   }
 }
 
@@ -3729,6 +3804,7 @@ void MspProcessor::sendResponse(MspResponse& r, Device::SerialDevice& s)
   uint8_t buff[256];
   size_t len = r.serialize(buff, sizeof(buff));
   s.write(buff, len);
+  s.flush();
 }
 
 void MspProcessor::postCommand()

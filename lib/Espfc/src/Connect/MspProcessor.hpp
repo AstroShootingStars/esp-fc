@@ -22,6 +22,7 @@ public:
 
   void sendResponse(MspResponse& r, Device::SerialDevice& s);
   void postCommand();
+  void traceEvent(const char* format, ...);
   bool debugSkip(uint8_t cmd);
   void debugMessage(const MspMessage& m);
   void debugResponse(const MspResponse& r);

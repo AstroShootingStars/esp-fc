@@ -756,6 +756,25 @@ class Model
         return false;
       };
 
+#if defined(ESP32S3)
+      // Prevent strap-sensitive GPIOs from being used by runtime functions,
+      // because external circuitry on these pins can force download boot mode on reset.
+      for(size_t i = 0; i < PIN_COUNT; i++)
+      {
+        if(!otaUnsafePin(config.pin[i])) continue;
+
+        const int8_t fallback = defaultPinForFunction(i);
+        if(fallback >= 0 && !otaUnsafePin(fallback) && !pinUsedByOtherFunction(i, fallback))
+        {
+          config.pin[i] = fallback;
+        }
+        else
+        {
+          config.pin[i] = -1;
+        }
+      }
+#endif
+
       auto selectBatteryAdcPin = [&](size_t idx, int8_t preferred) -> int8_t {
         if(preferred >= 0 && !otaUnsafePin(preferred) && !pinUsedByOtherFunction(idx, preferred))
         {
