@@ -488,26 +488,6 @@ static Espfc::SerialSpeed fromBaudIndex(SerialSpeedIndex index)
   }
 }
 
-static uint8_t toFilterTypeDerivative(uint8_t t)
-{
-  switch(t) {
-    case 0: return Espfc::FILTER_NONE;
-    case 1: return Espfc::FILTER_PT3;
-    case 2: return Espfc::FILTER_BIQUAD;
-    default: return Espfc::FILTER_PT3;
-  }
-}
-
-static uint8_t fromFilterTypeDerivative(uint8_t t)
-{
-  switch(t) {
-    case Espfc::FILTER_NONE: return 0;
-    case Espfc::FILTER_PT3: return 1;
-    case Espfc::FILTER_BIQUAD: return 2;
-    default: return 1;
-  }
-}
-
 static uint8_t toBfGyroHardware(uint8_t dev)
 {
   switch(dev)
@@ -1822,20 +1802,20 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(0); // spectrum bind
       r.writeU16(_model.config.input.minRc); //min_us
       r.writeU16(_model.config.input.maxRc); //max_us
-      r.writeU8(_model.config.input.interpolationMode); // rc interpolation
-      r.writeU8(_model.config.input.interpolationInterval); // rc interpolation interval
+      r.writeU8(0); // not required in API 1.44, was rc interpolation
+      r.writeU8(0); // not required in API 1.44, was rc interpolation interval
       r.writeU16(1500); // airmode activate threshold
       r.writeU8(_model.config.input.rxSpiProtocol); // rx spi prot
       r.writeU32(0); // rx spi id
       r.writeU8(0); // rx spi chan count
       r.writeU8(_model.config.fpvCamAngleDegrees); // fpv camera angle
-      r.writeU8(2); // rc iterpolation channels: RPYT
-      r.writeU8(_model.config.input.filterType); // rc_smoothing_type
+      r.writeU8(0); // not required in API 1.44, was rc interpolation channels
+      r.writeU8(0); // not required in API 1.44, was rc_smoothing_type
       r.writeU8(_model.config.input.filter.freq); // rc_smoothing_input_cutoff
       r.writeU8(_model.config.input.filterDerivative.freq); // rc_smoothing_throttle/feedforward_cutoff
-      // NOTE: field meaning changes at API 1.47 - before: derivative_cutoff, at 1.47+: throttle_cutoff
-      r.writeU8(0); // rc_smoothing_derivative_cutoff (deprecated) / rc_smoothing_throttle_cutoff (1.47+)
-      r.writeU8(fromFilterTypeDerivative(_model.config.input.filterDerivative.type)); // rc_smoothing_derivative_type
+      // At API 1.47+, this byte is interpreted as rc_smoothing_auto_factor_throttle.
+      r.writeU8(_model.config.input.filterAutoFactor);
+      r.writeU8(0); // not required in API 1.44, was rc_smoothing_derivative_type
       r.writeU8(0); // usb type
       // 1.42+
       r.writeU8(_model.config.input.filterAutoFactor); // rc_smoothing_auto_factor
@@ -1922,8 +1902,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       _model.config.input.minRc = m.readU16(); //min_us
       _model.config.input.maxRc = m.readU16(); //max_us
       if (m.remain() >= 4) {
-        _model.config.input.interpolationMode = m.readU8(); // rc interpolation
-        _model.config.input.interpolationInterval = m.readU8(); // rc interpolation interval
+        m.readU8(); // not required in API 1.44, was rc interpolation
+        m.readU8(); // not required in API 1.44, was rc interpolation interval
         m.readU16(); // airmode activate threshold
       }
       if (m.remain() >= 6) {
@@ -1937,11 +1917,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       // 1.40+
       if (m.remain() >= 6) {
         m.readU8(); // rc iterpolation channels
-        _model.config.input.filterType = m.readU8(); // rc_smoothing_type
+        m.readU8(); // not required in API 1.44, was rc_smoothing_type
         _model.config.input.filter.freq = m.readU8(); // rc_smoothing_input_cutoff
         _model.config.input.filterDerivative.freq = m.readU8(); // rc_smoothing_throttle/feedforward_cutoff
-        m.readU8(); // was rc_smoothing_derivative_cutoff (deprecated in 1.47), now throttle_cutoff unused here
-        _model.config.input.filterDerivative.type = toFilterTypeDerivative(m.readU8()); // rc_smoothing_derivative_type
+        m.readU8(); // was rc_smoothing_derivative_cutoff, now auto_factor_throttle (1.47+)
+        m.readU8(); // not required in API 1.44, was rc_smoothing_derivative_type
       }
       if (m.remain() >= 1) {
         m.readU8(); // usb type
