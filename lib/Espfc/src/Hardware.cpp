@@ -757,16 +757,13 @@ void Hardware::restartToBootloader(const Model& model, BootloaderRequestType req
   }
   targetReset();
 #elif defined(ESP32S3) || defined(ESP32S2) || defined(ESP32C3)
-  // Keep USB serial stack alive so host can keep a flashable COM path.
-#ifdef ESPFC_SERIAL_USB_DEV
-  ESPFC_SERIAL_USB_DEV.flush();
-  delay(10);
-#endif
-
-  // BOOT button equivalent: force ROM download mode on next reset.
-  REG_SET_BIT(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
-  esp_restart_noos_dig();
-  while(1) {}
+  // For bootloader requests, set the ROM download latch and then do a normal restart.
+  // Using ESP.restart() here is more stable for USB re-enumeration than noos reset.
+  if(requestType == BOOTLOADER_REQUEST_ROM || requestType == BOOTLOADER_REQUEST_FLASH)
+  {
+    REG_SET_BIT(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+  }
+  targetReset();
 #else
   // Best-effort fallback on non-RP targets where explicit bootloader entry is board/ROM-specific.
   targetReset();
