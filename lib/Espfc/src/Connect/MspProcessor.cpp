@@ -2030,7 +2030,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         r.writeU8(_model.config.input.superRate[i]);
       }
       r.writeU8(_model.config.controller.tpaScale); // dyn thr pid
-      r.writeU8(50); // thrMid8
+      r.writeU8(_model.config.input.throttleMid); // thrMid8
       r.writeU8(_model.config.input.throttleExpo);  // thr expo
       r.writeU16(_model.config.controller.tpaBreakpoint); // tpa breakpoint
       r.writeU8(_model.config.input.expo[AXIS_YAW]); // yaw expo
@@ -2046,6 +2046,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU16(_model.config.input.rateLimit[2]); // rate limit yaw
       // 1.43+
       r.writeU8(_model.config.input.rateType); // rates type
+      // 1.47+
+      r.writeU8(_model.config.input.throttleHover); // thrHover8
 
       break;
 
@@ -2071,7 +2073,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           _model.config.input.superRate[i] = m.readU8();
         }
         _model.config.controller.tpaScale = Utils::clamp(m.readU8(), (uint8_t)0, (uint8_t)90); // dyn thr pid
-        m.readU8(); // thrMid8
+        _model.config.input.throttleMid = Utils::clamp(m.readU8(), (uint8_t)0, (uint8_t)100); // thrMid8
         _model.config.input.throttleExpo = Utils::clamp(m.readU8(), (uint8_t)0, (uint8_t)100);  // thr expo
         _model.config.controller.tpaBreakpoint = Utils::clamp(m.readU16(), (uint16_t)1000, (uint16_t)2000); // tpa breakpoint
         if(m.remain() >= 1)
@@ -2107,6 +2109,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         if (m.remain() >= 1)
         {
           _model.config.input.rateType = m.readU8();
+        }
+        // 1.47
+        if (m.remain() >= 1)
+        {
+          _model.config.input.throttleHover = Utils::clamp(m.readU8(), (uint8_t)0, (uint8_t)100);
         }
         _model.syncActiveRateProfile();
         _model.reload();
@@ -2221,6 +2228,13 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(_model.config.gyro.rpmFilter.minFreq);  // gyro_rpm_notch_min
       // 1.43+
       r.writeU16(_model.config.gyro.dynamicFilter.max_freq); // dyn_notch_max_hz
+      // extended tail for complete filter section round-trip (safe for parsers that ignore tail bytes)
+      r.writeU16(_model.config.gyro.rpmFilter.q); // gyro_rpm_notch_q
+      r.writeU16(_model.config.gyro.rpmFilter.fade); // gyro_rpm_notch_fade_range_hz
+      r.writeU16(_model.config.gyro.rpmFilter.freqLpf); // gyro_rpm_telemetry_lpf_hz
+      r.writeU8(_model.config.gyro.rpmFilter.weights[0]); // gyro_rpm_weight_1
+      r.writeU8(_model.config.gyro.rpmFilter.weights[1]); // gyro_rpm_weight_2
+      r.writeU8(_model.config.gyro.rpmFilter.weights[2]); // gyro_rpm_weight_3
       break;
 
     case MSP_SET_FILTER_CONFIG:
@@ -2268,6 +2282,25 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       // 1.43+
       if (m.remain() >= 2) {
         _model.config.gyro.dynamicFilter.max_freq = m.readU16(); // dyn_notch_max_hz
+      }
+      // extended tail for complete filter section save path
+      if (m.remain() >= 2) {
+        _model.config.gyro.rpmFilter.q = m.readU16(); // gyro_rpm_notch_q
+      }
+      if (m.remain() >= 2) {
+        _model.config.gyro.rpmFilter.fade = m.readU16(); // gyro_rpm_notch_fade_range_hz
+      }
+      if (m.remain() >= 2) {
+        _model.config.gyro.rpmFilter.freqLpf = m.readU16(); // gyro_rpm_telemetry_lpf_hz
+      }
+      if (m.remain() >= 1) {
+        _model.config.gyro.rpmFilter.weights[0] = m.readU8(); // gyro_rpm_weight_1
+      }
+      if (m.remain() >= 1) {
+        _model.config.gyro.rpmFilter.weights[1] = m.readU8(); // gyro_rpm_weight_2
+      }
+      if (m.remain() >= 1) {
+        _model.config.gyro.rpmFilter.weights[2] = m.readU8(); // gyro_rpm_weight_3
       }
       _model.reload();
       break;

@@ -73,7 +73,9 @@ class Model
         profile.superRate[axis] = config.input.superRate[axis];
         profile.rateLimit[axis] = config.input.rateLimit[axis];
       }
+      profile.throttleMid = config.input.throttleMid;
       profile.throttleExpo = config.input.throttleExpo;
+      profile.throttleHover = config.input.throttleHover;
       profile.rateType = config.input.rateType;
     }
 
@@ -93,7 +95,9 @@ class Model
         config.input.superRate[axis] = profile.superRate[axis];
         config.input.rateLimit[axis] = profile.rateLimit[axis];
       }
+      config.input.throttleMid = profile.throttleMid;
       config.input.throttleExpo = profile.throttleExpo;
+      config.input.throttleHover = profile.throttleHover;
       config.input.rateType = profile.rateType;
       return true;
     }
@@ -905,7 +909,9 @@ class Model
       config.iterm.relaxCutoff = constrain(config.iterm.relaxCutoff, (int8_t)0, (int8_t)255);
       config.level.antiGravityGain = constrain(config.level.antiGravityGain, (uint8_t)0, (uint8_t)255);
       config.level.horizonStrength = constrain(config.level.horizonStrength, 0, 200);
+      config.input.throttleMid = constrain(config.input.throttleMid, 0, 100);
       config.input.throttleExpo = constrain(config.input.throttleExpo, 0, 100);
+      config.input.throttleHover = constrain(config.input.throttleHover, 0, 100);
       // receiver config validation
       config.input.rcSmoothing = constrain(config.input.rcSmoothing, 0, 1);
       config.input.rxSpiProtocol = std::min(config.input.rxSpiProtocol, (uint8_t)31); // ensure valid protocol index
@@ -957,7 +963,9 @@ class Model
       for(size_t profileIndex = 0; profileIndex < RATE_PROFILE_COUNT; profileIndex++)
       {
         auto& profile = config.rateProfiles[profileIndex];
+        profile.throttleMid = constrain(profile.throttleMid, 0, 100);
         profile.throttleExpo = constrain(profile.throttleExpo, 0, 100);
+        profile.throttleHover = constrain(profile.throttleHover, 0, 100);
         profile.rateType = constrain(profile.rateType, 0, 4);
         for(size_t axis = 0; axis < AXIS_COUNT_RPY; axis++)
         {

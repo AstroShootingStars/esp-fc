@@ -64,8 +64,15 @@ public:
   float iScale;
   float dScale;
   float fScale;
+  float pLimit;
   float ffTransitionFactor;
   float dMinFactor;  // D-min scaling factor (0-1)
+  uint8_t ffBoost;
+  uint8_t ffMaxRateLimit;
+  uint8_t ffJitterFactor;
+  uint8_t ffAveraging;
+  uint8_t ffSmoothness;
+  float ffDeltaFiltered;
 
   float error;
   float iTermError;
@@ -89,6 +96,7 @@ public:
   bool ftermDerivative;
   bool outputSaturated;
   int8_t itermRelax;
+  uint8_t itermRelaxMode;
   float itermRelaxFactor;
   float itermRelaxBase;
 };

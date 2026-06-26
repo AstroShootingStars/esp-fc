@@ -549,7 +549,9 @@ struct InputConfig
   FilterConfig filterDerivative{FILTER_PT3, 0};
 
   uint8_t expo[3] = { 0, 0, 0 };
+  uint8_t throttleMid = 50;
   uint8_t throttleExpo = 0;
+  uint8_t throttleHover = 50;
   uint8_t rate[3] = { 20, 20, 30 };
   uint8_t superRate[3] = { 40, 40,  36 };
   int16_t rateLimit[3] = { 1998, 1998, 1998 };
@@ -565,7 +567,9 @@ constexpr size_t RATE_PROFILE_COUNT = 1;
 struct RateProfileConfig
 {
   uint8_t expo[3] = { 0, 0, 0 };
+  uint8_t throttleMid = 50;
   uint8_t throttleExpo = 0;
+  uint8_t throttleHover = 50;
   uint8_t rate[3] = { 20, 20, 30 };
   uint8_t superRate[3] = { 40, 40, 36 };
   int16_t rateLimit[3] = { 1998, 1998, 1998 };

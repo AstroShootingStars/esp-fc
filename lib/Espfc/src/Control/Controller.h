@@ -23,7 +23,7 @@ public:
 
   inline float getTpaFactor() const;
   inline void resetIterm();
-  float calculateSetpointRate(int axis, float input) const;
+  float calculateSetpointRate(int axis, float input);
   float calcualteAltHoldSetpoint() const;
 
 private:
@@ -38,6 +38,9 @@ private:
 
   uint32_t _landingTouchdownStartMs = 0;
   bool _landingTouchdownPending = false;
+  float _prevThrottleInputUs = 1500.0f;
+  float _setpointRatePrev[AXIS_COUNT_RPY] = {0.f, 0.f, 0.f};
+  bool _setpointRatePrevValid[AXIS_COUNT_RPY] = {false, false, false};
 };
 
 } // namespace Espfc::Control

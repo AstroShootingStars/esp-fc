@@ -2,6 +2,7 @@
 #include "Input.h"
 #include "Utils/Math.hpp"
 #include "Utils/MemoryHelper.h"
+#include <cmath>
 
 namespace Espfc {
 
@@ -71,7 +72,18 @@ void FAST_CODE_ATTR Input::setInput(Axis i, float v, bool newFrame, bool noFilte
     if(i == AXIS_THRUST && _model.config.input.throttleExpo > 0)
     {
       const float expo = _model.config.input.throttleExpo * 0.01f;
-      normalized = normalized * (1.0f - expo) + normalized * normalized * normalized * expo;
+      const float mid = std::clamp(_model.config.input.throttleMid * 0.01f, 0.05f, 0.95f);
+      float u = std::clamp((normalized + 1.0f) * 0.5f, 0.0f, 1.0f);
+      const float curve = 1.0f + expo;
+      if(u < mid)
+      {
+        u = mid * powf(u / mid, curve);
+      }
+      else
+      {
+        u = 1.0f - (1.0f - mid) * powf((1.0f - u) / (1.0f - mid), curve);
+      }
+      normalized = std::clamp(u * 2.0f - 1.0f, -1.0f, 1.0f);
     }
     _model.state.input.ch[i] = normalized;
   }

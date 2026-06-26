@@ -27,6 +27,18 @@ int FAST_CODE_ATTR Controller::update()
   auto& state = _model.state;
   const bool robotMixer = _model.config.mixer.type == FC_MIXER_GIMBAL;
 
+  if(_model.config.pidAdvanced.autoProfileCellCount > 0 && state.battery.cells > 0)
+  {
+    const int profileIndex = std::clamp(
+      (int)state.battery.cells - (int)_model.config.pidAdvanced.autoProfileCellCount,
+      0,
+      (int)PID_PROFILE_COUNT - 1);
+    if(_model.selectPidProfile((uint8_t)profileIndex))
+    {
+      state.tuningUpdatePending = true;
+    }
+  }
+
   if(_model.state.tuningUpdatePending)
   {
     refreshRuntimeTunings();
@@ -94,6 +106,23 @@ void Controller::refreshRuntimeTunings()
     pid.Ki = (float)pc.I * ITERM_SCALE * pidScale[axis];
     pid.Kd = (float)pc.D * DTERM_SCALE * pidScale[axis];
     pid.Kf = (float)pc.F * FTERM_SCALE * pidScale[axis];
+    pid.ffBoost = std::max<uint8_t>(_model.config.pidAdvanced.throttleBoost, _model.config.pidAdvanced.ffBoost44);
+    pid.ffMaxRateLimit = _model.config.pidAdvanced.ffMaxRateLimit44;
+    pid.ffJitterFactor = std::max<uint8_t>(
+      _model.config.pidAdvanced.feedforwardSmoothness > 0
+        ? (uint8_t)std::min<uint16_t>(_model.config.pidAdvanced.feedforwardSmoothness, 100)
+        : 0,
+      _model.config.pidAdvanced.ffJitterFactor44);
+    pid.ffAveraging = _model.config.pidAdvanced.ffAveraging44 > 0
+      ? _model.config.pidAdvanced.ffAveraging44
+      : (uint8_t)std::min<uint16_t>(_model.config.pidAdvanced.feedforwardAveraging, 100);
+    pid.ffSmoothness = _model.config.pidAdvanced.ffSmoothness44 > 0
+      ? _model.config.pidAdvanced.ffSmoothness44
+      : (uint8_t)std::min<uint16_t>(_model.config.pidAdvanced.feedforwardSmoothness, 100);
+    pid.pLimit = (axis == AXIS_YAW && _model.config.pidAdvanced.yawPLimit > 0)
+      ? (float)_model.config.pidAdvanced.yawPLimit * 0.001f
+      : 0.0f;
+    pid.itermRelaxMode = _model.config.pidAdvanced.itermRelaxType > 0 ? 1 : 0;
   }
 }
 
@@ -272,10 +301,25 @@ void FAST_CODE_ATTR Controller::outerLoop()
   auto& state = _model.state;
   const auto& input = state.input;
 
-  const float ffFloor = 1.0f - (_model.config.dterm.feedForwardTransition * 0.01f);
+  const float ffFloorBase = 1.0f - (_model.config.dterm.feedForwardTransition * 0.01f);
+  const float smartFf = std::clamp((float)_model.config.pidAdvanced.smartFeedForward * 0.01f, 0.0f, 1.0f);
+  const float setpointWeight = std::clamp((float)_model.config.dterm.setpointWeight * (1.0f / 255.0f), 0.0f, 1.0f);
+  const float ffFloor = std::clamp(ffFloorBase + smartFf * 0.25f + setpointWeight * 0.2f, 0.0f, 1.0f);
   auto updateFeedforwardFactor = [&](size_t axis, float stickMagnitude, bool enabled) {
     const float stick = std::clamp(stickMagnitude, 0.0f, 1.0f);
     state.innerPid[axis].ffTransitionFactor = enabled ? std::max(stick, ffFloor) : 0.0f;
+  };
+  auto applyAcroTrainerLimit = [&](size_t axis, float command, float stickInput) {
+    const uint8_t limitDeg = _model.config.pidAdvanced.acroTrainerAngleLimit;
+    if(limitDeg == 0) return command;
+    const float limitRad = Utils::toRad((float)limitDeg);
+    const float angle = state.attitude.euler[axis];
+    const bool pushingOut = (angle > 0.0f && stickInput > 0.0f) || (angle < 0.0f && stickInput < 0.0f);
+    if(!pushingOut) return command;
+    const float overflow = std::max(0.0f, std::fabs(angle) - limitRad);
+    if(overflow <= 0.0f) return command;
+    const float reduction = std::clamp(overflow / Utils::toRad(20.0f), 0.0f, 1.0f);
+    return command * (1.0f - reduction);
   };
 
   const float angleLimitRad = Utils::toRad(_model.config.level.angleLimit);
@@ -305,6 +349,7 @@ void FAST_CODE_ATTR Controller::outerLoop()
       const float stick = std::fabs(stickInput);
       const float angleWeight = std::clamp((1.f - std::clamp(stick, 0.f, 1.f)) * horizonStrength, 0.0f, 1.0f);
       state.setpoint.rate[i] = acroRate * (1.f - angleWeight) + angleRate * angleWeight;
+      state.setpoint.rate[i] = applyAcroTrainerLimit(i, state.setpoint.rate[i], stickInput);
       updateFeedforwardFactor(i, stick, true);
     }
   }
@@ -314,13 +359,38 @@ void FAST_CODE_ATTR Controller::outerLoop()
     {
       const float stickInput = input.ch[i];
       state.setpoint.rate[i] = calculateSetpointRate(i, stickInput);
+      state.setpoint.rate[i] = applyAcroTrainerLimit(i, state.setpoint.rate[i], stickInput);
       updateFeedforwardFactor(i, std::fabs(stickInput), true);
     }
   }
 
   // Yaw rates control
   state.setpoint.rate[AXIS_YAW] = calculateSetpointRate(AXIS_YAW, input.ch[AXIS_YAW]);
+  if((angleMode || horizonMode) && _model.config.level.integratedYaw)
+  {
+    const float relax = std::clamp((float)_model.config.pidAdvanced.integratedYawRelax * 0.01f, 0.0f, 1.0f);
+    const float stick = std::clamp(std::fabs(input.ch[AXIS_YAW]), 0.0f, 1.0f);
+    state.setpoint.rate[AXIS_YAW] *= std::clamp(stick + relax, 0.0f, 1.0f);
+  }
   updateFeedforwardFactor(AXIS_YAW, std::fabs(input.ch[AXIS_YAW]), true);
+
+  const uint8_t dMinByAxis[AXIS_COUNT_RPY] = {
+    _model.config.dterm.dMinRoll,
+    _model.config.dterm.dMinPitch,
+    _model.config.dterm.dMinYaw
+  };
+  const float dMinGain = std::clamp((float)_model.config.dterm.dMinGain * 0.01f, 0.0f, 2.55f);
+  const float dMinAdvance = std::clamp((float)_model.config.dterm.dMinAdvance * 0.01f, 0.0f, 2.55f);
+  for(size_t i = 0; i < AXIS_COUNT_RPY; i++)
+  {
+    const float dCurrent = std::max(1.0f, (float)_model.config.pid[i].D);
+    const float dMinBase = std::clamp((float)dMinByAxis[i] / dCurrent, 0.0f, 1.0f);
+    const float stickActivity = std::clamp(std::fabs(input.ch[i]), 0.0f, 1.0f);
+    const float rateActivity = std::clamp(std::fabs(state.setpoint.rate[i]) / Utils::toRad(720.0f), 0.0f, 1.0f);
+    const float activity = std::clamp(stickActivity + rateActivity * (0.5f + dMinAdvance * 0.25f), 0.0f, 1.0f);
+    const float ramp = std::clamp(activity * (0.5f + dMinGain * 0.25f), 0.0f, 1.0f);
+    state.innerPid[i].dMinFactor = dMinBase + (1.0f - dMinBase) * ramp;
+  }
 
   // thrust control
   if (_model.isModeActive(MODE_ALTHOLD))
@@ -329,7 +399,15 @@ void FAST_CODE_ATTR Controller::outerLoop()
   }
   else
   {
-    state.setpoint.rate[AXIS_THRUST] = input.ch[AXIS_THRUST];
+    float thrust = input.ch[AXIS_THRUST];
+    const float linearization = std::clamp((float)_model.config.pidAdvanced.thrustLinearization44 * 0.01f, 0.0f, 1.0f);
+    if(linearization > 0.0f)
+    {
+      float normalized = std::clamp((thrust + 1.0f) * 0.5f, 0.0f, 1.0f);
+      normalized += linearization * (normalized - normalized * normalized);
+      thrust = std::clamp(normalized * 2.0f - 1.0f, -1.0f, 1.0f);
+    }
+    state.setpoint.rate[AXIS_THRUST] = thrust;
   }
 
   // debug
@@ -348,13 +426,28 @@ void FAST_CODE_ATTR Controller::innerLoop()
   const float tpaFactor = getTpaFactor();
   const auto& setpoint = _model.state.setpoint;
   const auto& altitude = _model.state.altitude;
+  const float throttleDeltaUs = std::fabs(_model.state.input.us[AXIS_THRUST] - _prevThrottleInputUs);
+  _prevThrottleInputUs = _model.state.input.us[AXIS_THRUST];
+  const float itermThreshold = std::max(1.0f, (float)_model.config.pidAdvanced.itermThrottleThreshold);
+  const float antiGravityGain = std::clamp((float)_model.config.level.antiGravityGain * 0.01f, 0.0f, 2.55f);
+  const float antiGravityExcess = std::clamp((throttleDeltaUs - itermThreshold) / std::max(50.0f, itermThreshold), 0.0f, 1.0f);
+  const float antiGravityBoost = 1.0f + antiGravityGain * antiGravityExcess;
+  const uint8_t antiGravityMode = _model.config.pidAdvanced.antiGravityMode;
+  const float absControlGain = std::clamp((float)_model.config.pidAdvanced.absControlGain * 0.00001f, 0.0f, 0.01f);
 
   auto& innerPid = _model.state.innerPid;
   auto& output = _model.state.output;
 
   for (size_t i = 0; i < AXIS_COUNT_RPY; ++i)
   {
+    const bool applyAntiGravity = antiGravityBoost > 1.0f && (i < AXIS_COUNT_RP || antiGravityMode > 0);
+    innerPid[i].iScale = applyAntiGravity ? antiGravityBoost : 1.0f;
     output.ch[i] = innerPid[i].update(setpoint.rate[i], _model.state.gyro.adc[i]) * tpaFactor;
+    if(absControlGain > 0.0f)
+    {
+      output.ch[i] -= _model.state.gyro.adc[i] * absControlGain;
+    }
+    output.ch[i] = std::clamp(output.ch[i], -1.0f, 1.0f);
   }
 
   // thrust control
@@ -394,7 +487,8 @@ void FAST_CODE_ATTR Controller::innerLoop()
 
 float Controller::calcualteAltHoldSetpoint() const
 {
-  float thrust = _model.state.input.ch[AXIS_THRUST];
+  const float hover = std::clamp(_model.config.input.throttleHover * 0.02f - 1.0f, -1.0f, 1.0f);
+  float thrust = _model.state.input.ch[AXIS_THRUST] - hover;
 
   // if(_model.isThrottleLow()) thrust = 0.0f; // stick below min check, no command
 
@@ -405,10 +499,29 @@ float Controller::calcualteAltHoldSetpoint() const
 
 float Controller::getTpaFactor() const
 {
-  if (_model.config.controller.tpaScale == 0) return 1.f;
-  float t = Utils::clamp(_model.state.input.us[AXIS_THRUST], (float)_model.config.controller.tpaBreakpoint, 2000.f);
-  return Utils::map(t, (float)_model.config.controller.tpaBreakpoint, 2000.f, 1.f,
-                    1.f - ((float)_model.config.controller.tpaScale * 0.01f));
+  const uint8_t tpaMode = _model.config.pidAdvanced.tpaMode45;
+  const uint8_t tpaRate = _model.config.pidAdvanced.tpaRate45 > 0
+    ? _model.config.pidAdvanced.tpaRate45
+    : _model.config.controller.tpaScale;
+  const uint16_t tpaBreakpoint = _model.config.pidAdvanced.tpaBreakpoint45 > 0
+    ? _model.config.pidAdvanced.tpaBreakpoint45
+    : _model.config.controller.tpaBreakpoint;
+
+  if(tpaRate == 0 || tpaMode > 1) return 1.f;
+
+  float t = Utils::clamp(_model.state.input.us[AXIS_THRUST], (float)tpaBreakpoint, 2000.f);
+  float factor = Utils::map(t, (float)tpaBreakpoint, 2000.f, 1.f,
+    1.f - ((float)tpaRate * 0.01f));
+
+  const uint8_t vbatComp = std::max<uint8_t>(_model.config.dterm.vbatPidCompensation, _model.config.pidAdvanced.vbatSagCompensation44);
+  if(vbatComp > 0 && _model.state.battery.cellVoltage > 0.1f)
+  {
+    const float cellMax = std::max(3.0f, _model.config.vbat.cellMax * 0.01f);
+    const float sag = std::clamp((cellMax - _model.state.battery.cellVoltage) / cellMax, 0.0f, 0.35f);
+    factor *= 1.0f + sag * ((float)vbatComp * 0.01f);
+  }
+
+  return std::clamp(factor, 0.5f, 1.5f);
 }
 
 void Controller::resetIterm()
@@ -430,10 +543,38 @@ void Controller::resetIterm()
   }
 }
 
-float Controller::calculateSetpointRate(int axis, float input) const
+float Controller::calculateSetpointRate(int axis, float input)
 {
   if (axis == AXIS_YAW) input *= -1.f;
-  return _rates.getSetpoint(axis, input);
+  const float target = _rates.getSetpoint(axis, input);
+
+  if(axis < AXIS_ROLL || axis > AXIS_YAW)
+  {
+    return target;
+  }
+
+  const uint16_t accelLimit = axis == AXIS_YAW
+    ? _model.config.pidAdvanced.yawRateAccelLimit
+    : _model.config.pidAdvanced.rateAccelLimit;
+
+  if(accelLimit == 0)
+  {
+    _setpointRatePrev[axis] = target;
+    _setpointRatePrevValid[axis] = true;
+    return target;
+  }
+
+  if(!_setpointRatePrevValid[axis])
+  {
+    _setpointRatePrev[axis] = target;
+    _setpointRatePrevValid[axis] = true;
+    return target;
+  }
+
+  const float maxStep = Utils::toRad((float)accelLimit) / std::max(1.0f, (float)_model.state.loopTimer.rate);
+  const float delta = std::clamp(target - _setpointRatePrev[axis], -maxStep, maxStep);
+  _setpointRatePrev[axis] += delta;
+  return _setpointRatePrev[axis];
 }
 
 void Controller::beginInnerLoop(size_t axis)
@@ -471,6 +612,24 @@ void Controller::beginInnerLoop(size_t axis)
   }
   pid.dtermFilter2.begin(dtermConf.filter2, pidFilterRate);
   pid.ftermFilter.begin(_model.config.input.filterDerivative, pidFilterRate);
+  pid.ffBoost = std::max<uint8_t>(_model.config.pidAdvanced.throttleBoost, _model.config.pidAdvanced.ffBoost44);
+  pid.ffMaxRateLimit = _model.config.pidAdvanced.ffMaxRateLimit44;
+  pid.ffJitterFactor = std::max<uint8_t>(
+    _model.config.pidAdvanced.feedforwardSmoothness > 0
+      ? (uint8_t)std::min<uint16_t>(_model.config.pidAdvanced.feedforwardSmoothness, 100)
+      : 0,
+    _model.config.pidAdvanced.ffJitterFactor44);
+  pid.ffAveraging = _model.config.pidAdvanced.ffAveraging44 > 0
+    ? _model.config.pidAdvanced.ffAveraging44
+    : (uint8_t)std::min<uint16_t>(_model.config.pidAdvanced.feedforwardAveraging, 100);
+  pid.ffSmoothness = _model.config.pidAdvanced.ffSmoothness44 > 0
+    ? _model.config.pidAdvanced.ffSmoothness44
+    : (uint8_t)std::min<uint16_t>(_model.config.pidAdvanced.feedforwardSmoothness, 100);
+  pid.pLimit = (axis == AXIS_YAW && _model.config.pidAdvanced.yawPLimit > 0)
+    ? (float)_model.config.pidAdvanced.yawPLimit * 0.001f
+    : 0.0f;
+  pid.itermRelaxMode = _model.config.pidAdvanced.itermRelaxType > 0 ? 1 : 0;
+  pid.ffDeltaFiltered = 0.0f;
   pid.itermRelaxFilter.begin(FilterConfig(FILTER_PT1, _model.config.iterm.relaxCutoff), pidFilterRate);
   if (axis == AXIS_YAW)
   {

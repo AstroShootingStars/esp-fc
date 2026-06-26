@@ -139,7 +139,9 @@ int Mixer::begin()
   _model.state.mixer.digitalOutput = _model.config.output.protocol >= ESC_PROTOCOL_DSHOT150;
   if(_model.state.mixer.digitalOutput)
   {
-    _model.state.mixer.minThrottle = (_model.config.output.dshotIdle * 0.1f) + 1001.f;
+    const float dshotIdleThrottle = (_model.config.output.dshotIdle * 0.1f) + 1001.f;
+    const float dynamicIdleThrottle = 1000.f + _model.config.pidAdvanced.idleMinRpm;
+    _model.state.mixer.minThrottle = std::max(dshotIdleThrottle, dynamicIdleThrottle);
     _model.state.mixer.maxThrottle = 2000.f;
   }
   _model.state.currentMixer = Mixers::getMixer((MixerType)_model.config.mixer.type, _model.state.customMixer);
