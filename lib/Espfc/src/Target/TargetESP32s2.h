@@ -13,7 +13,11 @@
 #define ESPFC_OUTPUT_3 42
 
 #define ESPFC_SERIAL_0
+#if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
 #define ESPFC_SERIAL_0_DEV Serial0
+#else
+#define ESPFC_SERIAL_0_DEV Serial
+#endif
 #define ESPFC_SERIAL_0_DEV_T HardwareSerial
 #define ESPFC_SERIAL_0_TX 43
 #define ESPFC_SERIAL_0_RX 44
@@ -30,16 +34,28 @@
 #define ESPFC_SERIAL_1_BAUD (SERIAL_SPEED_115200)
 #define ESPFC_SERIAL_1_BBAUD (SERIAL_SPEED_NONE)
 
+#if (defined(ARDUINO_USB_MODE) && ARDUINO_USB_MODE) || (defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT)
 #define ESPFC_SERIAL_USB
 #define ESPFC_SERIAL_USB_DEV Serial
+#if defined(ARDUINO_USB_MODE) && ARDUINO_USB_MODE
+#define ESPFC_SERIAL_USB_DEV_T HWCDC
+#elif defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
 #define ESPFC_SERIAL_USB_DEV_T USBCDC
+#else
+#define ESPFC_SERIAL_USB_DEV_T HardwareSerial
+#endif
 #define ESPFC_SERIAL_USB_FN (SERIAL_FUNCTION_MSP)
+#endif
 
 // ESP32-S2 has tighter RAM headroom than other ESP32 targets.
 // Keep core UART/USB MSP paths and disable WiFi soft-serial bridge on this target.
 
 #define ESPFC_SERIAL_REMAP_PINS
+#if defined(ESPFC_SERIAL_USB)
+#define ESPFC_SERIAL_DEBUG_PORT SERIAL_USB
+#else
 #define ESPFC_SERIAL_DEBUG_PORT SERIAL_UART_0
+#endif
 #define SERIAL_TX_FIFO_SIZE 0xFF
 
 #define ESPFC_SPI_0
@@ -89,13 +105,4 @@
 #include "Target/TargetEsp32Common.h"
 
 namespace Espfc {
-
-template<>
-inline int targetSerialInit(USBCDC& dev, const SerialDeviceConfig& conf)
-{
-  dev.begin(conf.baud);
-  //while(!dev) delay(10);
-  return 1;
-}
-
 }

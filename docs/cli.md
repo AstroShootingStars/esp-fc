@@ -29,6 +29,7 @@ available commands:
  mixer
  stats
  status
+ mode_debug
  version
 ```
 
@@ -61,6 +62,30 @@ STATUS:
  rescue mode: 0
       uptime: 6.4
 ```
+
+    ### Mode Debug
+    Use this to verify how AUX ranges and linked mode conditions are resolved at runtime.
+
+    ```
+    mode_debug
+    MODE DEBUG:
+     frameCount=12345
+     channelsValid=1
+     rxLoss=0 rxFailSafe=0
+     configuredMask=0x0000008F
+     switchMask(state)=0x00000005
+     switchMask(resolved)=0x00000005
+     activeMask=0x00000001
+     armingDisabled=0x00000088
+     idx id name ch val min max logic link range linked
+     0 0 ARM 4 1998 1700 2100 0 0 1 1
+     1 2 ANGLE 5 1000 1700 2100 0 0 0 0
+    ```
+
+     - `range`: direct AUX range match for the condition
+     - `linked`: final condition result after applying `logic_mode` and `link_id`
+     - `switchMask(resolved)`: mode bits requested by switches after condition logic
+     - `activeMask`: final runtime modes after arming/sensor safety gates
 
 ### Statisticss
 
@@ -233,8 +258,8 @@ set mode_0 0 4 1300 2100 0 0
  - `{id}`: mode Id
  - `{channel}`: observed input channel (0-index, must be greather than 3)
  - `{min/max}`: activation range, if both are set to 900, it means inactive
- - `{logic_mode}`: NOT IMPLEMENTED, used by configurator but ignored by firmare
- - `{link_id}` - NOT IMPLEMENTED, used by configurator but ignored by firmare
+ - `{logic_mode}`: condition logic mode (`0` = direct range, `1` = range AND linked condition active)
+ - `{link_id}`: referenced condition index used when `logic_mode` is `1`
 
 Mode IDs:
  - 0: arming

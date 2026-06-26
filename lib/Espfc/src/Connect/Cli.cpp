@@ -41,6 +41,40 @@ static inline float parseFloatArg(const char * v)
   return v ? strtof(v, nullptr) : 0.f;
 }
 
+static const char * getModeNameById(uint8_t modeId)
+{
+  switch(modeId)
+  {
+    case MODE_ARMED: return "ARM";
+    case MODE_AIRMODE: return "AIRMODE";
+    case MODE_ANGLE: return "ANGLE";
+    case MODE_HORIZON: return "HORIZON";
+    case MODE_ALTHOLD: return "ALTHOLD";
+    case MODE_BUZZER: return "BEEPER";
+    case MODE_FAILSAFE: return "FAILSAFE";
+    case MODE_BLACKBOX: return "BLACKBOX";
+    case MODE_BLACKBOX_ERASE: return "BLACKBOX_ERASE";
+    case MODE_MAG: return "MAG";
+    case MODE_HEADFREE: return "HEADFREE";
+    case MODE_HEADADJ: return "HEADADJ";
+    case MODE_CALIB: return "CALIB";
+    case MODE_GPS_RESCUE: return "GPS_RESCUE";
+    case MODE_PREARM: return "PREARM";
+    case MODE_FLIP_OVER_AFTER_CRASH: return "FLIP_OVER_AFTER_CRASH";
+    case MODE_USER1: return "USER1";
+    case MODE_USER2: return "USER2";
+    case MODE_USER3: return "USER3";
+    case MODE_USER4: return "USER4";
+    case MODE_ACRO_TRAINER: return "ACRO_TRAINER";
+    case MODE_LAUNCH_CONTROL: return "LAUNCH_CONTROL";
+    case MODE_MSP_OVERRIDE: return "MSP_OVERRIDE";
+    case MODE_STICK_COMMANDS_DISABLE: return "STICK_COMMANDS_DISABLE";
+    case MODE_BEEPER_MUTE: return "BEEPER_MUTE";
+    case MODE_PARALYZE: return "PARALYZE";
+    default: return "UNKNOWN";
+  }
+}
+
 void Cli::Param::print(Stream& stream) const
 {
   if(!addr)
@@ -1018,7 +1052,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
       PSTR(" help"), PSTR(" dump"), PSTR(" get param"), PSTR(" set param value ..."), PSTR(" cal [gyro]"),
       PSTR(" range_bottom [bus dev addr enabled]"), PSTR(" range_front [bus dev addr enabled]"),
       PSTR(" defaults"), PSTR(" save"), PSTR(" reboot"), PSTR(" scaler"), PSTR(" mixer"),
-      PSTR(" stats"), PSTR(" status"), PSTR(" devinfo"), PSTR(" version"), PSTR(" logs"), PSTR(" gps [set_home|clear_home]"),
+      PSTR(" stats"), PSTR(" status"), PSTR(" mode_debug"), PSTR(" devinfo"), PSTR(" version"), PSTR(" logs"), PSTR(" gps [set_home|clear_home]"),
       //PSTR(" load"), PSTR(" eeprom"),
       //PSTR(" fsinfo"), PSTR(" fsformat"), PSTR(" log"),
       nullptr
@@ -1756,6 +1790,10 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     s.println();
 #endif
   }
+  else if(strcmp_P(cmd.args[0], PSTR("mode_debug")) == 0)
+  {
+    printModeDebug(s);
+  }
   else if(strcmp_P(cmd.args[0], PSTR("stats")) == 0)
   {
 #if ESPFC_CLI_VERBOSE_HELP
@@ -1932,6 +1970,92 @@ void Cli::print(const Param& param, Stream& s) const
   s.print(' ');
   param.print(s);
   s.println();
+}
+
+void Cli::printModeDebug(Stream& s) const
+{
+  const auto& mode = _model.state.mode;
+  const auto& input = _model.state.input;
+
+  bool rangeActive[ACTUATOR_CONDITIONS] = { false };
+  bool conditionActive[ACTUATOR_CONDITIONS] = { false };
+  bool configured[ACTUATOR_CONDITIONS] = { false };
+
+  for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+  {
+    const ActuatorCondition& c = _model.config.conditions[i];
+    configured[i] = c.min < c.max && c.ch >= AXIS_AUX_1 && c.ch < AXIS_COUNT && c.id < MODE_COUNT;
+    if(!configured[i]) continue;
+    const int16_t val = input.us[c.ch];
+    rangeActive[i] = val > c.min && val < c.max;
+  }
+
+  for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+  {
+    const ActuatorCondition& c = _model.config.conditions[i];
+    if(!configured[i]) continue;
+
+    if(c.logicMode == 1 && c.linkId < ACTUATOR_CONDITIONS && c.linkId != i)
+    {
+      conditionActive[i] = rangeActive[i] && rangeActive[c.linkId];
+    }
+    else
+    {
+      conditionActive[i] = rangeActive[i];
+    }
+  }
+
+  uint32_t resolvedSwitchMask = 0;
+  for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+  {
+    const ActuatorCondition& c = _model.config.conditions[i];
+    if(!configured[i] || !conditionActive[i]) continue;
+    resolvedSwitchMask |= (1u << c.id);
+  }
+
+  s.println(F("MODE DEBUG:"));
+  s.print(F(" frameCount=")); s.println(input.frameCount);
+  s.print(F(" channelsValid=")); s.println(input.channelsValid ? 1 : 0);
+  s.print(F(" rxLoss=")); s.print(input.rxLoss ? 1 : 0);
+  s.print(F(" rxFailSafe=")); s.println(input.rxFailSafe ? 1 : 0);
+  s.print(F(" configuredMask=0x")); s.println(mode.maskPresent, HEX);
+  s.print(F(" switchMask(state)=0x")); s.println(mode.maskSwitch, HEX);
+  s.print(F(" switchMask(resolved)=0x")); s.println(resolvedSwitchMask, HEX);
+  s.print(F(" activeMask=0x")); s.println(mode.mask, HEX);
+  s.print(F(" armingDisabled=0x")); s.println(mode.armingDisabledFlags, HEX);
+  s.println(F(" idx id name ch val min max logic link range linked"));
+
+  for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+  {
+    const ActuatorCondition& c = _model.config.conditions[i];
+    if(!configured[i]) continue;
+    const int16_t val = input.us[c.ch];
+
+    s.print(' ');
+    s.print(i);
+    s.print(' ');
+    s.print(c.id);
+    s.print(' ');
+    s.print(getModeNameById(c.id));
+    s.print(' ');
+    s.print((int)c.ch);
+    s.print(' ');
+    s.print(val);
+    s.print(' ');
+    s.print(c.min);
+    s.print(' ');
+    s.print(c.max);
+    s.print(' ');
+    s.print(c.logicMode);
+    s.print(' ');
+    s.print(c.linkId);
+    s.print(' ');
+    s.print(rangeActive[i] ? 1 : 0);
+    s.print(' ');
+    s.println(conditionActive[i] ? 1 : 0);
+  }
+
+  s.println(F(" tip: move AUX switches in Receiver/Modes tabs and rerun mode_debug"));
 }
 
 static constexpr const char * const gnssNames[] = {" GPS", "SBAS", "GALI", "BEID", "IMES", "QZSS", "GLON"};

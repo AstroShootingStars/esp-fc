@@ -13,6 +13,30 @@ Once you download and install [Betaflight configurator](https://github.com/betaf
 
 Then select your device from list and click connect.
 
+## Bootloader / DFU Mode (Betaflight Configurator)
+
+`MSP_REBOOT` now supports Betaflight-style reboot modes used by Configurator firmware flashing flows.
+
+- Mode `0` (`MSP_REBOOT_FIRMWARE`): normal reboot back to firmware
+- Mode `1` (`MSP_REBOOT_BOOTLOADER_ROM`): reboot to bootloader/flash mode request
+
+Board behavior:
+
+- `RP2040/RP2350`: bootloader mode enters USB UF2 bootloader (`RPI-RP2` mass storage), matching Configurator flash expectations for RP targets.
+- `ESP32/ESP32-S2/ESP32-S3/ESP32-C3/ESP8266`: bootloader request is accepted and the board reboots; enter ROM flashing mode with normal board-specific boot procedure (BOOT/IO0 straps, USB/JTAG ROM downloader, etc.).
+
+Configurator workflow:
+
+1. Connect in Betaflight Configurator.
+2. Open Firmware Flasher and start flash operation.
+3. Configurator issues `MSP_REBOOT` bootloader request.
+4. Reconnect to the enumerated bootloader/flash port if prompted by host OS.
+
+Notes:
+
+- Reboot commands are ignored while armed for safety.
+- A successful reboot request returns the selected reboot mode in MSP response, consistent with Betaflight behavior.
+
 > [!NOTE]
 > Not all functions displayed in configurator are avalable in firmware. The rule of thumb is if you cannot change specific option in Betaflight Configurator, that means it is not supported. It usually rolls back to previous value after save.
 

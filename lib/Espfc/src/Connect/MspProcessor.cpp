@@ -56,6 +56,18 @@ extern "C" {
 #define MSP2TEXT_CRAFT_NAME 2
 #endif
 
+#ifndef MSP2TEXT_PID_PROFILE_NAME
+#define MSP2TEXT_PID_PROFILE_NAME 3
+#endif
+
+#ifndef MSP2TEXT_RATE_PROFILE_NAME
+#define MSP2TEXT_RATE_PROFILE_NAME 4
+#endif
+
+#ifndef MSP2TEXT_BATTERY_PROFILE_NAME
+#define MSP2TEXT_BATTERY_PROFILE_NAME 11
+#endif
+
 // Some BF headers mark these as deprecated and omit defines, but configurators
 // may still use them to read/write displayed gyro/loop frequencies.
 #ifndef MSP_LOOP_TIME
@@ -155,6 +167,31 @@ extern "C" {
 
 namespace {
 
+constexpr uint8_t MSP_SELECT_SETTING_RATE_PROFILE_MASK = 0x80;
+constexpr uint8_t MSP_SELECT_SETTING_BATTERY_PROFILE_MASK = 0x40;
+
+static char pidProfileNameStorage[Espfc::PID_PROFILE_COUNT][Espfc::MODEL_NAME_LEN + 1] = {};
+static char rateProfileNameStorage[Espfc::RATE_PROFILE_COUNT][Espfc::MODEL_NAME_LEN + 1] = {};
+
+template<size_t N>
+static char* getProfileNameSlot(char (&storage)[N][Espfc::MODEL_NAME_LEN + 1], uint8_t index)
+{
+  if(N == 0) return nullptr;
+  return storage[std::min<size_t>(index, N - 1)];
+}
+
+template<size_t N>
+static const char* getDefaultedProfileName(char (&storage)[N][Espfc::MODEL_NAME_LEN + 1], uint8_t index, const char* prefix)
+{
+  char* slot = getProfileNameSlot(storage, index);
+  if(!slot) return "";
+  if(slot[0] == '\0')
+  {
+    snprintf(slot, Espfc::MODEL_NAME_LEN + 1, "%s %u", prefix ? prefix : "", (unsigned)(std::min<size_t>(index, N - 1) + 1));
+  }
+  return slot;
+}
+
 constexpr size_t MSP_TRACE_BUF_SIZE = 512;
 char mspTraceBuf[MSP_TRACE_BUF_SIZE] = {0};
 size_t mspTraceLen = 0;
@@ -249,6 +286,47 @@ static SerialSpeedIndex toBaudIndex(int32_t speed)
   if(speed >= SERIAL_SPEED_19200)   return SERIAL_SPEED_INDEX_19200;
   if(speed >= SERIAL_SPEED_9600)    return SERIAL_SPEED_INDEX_9600;
   return SERIAL_SPEED_INDEX_AUTO;
+}
+
+enum MspRebootMode : uint8_t {
+  MSP_REBOOT_FIRMWARE = 0,
+  MSP_REBOOT_BOOTLOADER_ROM,
+  MSP_REBOOT_MSC,
+  MSP_REBOOT_MSC_UTC,
+  MSP_REBOOT_BOOTLOADER_FLASH,
+  MSP_REBOOT_COUNT,
+};
+
+static bool isSupportedRebootMode(uint8_t rebootMode)
+{
+  switch(rebootMode)
+  {
+    case MSP_REBOOT_FIRMWARE:
+    case MSP_REBOOT_BOOTLOADER_ROM:
+      return true;
+#if defined(ARCH_RP2040)
+    case MSP_REBOOT_MSC:
+    case MSP_REBOOT_MSC_UTC:
+    case MSP_REBOOT_BOOTLOADER_FLASH:
+      return true;
+#endif
+    default:
+      return false;
+  }
+}
+
+static bool isBootloaderRebootMode(uint8_t rebootMode)
+{
+  switch(rebootMode)
+  {
+    case MSP_REBOOT_BOOTLOADER_ROM:
+    case MSP_REBOOT_BOOTLOADER_FLASH:
+    case MSP_REBOOT_MSC:
+    case MSP_REBOOT_MSC_UTC:
+      return true;
+    default:
+      return false;
+  }
 }
 
 
@@ -591,31 +669,31 @@ struct ModeBoxMapEntry {
 
 static constexpr ModeBoxMapEntry MODE_BOX_MAP[] = {
   { Espfc::MODE_ARMED, 0 },
+  { Espfc::MODE_AIRMODE, 28 },
   { Espfc::MODE_ANGLE, 1 },
   { Espfc::MODE_HORIZON, 2 },
   { Espfc::MODE_ALTHOLD, 3 },
+  { Espfc::MODE_BUZZER, 13 },
+  { Espfc::MODE_FAILSAFE, 27 },
+  { Espfc::MODE_BLACKBOX, 26 },
+  { Espfc::MODE_BLACKBOX_ERASE, 31 },
   { Espfc::MODE_MAG, 5 },
   { Espfc::MODE_HEADFREE, 6 },
   { Espfc::MODE_HEADADJ, 7 },
-  { Espfc::MODE_BUZZER, 13 },
   { Espfc::MODE_CALIB, 17 },
-  { Espfc::MODE_BLACKBOX, 26 },
-  { Espfc::MODE_FAILSAFE, 27 },
-  { Espfc::MODE_AIRMODE, 28 },
-  { Espfc::MODE_BLACKBOX_ERASE, 31 },
-  { Espfc::MODE_FLIP_OVER_AFTER_CRASH, 35 },
+  { Espfc::MODE_GPS_RESCUE, 46 },
   { Espfc::MODE_PREARM, 36 },
+  { Espfc::MODE_FLIP_OVER_AFTER_CRASH, 35 },
   { Espfc::MODE_USER1, 40 },
   { Espfc::MODE_USER2, 41 },
   { Espfc::MODE_USER3, 42 },
   { Espfc::MODE_USER4, 43 },
-  { Espfc::MODE_PARALYZE, 45 },
-  { Espfc::MODE_GPS_RESCUE, 46 },
   { Espfc::MODE_ACRO_TRAINER, 47 },
   { Espfc::MODE_LAUNCH_CONTROL, 49 },
   { Espfc::MODE_MSP_OVERRIDE, 50 },
   { Espfc::MODE_STICK_COMMANDS_DISABLE, 51 },
   { Espfc::MODE_BEEPER_MUTE, 52 },
+  { Espfc::MODE_PARALYZE, 45 },
 };
 
 static constexpr const char * MODE_BOX_NAMES =
@@ -856,10 +934,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           (((_model.gyroActive()) ? 1 : 0) << 5);
         r.writeU16(sensorMask);
         r.writeU32(boxModeMask); // flight mode flags in BOXNAMES/BOXIDS order
-        r.writeU8(0); // pid profile
+        r.writeU8(_model.config.activePidProfile); // pid profile
         if (m.cmd == MSP_STATUS_EX) {
           r.writeU16(lrintf(_model.state.stats.getCpuLoad()));
-          r.writeU8(RATE_PROFILE_COUNT); // max profile count
+          r.writeU8(PID_PROFILE_COUNT); // pid profile count
           r.writeU8(_model.config.activeRateProfile); // current rate profile index
           // flight mode flags (above 32 bits)
           r.writeU8(0); // count
@@ -868,6 +946,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           r.writeU8(ARMING_DISABLED_FLAGS_COUNT);  // 1 byte, flag count
           r.writeU32(_model.state.mode.armingDisabledFlags);  // 4 bytes, flags
           r.writeU8(0); // reboot required
+          r.writeU16(0); // cpu temp
+          r.writeU8(RATE_PROFILE_COUNT); // number of rate profiles
+          r.writeU8(0); // number of battery profiles
+          r.writeU8(0); // current battery profile
         }
       }
       break;
@@ -912,6 +994,15 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           case MSP2TEXT_CRAFT_NAME:
             writeMsp2Text(r, textType, _model.config.modelName);
             break;
+          case MSP2TEXT_PID_PROFILE_NAME:
+            writeMsp2Text(r, textType, getDefaultedProfileName(pidProfileNameStorage, _model.config.activePidProfile, "PID"));
+            break;
+          case MSP2TEXT_RATE_PROFILE_NAME:
+            writeMsp2Text(r, textType, getDefaultedProfileName(rateProfileNameStorage, _model.config.activeRateProfile, "RATE"));
+            break;
+          case MSP2TEXT_BATTERY_PROFILE_NAME:
+            writeMsp2Text(r, textType, "");
+            break;
           default:
             r.result = 0;
             break;
@@ -942,6 +1033,15 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
             break;
           case MSP2TEXT_CRAFT_NAME:
             readMsp2TextToBuffer(m, _model.config.modelName);
+            break;
+          case MSP2TEXT_PID_PROFILE_NAME:
+            readMsp2TextToBuffer(m, getProfileNameSlot(pidProfileNameStorage, _model.config.activePidProfile));
+            break;
+          case MSP2TEXT_RATE_PROFILE_NAME:
+            readMsp2TextToBuffer(m, getProfileNameSlot(rateProfileNameStorage, _model.config.activeRateProfile));
+            break;
+          case MSP2TEXT_BATTERY_PROFILE_NAME:
+            while(m.remain() > 0) m.readU8();
             break;
           default:
             r.result = 0;
@@ -1007,7 +1107,9 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           }
 
           _model.config.conditions[i].id = mappedMode;
-          _model.config.conditions[i].ch = constrain(auxIndex + AXIS_AUX_1, AXIS_AUX_1, AXIS_AUX_1 + INPUT_CHANNELS - 4 - 1);
+          const int auxChannel = (int)auxIndex + AXIS_AUX_1;
+          const int maxAuxChannel = AXIS_AUX_1 + (int)INPUT_CHANNELS - 4 - 1;
+          _model.config.conditions[i].ch = (uint8_t)constrain(auxChannel, AXIS_AUX_1, maxAuxChannel);
           _model.config.conditions[i].min = constrain(startStep * 25 + 900, 900, 2100);
           _model.config.conditions[i].max = constrain(endStep * 25 + 900, 900, 2100);
           if(_model.config.conditions[i].min > _model.config.conditions[i].max)
@@ -1594,7 +1696,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       for(size_t i = 0; i < 8; i++)
       {
         if(!m.remain()) break;
-        _model.config.input.channel[i].map = m.readU8();
+        _model.config.input.channel[i].map = std::clamp<uint8_t>(m.readU8(), 0, INPUT_CHANNELS - 1);
       }
       _model.reload();
       break;
@@ -2709,12 +2811,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_SELECT_SETTING:
       if(m.remain() >= 1)
       {
-        const uint8_t profileIndex = m.readU8();
-        // Support extended format: if additional byte available, treat as [type, index]
-        // Otherwise, maintain backwards compatibility (rate profile selection)
+        const uint8_t selector = m.readU8();
+        // Extended format: [type, index] where type 0=rate, 1=pid
         if(m.remain() >= 1)
         {
-          const uint8_t profileType = profileIndex;  // First byte is type
+          const uint8_t profileType = selector;
           const uint8_t index = m.readU8();
           if(profileType == 0)
           {
@@ -2727,8 +2828,24 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         }
         else
         {
-          // Backwards compatible: single byte = rate profile index
-          _model.selectRateProfile(profileIndex);
+          // Betaflight-style single-byte selector uses high-bit masks.
+          if(selector & MSP_SELECT_SETTING_RATE_PROFILE_MASK)
+          {
+            _model.selectRateProfile(selector & ~MSP_SELECT_SETTING_RATE_PROFILE_MASK);
+          }
+          else if(selector & MSP_SELECT_SETTING_BATTERY_PROFILE_MASK)
+          {
+            // Battery profile switching is not implemented; command acknowledged for compatibility.
+          }
+          else
+          {
+            // PID profile selector in current configurator builds.
+            // Fallback to legacy rate profile behavior if PID selection fails.
+            if(!_model.selectPidProfile(selector))
+            {
+              _model.selectRateProfile(selector);
+            }
+          }
         }
       }
       break;
@@ -2736,10 +2853,19 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_COPY_PROFILE:
       if(m.remain() >= 3)
       {
-        const uint8_t profileType = m.readU8(); // 0=rate, 1=pid
+        const uint8_t profileType = m.readU8(); // 0=pid, 1=rate (Betaflight configurator)
         const uint8_t destIdx = m.readU8();
         const uint8_t srcIdx = m.readU8();
-        if(profileType == 0 && srcIdx < RATE_PROFILE_COUNT && destIdx < RATE_PROFILE_COUNT)
+        if(profileType == 0 && srcIdx < PID_PROFILE_COUNT && destIdx < PID_PROFILE_COUNT)
+        {
+          _model.config.pidProfiles[destIdx] = _model.config.pidProfiles[srcIdx];
+        }
+        else if(profileType == 1 && srcIdx < RATE_PROFILE_COUNT && destIdx < RATE_PROFILE_COUNT)
+        {
+          _model.config.rateProfiles[destIdx] = _model.config.rateProfiles[srcIdx];
+        }
+        // Legacy fallback for older clients with inverted type mapping.
+        else if(profileType == 0 && srcIdx < RATE_PROFILE_COUNT && destIdx < RATE_PROFILE_COUNT)
         {
           _model.config.rateProfiles[destIdx] = _model.config.rateProfiles[srcIdx];
         }
@@ -3762,8 +3888,31 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_REBOOT:
-      r.writeU8(0); // reboot to firmware
-      _postCommand = std::bind(&MspProcessor::processRestart, this);
+      {
+        const uint8_t rebootMode = m.remain() ? m.readU8() : MSP_REBOOT_FIRMWARE;
+
+        if(!_model.isModeActive(MODE_ARMED) && isSupportedRebootMode(rebootMode))
+        {
+          r.writeU8(rebootMode);
+          _postCommand = [this, rebootMode]() {
+            if(isBootloaderRebootMode(rebootMode))
+            {
+              const BootloaderRequestType requestType = (rebootMode == MSP_REBOOT_BOOTLOADER_FLASH)
+                ? BOOTLOADER_REQUEST_FLASH
+                : BOOTLOADER_REQUEST_ROM;
+              Hardware::restartToBootloader(_model, requestType);
+            }
+            else
+            {
+              processRestart();
+            }
+          };
+        }
+        else
+        {
+          r.result = -1;
+        }
+      }
       break;
 
     default:

@@ -12,6 +12,7 @@ The mini, DIY, Low cost, ESP32 based, high performance flight controller for hob
 * Flight modes (ACRO, ANGLE, AIRMODE)
 * Frames (Quad X)
 * Betaflight configuration tool compatible (v10.10)
+* Startup MSP link prioritization for more reliable first connection across supported boards
 * Configurable Gyro Filters (LPF, Dynamic Notches, dTerm, RPM)
 * Blackbox recording (OpenLog/OpenLager/Flash)
 * Up to 4kHz gyro/loop on ESP32 with SPI gyro

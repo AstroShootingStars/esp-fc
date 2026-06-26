@@ -5,10 +5,30 @@ namespace Espfc {
 
 namespace Connect {
 
+namespace {
+constexpr uint16_t MSP_MAX_CMD_PAYLOAD = 128;
+}
+
 MspParser::MspParser() {}
 
 void MspParser::parse(char c, MspMessage& msg)
 {
+  // Fast re-sync for noisy USB streams: if a new frame marker appears while we
+  // are waiting for a large command payload/checksum, restart frame detection.
+  if(c == '$' && (msg.state == MSP_STATE_PAYLOAD_V1 || msg.state == MSP_STATE_PAYLOAD_V2 || msg.state == MSP_STATE_CHECKSUM_V1 || msg.state == MSP_STATE_CHECKSUM_V2))
+  {
+    if(msg.dir == MSP_TYPE_CMD && msg.expected > MSP_MAX_CMD_PAYLOAD)
+    {
+      msg.state = MSP_STATE_HEADER_START;
+      msg.read = 0;
+      msg.received = 0;
+      msg.expected = 0;
+      msg.checksum = 0;
+      msg.checksum2 = 0;
+      return;
+    }
+  }
+
   switch(msg.state)
   {
     case MSP_STATE_IDLE:               // sync char 1 '$'
@@ -71,7 +91,7 @@ void MspParser::parse(char c, MspMessage& msg)
       if(msg.received == sizeof(MspHeaderV1))
       {
         const MspHeaderV1 * hdr = reinterpret_cast<MspHeaderV1*>(msg.buffer);
-        if(hdr->size > MSP_BUF_SIZE) msg.state = MSP_STATE_IDLE;
+        if(hdr->size > MSP_BUF_SIZE || (msg.dir == MSP_TYPE_CMD && hdr->size > MSP_MAX_CMD_PAYLOAD)) msg.state = MSP_STATE_IDLE;
         else
         {
           msg.expected = hdr->size;
@@ -101,7 +121,7 @@ void MspParser::parse(char c, MspMessage& msg)
       if(msg.received == sizeof(MspHeaderV2))
       {
         const MspHeaderV2 * hdr = reinterpret_cast<MspHeaderV2*>(msg.buffer);
-        if(hdr->size > MSP_BUF_SIZE) msg.state = MSP_STATE_IDLE;
+        if(hdr->size > MSP_BUF_SIZE || (msg.dir == MSP_TYPE_CMD && hdr->size > MSP_MAX_CMD_PAYLOAD)) msg.state = MSP_STATE_IDLE;
         else
         {
           msg.flags = hdr->flags;

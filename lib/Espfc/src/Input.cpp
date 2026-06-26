@@ -141,20 +141,28 @@ void FAST_CODE_ATTR Input::processInputs()
   if(_model.state.input.frameCount < 5) return; // ignore few first frames that might be garbage
 
   uint32_t startTime = micros();
+  const size_t channelCount = _model.state.input.channelCount;
+  const int16_t minRc = _model.config.input.minRc;
+  const int16_t maxRc = _model.config.input.maxRc;
+  const int16_t midRcOffset = _model.config.input.midRc - PWM_RANGE_MID;
 
   uint16_t channels[INPUT_CHANNELS];
-  _device->get(channels, _model.state.input.channelCount);
+  _device->get(channels, channelCount);
 
-  _model.state.input.channelsValid = true;
-  for(size_t c = 0; c < _model.state.input.channelCount; c++)
+  bool channelsValid = true;
+  for(size_t c = 0; c < channelCount; c++)
   {
     const InputChannelConfig& ich = _model.config.input.channel[c];
 
+    // Receiver tab can configure maps beyond currently delivered channels.
+    // Clamp to the available frame data to prevent out-of-bounds reads.
+    const size_t mappedIndex = (ich.map >= 0 && (size_t)ich.map < channelCount) ? (size_t)ich.map : c;
+
     // remap channels
-    int16_t v = _model.state.input.raw[c] = (int16_t)channels[ich.map];
+    int16_t v = _model.state.input.raw[c] = (int16_t)channels[mappedIndex];
 
     // adj midrc
-    v -= _model.config.input.midRc - PWM_RANGE_MID;
+    v -= midRcOffset;
 
     // adj range
     //float t = Utils::map3((float)v, (float)ich.min, (float)ich.neutral, (float)ich.max, (float)PWM_RANGE_MIN, (float)PWM_RANGE_MID, (float)PWM_RANGE_MAX);
@@ -171,16 +179,18 @@ void FAST_CODE_ATTR Input::processInputs()
     }
 
     // check if inputs are valid, apply failsafe value otherwise
-    if(v < _model.config.input.minRc || v > _model.config.input.maxRc)
+    if(v < minRc || v > maxRc)
     {
       v = getFailsafeValue(c);
-      if(c <= AXIS_THRUST) _model.state.input.channelsValid = false;
+      if(c <= AXIS_THRUST) channelsValid = false;
     }
 
     // update input buffer
     _model.state.input.bufferPrevious[c] = _model.state.input.buffer[c];
     _model.state.input.buffer[c] = v;
   }
+
+  _model.state.input.channelsValid = channelsValid;
 
   if(_model.config.debug.mode == DEBUG_RX_TIMING)
   {
@@ -338,6 +348,7 @@ void FAST_CODE_ATTR Input::filterInputs(InputStatus status)
 {
   Utils::Stats::Measure filterMeasure(_model.state.stats, COUNTER_INPUT_FILTER);
   uint32_t startTime = micros();
+  const size_t channelCount = _model.state.input.channelCount;
 
   const bool newFrame = status != INPUT_IDLE;
   const bool interpolation = _model.config.input.interpolationMode != INPUT_INTERPOLATION_OFF && _model.config.input.filterType == INPUT_INTERPOLATION;
@@ -354,7 +365,7 @@ void FAST_CODE_ATTR Input::filterInputs(InputStatus status)
     }
   }
 
-  for(size_t c = 0; c < _model.state.input.channelCount; c++)
+  for(size_t c = 0; c < channelCount; c++)
   {
     float v = _model.state.input.buffer[c];
     if(c <= AXIS_THRUST)
@@ -372,46 +383,54 @@ void FAST_CODE_ATTR Input::filterInputs(InputStatus status)
 
 void FAST_CODE_ATTR Input::updateFrameRate()
 {
+  auto& inputState = _model.state.input;
   const uint32_t now = micros();
-  const uint32_t frameDelta = now - _model.state.input.frameTime;
+  const uint32_t frameDelta = now - inputState.frameTime;
 
-  _model.state.input.frameTime = now;
-  _model.state.input.frameDelta += (((int)frameDelta - (int)_model.state.input.frameDelta) >> 3); // avg * 0.125
-  _model.state.input.frameRate = 1000000ul / _model.state.input.frameDelta;
+  inputState.frameTime = now;
+  inputState.frameDelta += (((int)frameDelta - (int)inputState.frameDelta) >> 3); // avg * 0.125
+  inputState.frameRate = 1000000ul / inputState.frameDelta;
 
   if (_model.config.input.interpolationMode == INPUT_INTERPOLATION_AUTO && _model.config.input.filterType == INPUT_INTERPOLATION)
   {
-    _model.state.input.interpolationDelta = Utils::clamp(_model.state.input.frameDelta, (uint32_t)4000, (uint32_t)40000) * 0.000001f; // estimate real interval
-    _model.state.input.interpolationStep = _model.state.loopTimer.intervalf / _model.state.input.interpolationDelta;
+    inputState.interpolationDelta = Utils::clamp(inputState.frameDelta, (uint32_t)4000, (uint32_t)40000) * 0.000001f; // estimate real interval
+    inputState.interpolationStep = _model.state.loopTimer.intervalf / inputState.interpolationDelta;
   }
 
   if(_model.config.debug.mode == DEBUG_RC_SMOOTHING_RATE)
   {
-    _model.state.debug[0] = _model.state.input.frameDelta / 10;
-    _model.state.debug[1] = _model.state.input.frameRate;
+    _model.state.debug[0] = inputState.frameDelta / 10;
+    _model.state.debug[1] = inputState.frameRate;
   }
 
   // auto cutoff input freq
-  float freq = std::max(_model.state.input.frameRate * _model.state.input.autoFactor, 15.f); // no lower than 15Hz
-  if(freq > _model.state.input.autoFreq * 1.1f || freq < _model.state.input.autoFreq * 0.9f)
+  float freq = std::max(inputState.frameRate * inputState.autoFactor, 15.f); // no lower than 15Hz
+  if(freq > inputState.autoFreq * 1.1f || freq < inputState.autoFreq * 0.9f)
   {
-    _model.state.input.autoFreq += 0.25f * (freq - _model.state.input.autoFreq);
+    inputState.autoFreq += 0.25f * (freq - inputState.autoFreq);
     if(_model.config.debug.mode == DEBUG_RC_SMOOTHING_RATE)
     {
       _model.state.debug[2] = lrintf(freq);
-      _model.state.debug[3] = lrintf(_model.state.input.autoFreq);
+      _model.state.debug[3] = lrintf(inputState.autoFreq);
     }
-    FilterConfig conf((FilterType)_model.config.input.filter.type, _model.state.input.autoFreq);
-    FilterConfig confDerivative((FilterType)_model.config.input.filterDerivative.type, _model.state.input.autoFreq);
-    for(size_t i = 0; i < AXIS_COUNT_RPYT; i++)
+    FilterConfig conf((FilterType)_model.config.input.filter.type, inputState.autoFreq);
+    FilterConfig confDerivative((FilterType)_model.config.input.filterDerivative.type, inputState.autoFreq);
+    const int loopRate = _model.state.loopTimer.rate;
+    const bool reconfigureInput = _model.config.input.filter.freq == 0;
+    const bool reconfigureDerivative = _model.config.input.filterDerivative.freq == 0;
+
+    if(reconfigureInput)
     {
-      if(_model.config.input.filter.freq == 0)
+      for(size_t i = 0; i < AXIS_COUNT_RPYT; i++)
       {
-        _model.state.input.filter[i].reconfigure(conf, _model.state.loopTimer.rate);
+        inputState.filter[i].reconfigure(conf, loopRate);
       }
-      if(_model.config.input.filterDerivative.freq == 0)
+    }
+    if(reconfigureDerivative)
+    {
+      for(size_t i = 0; i < AXIS_COUNT_RPYT; i++)
       {
-        _model.state.innerPid[i].ftermFilter.reconfigure(confDerivative, _model.state.loopTimer.rate);
+        _model.state.innerPid[i].ftermFilter.reconfigure(confDerivative, loopRate);
       }
     }
   }

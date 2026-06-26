@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Esp.h"
+#include <HWCDC.h>
+#include <USBCDC.h>
 #include "Debug_Espfc.h"
 
 // pins to avoid:
@@ -48,18 +50,19 @@
 #define ESPFC_SERIAL_2_BAUD (SERIAL_SPEED_115200)
 #define ESPFC_SERIAL_2_BBAUD (SERIAL_SPEED_NONE)
 
-#if (defined(ARDUINO_USB_MODE) && ARDUINO_USB_MODE) || (defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT)
 #define ESPFC_SERIAL_USB
-#define ESPFC_SERIAL_USB_DEV Serial
 #if defined(ARDUINO_USB_MODE) && ARDUINO_USB_MODE
-#define ESPFC_SERIAL_USB_DEV_T HWCDC
-#elif defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
-#define ESPFC_SERIAL_USB_DEV_T USBCDC
+  #if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
+    #define ESPFC_SERIAL_USB_DEV Serial
+  #else
+    #define ESPFC_SERIAL_USB_DEV USBSerial
+  #endif
+  #define ESPFC_SERIAL_USB_DEV_T HWCDC
 #else
-#define ESPFC_SERIAL_USB_DEV_T HardwareSerial
+  #define ESPFC_SERIAL_USB_DEV Serial
+  #define ESPFC_SERIAL_USB_DEV_T USBCDC
 #endif
 #define ESPFC_SERIAL_USB_FN (SERIAL_FUNCTION_MSP)
-#endif
 
 #define ESPFC_SERIAL_SOFT_0
 #define ESPFC_SERIAL_SOFT_0_FN (SERIAL_FUNCTION_MSP)

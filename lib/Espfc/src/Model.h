@@ -899,6 +899,7 @@ class Model
       for(size_t i = 0; i < INPUT_CHANNELS; i++)
       {
         auto& ch = config.input.channel[i];
+        ch.map = constrain(ch.map, 0, (int8_t)(INPUT_CHANNELS - 1));
         ch.fsMode = constrain(ch.fsMode, 0, 2); // auto, hold, set
         ch.fsValue = constrain(ch.fsValue, config.input.minRc, config.input.maxRc);
       }

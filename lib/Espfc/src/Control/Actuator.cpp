@@ -62,6 +62,18 @@ static uint16_t stepToUs(uint8_t step)
   return (uint16_t)(step * 25u + 900u);
 }
 
+static bool isConditionConfigured(const Espfc::ActuatorCondition& c)
+{
+  return c.min < c.max && c.ch >= Espfc::AXIS_AUX_1 && c.ch < Espfc::AXIS_COUNT && c.id < Espfc::MODE_COUNT;
+}
+
+static bool isConditionInRange(const Espfc::ActuatorCondition& c, const Espfc::ModelState& state)
+{
+  if(!isConditionConfigured(c)) return false;
+  const int16_t val = state.input.us[c.ch];
+  return val > c.min && val < c.max;
+}
+
 }
 
 namespace Espfc::Control {
@@ -80,7 +92,7 @@ int Actuator::begin()
     if(!(c.min < c.max)) continue; // inactive
     if(c.ch < AXIS_AUX_1 || c.ch >= AXIS_COUNT) continue; // invalid channel
     if(c.id >= MODE_COUNT) continue;
-    _model.state.mode.maskPresent |= 1 << c.id;
+    _model.state.mode.maskPresent |= 1u << c.id;
   }
   _model.state.mode.airmodeAllowed = false;
   _model.state.mode.rescueConfigMode = RESCUE_CONFIG_PENDING;
@@ -469,23 +481,37 @@ void Actuator::updateArmingDisabled()
 
 void Actuator::updateModeMask()
 {
+  bool rangeActive[ACTUATOR_CONDITIONS] = { false };
+  bool conditionActive[ACTUATOR_CONDITIONS] = { false };
+
+  for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+  {
+    const ActuatorCondition& c = _model.config.conditions[i];
+    rangeActive[i] = isConditionInRange(c, _model.state);
+  }
+
+  // Apply Betaflight-style linked mode logic from MSP_MODE_RANGES_EXTRA.
+  // logicMode: 0 = direct range match, 1 = range match AND linked condition active.
+  for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
+  {
+    const ActuatorCondition& c = _model.config.conditions[i];
+    if(!isConditionConfigured(c)) continue;
+    if(c.logicMode == 1 && c.linkId < ACTUATOR_CONDITIONS && c.linkId != i)
+    {
+      conditionActive[i] = rangeActive[i] && rangeActive[c.linkId];
+    }
+    else
+    {
+      conditionActive[i] = rangeActive[i];
+    }
+  }
+
   uint32_t newMask = 0;
   for(size_t i = 0; i < ACTUATOR_CONDITIONS; i++)
   {
-    ActuatorCondition * c = &_model.config.conditions[i];
-    if(!(c->min < c->max)) continue; // inactive
-
-    int16_t min = c->min; // * 25 + 900;
-    int16_t max = c->max; // * 25 + 900;
-    size_t ch = c->ch;    // + AXIS_AUX_1;
-    if(ch < AXIS_AUX_1 || ch >= AXIS_COUNT) continue; // invalid channel
-    if(c->id >= MODE_COUNT) continue;
-
-    int16_t val = _model.state.input.us[ch];
-    if(val > min && val < max)
-    {
-      newMask |= 1 << c->id;
-    }
+    const ActuatorCondition& c = _model.config.conditions[i];
+    if(!conditionActive[i]) continue;
+    newMask |= 1u << c.id;
   }
 
   _model.updateSwitchActive(newMask);
@@ -494,20 +520,23 @@ void Actuator::updateModeMask()
   _model.setArmingDisabled(ARMING_DISABLED_BOXFAILSAFE, _model.isSwitchActive(MODE_FAILSAFE));
   _model.setArmingDisabled(ARMING_DISABLED_ARM_SWITCH,  _model.armingDisabled() && _model.isSwitchActive(MODE_ARMED));
 
+  const uint32_t failsafeBit = (1u << MODE_FAILSAFE);
   if(_model.state.failsafe.phase != FC_FAILSAFE_IDLE)
   {
-    newMask |= (1 << MODE_FAILSAFE);
+    newMask |= failsafeBit;
   }
 
-  for(size_t i = 0; i < MODE_COUNT; i++)
+  // Only modes transitioning from OFF->ON need activation gate checks.
+  uint32_t activating = newMask & ~_model.state.mode.mask;
+  while(activating)
   {
-    bool newVal = newMask & (1 << i);
-    bool oldVal = _model.state.mode.mask & (1 << i);
-    if(newVal == oldVal) continue; // mode unchanged
-    if(newVal && !canActivateMode((FlightMode)i))
+    const uint32_t bit = activating & (~activating + 1u);
+    const uint8_t mode = (uint8_t)__builtin_ctz(activating);
+    if(!canActivateMode((FlightMode)mode))
     {
-      newMask &= ~(1 << i); // block activation, clear bit
+      newMask &= ~bit; // block activation, clear bit
     }
+    activating &= ~bit;
   }
 
   _model.updateModes(newMask);

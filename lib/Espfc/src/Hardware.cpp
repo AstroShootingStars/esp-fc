@@ -22,6 +22,13 @@
 #include "Device/RangefinderVL6180X.hpp"
 #include "Hal/Gpio.h"
 #include "Hardware.h"
+#if defined(ARCH_RP2040)
+#include <pico/bootrom.h>
+#endif
+#if defined(ESP32S3)
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+#endif
 #if defined(ESPFC_WIFI_ALT)
 #include <ESP8266WiFi.h>
 #elif defined(ESPFC_WIFI)
@@ -390,10 +397,11 @@ void Hardware::detectGyro()
 #if defined(ESP32S3)
     // Some ESP32-S3 boards use either GPIO9/10 or GPIO21/22 for user I2C.
     // If initial scan fails, probe both common pin pairs and lock to the one that works.
+    // Keep this short to avoid long cold-boot delays on boards without I2C sensors attached.
     if (!detectedGyro)
     {
-      const int pairs[][2] = {{9, 10}, {10, 9}, {21, 22}, {22, 21}};
-      for(size_t i = 0; i < 4 && !detectedGyro; i++)
+      const int pairs[][2] = {{9, 10}, {21, 22}};
+      for(size_t i = 0; i < 2 && !detectedGyro; i++)
       {
         const int altSda = pairs[i][0];
         const int altScl = pairs[i][1];
@@ -722,6 +730,34 @@ void Hardware::restart(const Model& model)
 #endif
   delay(100);
   targetReset();
+}
+
+void Hardware::restartToBootloader(const Model& model, BootloaderRequestType requestType)
+{
+  (void)requestType;
+  if (model.state.mixer.escMotor) model.state.mixer.escMotor->end();
+  if (model.state.mixer.escServo) model.state.mixer.escServo->end();
+#ifdef ESPFC_SERIAL_SOFT_0_WIFI
+  WiFi.disconnect();
+  WiFi.softAPdisconnect();
+#endif
+  delay(100);
+
+#if defined(ARCH_RP2040)
+  if(requestType == BOOTLOADER_REQUEST_ROM)
+  {
+    reset_usb_boot(0, 0);
+    while(1) {}
+  }
+  targetReset();
+#elif defined(ESP32S3)
+  // Betaflight-style ESP32-S3 ROM downloader request: set force-download bit, then reset.
+  REG_SET_BIT(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+  targetReset();
+#else
+  // Best-effort fallback on non-RP targets where explicit bootloader entry is board/ROM-specific.
+  targetReset();
+#endif
 }
 
 } // namespace Espfc

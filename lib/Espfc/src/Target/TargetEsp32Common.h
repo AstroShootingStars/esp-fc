@@ -55,7 +55,7 @@ inline int targetSerialInit(T& dev, const SerialDeviceConfig& conf)
   return 1;
 }
 
-#if defined(ESP32S3) || defined(ESP32C3) || defined(ESP32S2)
+#if defined(ESP32S3) || defined(ESP32S2)
 template<>
 inline int targetSerialInit(USBCDC& dev, const SerialDeviceConfig& conf)
 {

@@ -30,15 +30,19 @@ void Pid::resetIterm()
 
 float FAST_CODE_ATTR Pid::update(float setpoint, float measurement)
 {
+  const bool iEnabled = Ki > 0.f && iScale > 0.f;
+  const bool dEnabled = Kd > 0.f && dScale > 0.f;
+  const bool fEnabled = Kf > 0.f && fScale > 0.f;
+
   error = setpoint - measurement;
-  
+
   // P-term
   pTerm = Kp * error * pScale;
   pTerm = ptermFilter.update(pTerm);
 
   // I-term
   iTermError = error;
-  if(Ki > 0.f && iScale > 0.f)
+  if(iEnabled)
   {
     if(!outputSaturated)
     {
@@ -51,7 +55,8 @@ float FAST_CODE_ATTR Pid::update(float setpoint, float measurement)
         itermRelaxFactor = std::max(0.0f, 1.0f - std::abs(Utils::toDeg(itermRelaxBase)) * 0.025f); // (itermRelaxBase / 40)
         if(!incrementOnly || increasing) iTermError *= itermRelaxFactor;
       }
-      iTerm += Ki * iScale * iTermError * dt;
+      const float iGainDt = Ki * iScale * dt;
+      iTerm += iGainDt * iTermError;
       iTerm = std::clamp(iTerm, iLimitLow, iLimitHigh);
     }
   }
@@ -61,10 +66,11 @@ float FAST_CODE_ATTR Pid::update(float setpoint, float measurement)
   }
 
   // D-term
-  if(Kd > 0.f && dScale > 0.f)
+  if(dEnabled)
   {
     //dTerm = (Kd * dScale * (((error - prevError) * dGamma) + (prevMeasurement - measure) * (1.f - dGamma)) / dt);
-    dTerm = Kd * dScale * ((prevMeasurement - measurement) * rate);
+    const float dGainRate = Kd * dScale * rate;
+    dTerm = dGainRate * (prevMeasurement - measurement);
     dTerm = dtermNotchFilter.update(dTerm);
     dTerm = dtermFilter.update(dTerm);
     dTerm = dtermFilter2.update(dTerm);
@@ -76,15 +82,16 @@ float FAST_CODE_ATTR Pid::update(float setpoint, float measurement)
   }
 
   // F-term
-  if(Kf > 0.f && fScale > 0.f)
+  if(fEnabled)
   {
+    const float fGain = Kf * fScale * ffTransitionFactor;
     if(ftermDerivative)
     {
-      fTerm = Kf * fScale * ffTransitionFactor * (setpoint - prevSetpoint) * rate;
+      fTerm = fGain * (setpoint - prevSetpoint) * rate;
     }
     else
     {
-      fTerm = Kf * fScale * ffTransitionFactor * setpoint;
+      fTerm = fGain * setpoint;
     }
     fTerm = ftermFilter.update(fTerm);
   }
@@ -97,7 +104,8 @@ float FAST_CODE_ATTR Pid::update(float setpoint, float measurement)
   prevError = error;
   prevSetpoint = setpoint;
 
-  return std::clamp(pTerm + iTerm + dTerm + fTerm, oLimitLow, oLimitHigh);
+  const float out = pTerm + iTerm + dTerm + fTerm;
+  return std::clamp(out, oLimitLow, oLimitHigh);
 }
 
 }

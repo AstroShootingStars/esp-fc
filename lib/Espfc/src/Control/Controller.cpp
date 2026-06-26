@@ -25,6 +25,7 @@ int Controller::begin()
 int FAST_CODE_ATTR Controller::update()
 {
   auto& state = _model.state;
+  const bool robotMixer = _model.config.mixer.type == FC_MIXER_GIMBAL;
 
   if(_model.state.tuningUpdatePending)
   {
@@ -42,22 +43,14 @@ int FAST_CODE_ATTR Controller::update()
   {
     Utils::Stats::Measure(state.stats, COUNTER_OUTER_PID);
     resetIterm();
-    switch (_model.config.mixer.type)
-    {
-      case FC_MIXER_GIMBAL: outerLoopRobot(); break;
-
-      default: outerLoop(); break;
-    }
+    if(robotMixer) outerLoopRobot();
+    else outerLoop();
   }
 
   {
     Utils::Stats::Measure(state.stats, COUNTER_INNER_PID);
-    switch (_model.config.mixer.type)
-    {
-      case FC_MIXER_GIMBAL: innerLoopRobot(); break;
-
-      default: innerLoop(); break;
-    }
+    if(robotMixer) innerLoopRobot();
+    else innerLoop();
   }
 
   applyLandingAssist();
@@ -280,8 +273,8 @@ void FAST_CODE_ATTR Controller::outerLoop()
   const auto& input = state.input;
 
   const float ffFloor = 1.0f - (_model.config.dterm.feedForwardTransition * 0.01f);
-  auto updateFeedforwardFactor = [&](size_t axis, float stickInput, bool enabled) {
-    const float stick = std::clamp(std::fabs(stickInput), 0.0f, 1.0f);
+  auto updateFeedforwardFactor = [&](size_t axis, float stickMagnitude, bool enabled) {
+    const float stick = std::clamp(stickMagnitude, 0.0f, 1.0f);
     state.innerPid[axis].ffTransitionFactor = enabled ? std::max(stick, ffFloor) : 0.0f;
   };
 
@@ -298,7 +291,7 @@ void FAST_CODE_ATTR Controller::outerLoop()
       const float stickInput = input.ch[i];
       const float angleSetpoint = angleLimitRad * stickInput;
       state.setpoint.rate[i] = state.outerPid[i].update(angleSetpoint, state.attitude.euler[i]);
-      updateFeedforwardFactor(i, stickInput, false);
+      updateFeedforwardFactor(i, std::fabs(stickInput), false);
     }
   }
   else if (horizonMode)
@@ -312,7 +305,7 @@ void FAST_CODE_ATTR Controller::outerLoop()
       const float stick = std::fabs(stickInput);
       const float angleWeight = std::clamp((1.f - std::clamp(stick, 0.f, 1.f)) * horizonStrength, 0.0f, 1.0f);
       state.setpoint.rate[i] = acroRate * (1.f - angleWeight) + angleRate * angleWeight;
-      updateFeedforwardFactor(i, stickInput, true);
+      updateFeedforwardFactor(i, stick, true);
     }
   }
   else
@@ -321,13 +314,13 @@ void FAST_CODE_ATTR Controller::outerLoop()
     {
       const float stickInput = input.ch[i];
       state.setpoint.rate[i] = calculateSetpointRate(i, stickInput);
-      updateFeedforwardFactor(i, stickInput, true);
+      updateFeedforwardFactor(i, std::fabs(stickInput), true);
     }
   }
 
   // Yaw rates control
   state.setpoint.rate[AXIS_YAW] = calculateSetpointRate(AXIS_YAW, input.ch[AXIS_YAW]);
-  updateFeedforwardFactor(AXIS_YAW, input.ch[AXIS_YAW], true);
+  updateFeedforwardFactor(AXIS_YAW, std::fabs(input.ch[AXIS_YAW]), true);
 
   // thrust control
   if (_model.isModeActive(MODE_ALTHOLD))

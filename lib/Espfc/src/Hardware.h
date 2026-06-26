@@ -11,6 +11,11 @@
 
 namespace Espfc {
 
+enum BootloaderRequestType {
+  BOOTLOADER_REQUEST_ROM = 0,
+  BOOTLOADER_REQUEST_FLASH = 1,
+};
+
 class Hardware
 {
   public:
@@ -69,6 +74,7 @@ class Hardware
     }
 
     static void restart(const Model& model);
+    static void restartToBootloader(const Model& model, BootloaderRequestType requestType = BOOTLOADER_REQUEST_ROM);
 
   private:
     Model& _model;

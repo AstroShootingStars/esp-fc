@@ -26,6 +26,16 @@ extern "C" {
 
 namespace Espfc {
 
+namespace {
+uint32_t g_mspInitMs = 0;
+uint32_t g_mspNextReinitMs = 0;
+bool g_mspSeen = false;
+int8_t g_startupMspPort = -1;
+constexpr uint32_t USB_REBIND_INITIAL_DELAY_MS = 300;
+constexpr uint32_t USB_REBIND_INTERVAL_MS = 750;
+constexpr uint32_t USB_STARTUP_PRIORITY_MS = 20000;
+}
+
 SerialManager::SerialManager(Model& model, TelemetryManager& telemetry): _model(model), _current(0), _msp(model), _osd(model), _cli(model), _vtx(model),
   _telemetry(telemetry), _gps(model)
 #ifdef ESPFC_SERIAL_SOFT_0_WIFI
@@ -36,28 +46,48 @@ SerialManager::SerialManager(Model& model, TelemetryManager& telemetry): _model(
 
 int SerialManager::begin()
 {
+  g_mspInitMs = millis();
+  g_mspNextReinitMs = g_mspInitMs + USB_REBIND_INITIAL_DELAY_MS;
+  g_mspSeen = false;
+  g_startupMspPort = -1;
+
   _osd.begin();
+#ifdef ESPFC_SERIAL_USB
+  bool hasActiveMspStream = false;
+#endif
 
   for(int i = 0; i < SERIAL_UART_COUNT; i++)
   {
     Device::SerialDevice * port = getSerialPortById((SerialPort)i);
     const SerialPortConfig& spc = _model.config.serial[i];
 
-    if(port == nullptr || !spc.functionMask)
+  #ifdef ESPFC_SERIAL_USB
+    const bool hasUsbPort = true;
+    const bool isUsbPort = i == SERIAL_USB;
+  #else
+    const bool hasUsbPort = false;
+    const bool isUsbPort = false;
+  #endif
+
+    uint16_t functionMask = spc.functionMask;
+    int32_t baud = spc.baud;
+
+  #ifdef ESPFC_SERIAL_USB
+    // Keep USB MSP always available even with stale persisted serial config.
+    if(isUsbPort)
+    {
+      functionMask |= SERIAL_FUNCTION_MSP;
+      if(baud == SERIAL_SPEED_NONE) baud = SERIAL_SPEED_115200;
+    }
+  #endif
+
+    if(port == nullptr || !functionMask)
     {
       continue;
     }
 
     SerialDeviceConfig sdc;
-    sdc.baud = spc.baud;
-
-#ifdef ESPFC_SERIAL_USB
-    const bool hasUsbPort = true;
-    const bool isUsbPort = i == SERIAL_USB;
-#else
-    const bool hasUsbPort = false;
-    const bool isUsbPort = false;
-#endif
+    sdc.baud = baud;
 
 #ifdef ESPFC_SERIAL_REMAP_PINS
     if(!isUsbPort)
@@ -74,7 +104,7 @@ int SerialManager::begin()
   (void)(isUsbPort && hasUsbPort);
 #endif
 
-    if(spc.functionMask & SERIAL_FUNCTION_RX_SERIAL)
+    if(functionMask & SERIAL_FUNCTION_RX_SERIAL)
     {
       switch(_model.config.input.serialRxProvider)
       {
@@ -105,7 +135,7 @@ int SerialManager::begin()
           break;
       }
     }
-    else if(spc.functionMask & SERIAL_FUNCTION_BLACKBOX)
+    else if(functionMask & SERIAL_FUNCTION_BLACKBOX)
     {
       //sdc.baud = spc.blackboxBaud;
       if(sdc.baud == 230400 || sdc.baud == 460800)
@@ -113,11 +143,11 @@ int SerialManager::begin()
         sdc.stop_bits = SDC_SERIAL_STOP_BITS_2;
       }
     }
-    else if(spc.functionMask & SERIAL_FUNCTION_TELEMETRY_IBUS)
+    else if(functionMask & SERIAL_FUNCTION_TELEMETRY_IBUS)
     {
       sdc.baud = 115200;
     }
-    else if(spc.functionMask & SERIAL_FUNCTION_VTX_SMARTAUDIO)
+    else if(functionMask & SERIAL_FUNCTION_VTX_SMARTAUDIO)
     {
       sdc.baud = 4800;
       sdc.parity = SDC_SERIAL_PARITY_NONE;
@@ -132,6 +162,16 @@ int SerialManager::begin()
 
     port->begin(sdc);   
     _model.state.serial[i].stream = port;
+    if(functionMask & SERIAL_FUNCTION_MSP)
+    {
+      if(g_startupMspPort < 0)
+      {
+        g_startupMspPort = i;
+      }
+#ifdef ESPFC_SERIAL_USB
+      hasActiveMspStream = true;
+#endif
+    }
 
     if(i == ESPFC_SERIAL_DEBUG_PORT)
     {
@@ -139,21 +179,43 @@ int SerialManager::begin()
       initDebugStream(port);
 #endif
     }
-    if(spc.functionMask & SERIAL_FUNCTION_TELEMETRY_IBUS)
+    if(functionMask & SERIAL_FUNCTION_TELEMETRY_IBUS)
     {
       _ibus.begin(port);
     }
-    if(spc.functionMask & SERIAL_FUNCTION_VTX_SMARTAUDIO)
+    if(functionMask & SERIAL_FUNCTION_VTX_SMARTAUDIO)
     {
       _vtx.begin(port);
     }
-    if(spc.functionMask & SERIAL_FUNCTION_GPS)
+    if(functionMask & SERIAL_FUNCTION_GPS)
     {
       _gps.begin(port, sdc.baud);
     }
 
-    _model.logger.info().log(F("UART")).log(i).log(spc.id).log(spc.functionMask).log(sdc.baud).log(i == ESPFC_SERIAL_DEBUG_PORT).log(sdc.tx_pin).logln(sdc.rx_pin);
+    _model.logger.info().log(F("UART")).log(i).log(spc.id).log(functionMask).log(sdc.baud).log(i == ESPFC_SERIAL_DEBUG_PORT).log(sdc.tx_pin).logln(sdc.rx_pin);
   }
+
+#ifdef ESPFC_SERIAL_USB
+  // Recovery path: keep at least one MSP endpoint alive even if persisted serial config is invalid.
+  if(!hasActiveMspStream)
+  {
+    Device::SerialDevice * port = getSerialPortById(SERIAL_USB);
+    if(port != nullptr)
+    {
+      SerialDeviceConfig sdc;
+      sdc.baud = SERIAL_SPEED_115200;
+      port->begin(sdc);
+      _model.state.serial[SERIAL_USB].stream = port;
+
+      SerialPortConfig& usbCfg = _model.config.serial[SERIAL_USB];
+      usbCfg.functionMask |= SERIAL_FUNCTION_MSP;
+      if(usbCfg.baud == SERIAL_SPEED_NONE) usbCfg.baud = SERIAL_SPEED_115200;
+      g_startupMspPort = SERIAL_USB;
+
+      _model.logger.info().logln(F("UART USB fallback MSP"));
+    }
+  }
+#endif
 
 #ifdef ESPFC_SERIAL_SOFT_0_WIFI
   _wireless.begin();
@@ -164,12 +226,48 @@ int SerialManager::begin()
 
 int FAST_CODE_ATTR SerialManager::update()
 {
+  const uint32_t nowMs = millis();
+  const bool startupMspPriority = !g_mspSeen && g_startupMspPort >= 0 && g_mspInitMs && (uint32_t)(nowMs - g_mspInitMs) <= USB_STARTUP_PRIORITY_MS;
+
+  // During startup, process MSP port first to reduce first-connect races.
+  if(startupMspPriority)
+  {
+    _current = static_cast<size_t>(g_startupMspPort);
+  }
+
+#ifdef ESPFC_SERIAL_USB
+  // Cold power-up can leave USB endpoints racey on some hosts. Rebind USB MSP
+  // periodically during startup, then stop once MSP traffic is seen.
+  if(startupMspPriority && g_startupMspPort == SERIAL_USB && (int32_t)(nowMs - g_mspNextReinitMs) >= 0)
+  {
+    Device::SerialDevice * usbPort = getSerialPortById(SERIAL_USB);
+    if(usbPort)
+    {
+      SerialDeviceConfig usbCfg;
+      usbCfg.baud = _model.config.serial[SERIAL_USB].baud ? _model.config.serial[SERIAL_USB].baud : SERIAL_SPEED_115200;
+      usbPort->begin(usbCfg);
+      _model.state.serial[SERIAL_USB].stream = usbPort;
+      _model.logger.info().logln(F("UART USB rebind"));
+    }
+    g_mspNextReinitMs = nowMs + USB_REBIND_INTERVAL_MS;
+  }
+#endif
+
   const SerialPortConfig& sc = _model.config.serial[_current];
   SerialPortState& ss = _model.state.serial[_current];
 
   if(ss.stream && !(sc.functionMask & SERIAL_FUNCTION_RX_SERIAL))
   {
     Utils::Stats::Measure measure(_model.state.stats, COUNTER_SERIAL);
+    if(startupMspPriority)
+    {
+      if(_current == static_cast<size_t>(g_startupMspPort) && (sc.functionMask & SERIAL_FUNCTION_MSP))
+      {
+        processMsp(ss);
+      }
+      next();
+      return 1;
+    }
     if (sc.functionMask & SERIAL_FUNCTION_MSP)
     {
       processMsp(ss);
@@ -237,6 +335,10 @@ void SerialManager::processMsp(SerialPortState& ss)
       if(ss.mspRequest.isReady() && ss.mspRequest.isCmd())
       {
         handledCommands++;
+        if(_current == static_cast<size_t>(g_startupMspPort))
+        {
+          g_mspSeen = true;
+        }
         _msp.processCommand(ss.mspRequest, ss.mspResponse, *ss.stream);
         _msp.sendResponse(ss.mspResponse, *ss.stream);
         _msp.postCommand();

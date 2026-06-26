@@ -77,90 +77,61 @@ inline void SerialDeviceAdapter<WiFiClient>::updateBaudRate(int baud) {}
 template<>
 inline void SerialDeviceAdapter<HWCDC>::begin(const SerialDeviceConfig& conf)
 {
-  (void)conf;
+  targetSerialInit(_dev, conf);
 }
 
 template<>
 inline int SerialDeviceAdapter<HWCDC>::available()
 {
-  return usb_serial_jtag_ll_rxfifo_data_available() ? 1 : 0;
+  return _dev.available();
 }
 
 template<>
 inline int SerialDeviceAdapter<HWCDC>::read()
 {
-  uint8_t ch = 0;
-  usb_serial_jtag_ll_read_rxfifo(&ch, 1);
-  return ch;
+  return _dev.read();
 }
 
 template<>
 inline size_t SerialDeviceAdapter<HWCDC>::readMany(uint8_t * c, size_t l)
 {
-  size_t i = 0;
-  while(i < l && usb_serial_jtag_ll_rxfifo_data_available())
-  {
-    usb_serial_jtag_ll_read_rxfifo(c + i, 1);
-    i++;
-  }
-  return i;
+  return _dev.read(c, l);
 }
 
 template<>
 inline int SerialDeviceAdapter<HWCDC>::peek()
 {
-  return -1;
+  return _dev.peek();
 }
 
 template<>
 inline void SerialDeviceAdapter<HWCDC>::flush()
 {
-  usb_serial_jtag_ll_txfifo_flush();
+  _dev.flush();
 }
 
 template<>
 inline size_t SerialDeviceAdapter<HWCDC>::write(uint8_t c)
 {
-  const uint32_t written = usb_serial_jtag_ll_write_txfifo(&c, 1);
-  usb_serial_jtag_ll_txfifo_flush();
-  return (size_t)written;
+  return _dev.write(c);
 }
 
 template<>
 inline size_t SerialDeviceAdapter<HWCDC>::write(const uint8_t * c, size_t l)
 {
-  static constexpr uint32_t USB_VCP_TX_TIMEOUT_MS = 20;
-  const uint8_t * p = c;
-  int remaining = (int)l;
-  uint32_t lastProgressMs = millis();
-  while(remaining > 0)
-  {
-    const uint32_t written = usb_serial_jtag_ll_write_txfifo(p, remaining);
-    usb_serial_jtag_ll_txfifo_flush();
-    if(written > 0)
-    {
-      p += written;
-      remaining -= (int)written;
-      lastProgressMs = millis();
-    }
-    else if(millis() - lastProgressMs >= USB_VCP_TX_TIMEOUT_MS)
-    {
-      break;
-    }
-  }
-  return (size_t)(l - (size_t)remaining);
+  return _dev.write(c, l);
 }
 
 template<>
 inline int SerialDeviceAdapter<HWCDC>::availableForWrite()
 {
-  return usb_serial_jtag_ll_txfifo_writable() ? SERIAL_TX_FIFO_SIZE : 0;
+  return _dev.availableForWrite();
 }
 
 template<>
 inline bool SerialDeviceAdapter<HWCDC>::isTxFifoEmpty()
 {
-  return usb_serial_jtag_ll_txfifo_writable();
+  return _dev.availableForWrite() >= SERIAL_TX_FIFO_SIZE;
 }
 
 template<>
@@ -173,7 +144,7 @@ inline SerialDeviceAdapter<HWCDC>::operator bool() const
 }
 #endif
 
-#if defined(ESP32S2) || defined(ESP32S3) || defined(ESP32C3)
+#if defined(ESP32S2) || defined(ESP32S3)
 template<>
 inline void SerialDeviceAdapter<USBCDC>::updateBaudRate(int baud) {}
 #endif
