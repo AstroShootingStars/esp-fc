@@ -134,7 +134,9 @@ Espfc::Espfc espfc;
     }
     void setup1()
     {
+#if defined(ESP32)
       while(!setup_done);
+#endif
     }
     void loop1()
     {
@@ -150,7 +152,9 @@ Espfc::Espfc espfc;
   // single core
   void setup()
   {
+#if defined(ESP32)
     normalizePowerOnUsbState();
+#endif
     espfc.load();
     espfc.begin();
   }

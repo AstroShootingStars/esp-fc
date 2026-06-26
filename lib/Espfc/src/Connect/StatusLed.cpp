@@ -4,6 +4,12 @@
 #include <Arduino.h>
 #include <algorithm>
 
+typedef struct {
+  uint8_t g;
+  uint8_t r;
+  uint8_t b;
+} ws2812_pixel_t;
+
 #ifdef ESPFC_LED_WS2812
 #include "driver/i2s.h"
 
@@ -16,12 +22,6 @@ static constexpr size_t ZERO_BUFFER = 32;
 static constexpr size_t SIZE_BUFFER = LED_NUMBER * PIXEL_SIZE + ZERO_BUFFER;
 static constexpr uint32_t SAMPLE_RATE = 93750;
 static constexpr i2s_port_t I2S_NUM = I2S_NUM_0;
-
-typedef struct {
-  uint8_t g;
-  uint8_t r;
-  uint8_t b;
-} ws2812_pixel_t;
 
 static i2s_config_t i2s_config = {
   .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
