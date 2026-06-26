@@ -684,7 +684,7 @@ Add range works only, no add link
 
 ### Adjustments
 
-Not implemented, for replacement you can use [pid scaler CLI](/docs/cli.md#scaler-configuration)
+Implemented. The Adjustments tab maps to `MSP_ADJUSTMENT_RANGES` / `MSP_SET_ADJUSTMENT_RANGE` and persists the full adjustment record: state index, AUX range channel, range start/end, function, switch channel, and optional center/scale fields.
 
 ### Servos
 
