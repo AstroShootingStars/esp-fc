@@ -40,6 +40,14 @@ extern "C" {
 #define MSP2_SET_TEXT 0x3007
 #endif
 
+#ifndef MSP2_GET_LED_STRIP_CONFIG_VALUES
+#define MSP2_GET_LED_STRIP_CONFIG_VALUES 0x3008
+#endif
+
+#ifndef MSP2_SET_LED_STRIP_CONFIG_VALUES
+#define MSP2_SET_LED_STRIP_CONFIG_VALUES 0x3009
+#endif
+
 #ifndef MSP2_SENSOR_CONFIG_ACTIVE
 #define MSP2_SENSOR_CONFIG_ACTIVE 0x300A
 #endif
@@ -441,6 +449,7 @@ static bool shouldAutoPersistSetCommand(uint16_t cmd)
     case MSP_SET_LED_COLORS:
     case MSP_SET_LED_STRIP_CONFIG:
     case MSP_SET_LED_STRIP_MODECOLOR:
+    case MSP2_SET_LED_STRIP_CONFIG_VALUES:
     case MSP_SET_VTXTABLE_BAND:
     case MSP_SET_VTXTABLE_POWERLEVEL:
     case MSP2_SET_MOTOR_OUTPUT_REORDERING:
@@ -1548,6 +1557,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_SET_CF_SERIAL_CONFIG:
       {
         const int packetSize = 1 + 2 + 1 + 1 + 1 + 1; // id + functionMask + 4 baud indices
+        if(m.remain() % packetSize != 0) break;
         while(m.remain() >= packetSize)
         {
           int id = m.readU8();
@@ -1558,8 +1568,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
             continue;
           }
           _model.config.serial[k].id = id;
-          const uint32_t preservedHighBits = _model.config.serial[k].functionMask & 0xFFFF0000u;
-          _model.config.serial[k].functionMask = preservedHighBits | (uint32_t)m.readU16(); // CFv1 supports up to 16-bit functions
+          _model.config.serial[k].functionMask = (uint32_t)m.readU16(); // CFv1 supports up to 16-bit functions
           _model.config.serial[k].baud = fromBaudIndex((SerialSpeedIndex)m.readU8());
           m.readU8(); // gps_baudrateIndex (unused)
           m.readU8(); // telemetry_baudrateIndex (unused)
@@ -1571,10 +1580,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP2_COMMON_SET_SERIAL_CONFIG:
       {
+        if(m.remain() < 1) break;
         size_t count = m.readU8();
-        (void)count; // ignore
-        const int packetSize = 1 + 4 + 4;
-        while(m.remain() >= packetSize)
+        const int packetSize = 1 + 4 + 1 + 1 + 1 + 1;
+        if(m.remain() < (count * packetSize)) break;
+        while(count-- && m.remain() >= packetSize)
         {
           int id = m.readU8();
           int k = _model.getSerialIndex((SerialPortId)id);
@@ -3089,7 +3099,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
     case MSP_SET_NAV_CONFIG:
     case MSP_SET_RAW_GPS:
       // Manual GPS injection (for testing/simulation)
-      if(m.remain() >= 1) _model.state.gps.fix = m.readU8() != 0;
+      if(m.remain() >= 1)
+      {
+        _model.state.gps.fix = m.readU8() != 0;
+        _model.state.gps.fixType = _model.state.gps.fix ? 3 : 0;
+      }
       if(m.remain() >= 1) _model.state.gps.numSats = m.readU8();
       if(m.remain() >= 4) _model.state.gps.location.raw.lat = m.readU32();
       if(m.remain() >= 4) _model.state.gps.location.raw.lon = m.readU32();
@@ -3195,6 +3209,18 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           r.result = 0;
       }
       if(r.result) _model.reload();
+      break;
+
+    case MSP2_SET_LED_STRIP_CONFIG_VALUES:
+      if(m.remain() < 5)
+      {
+        r.result = 0;
+        break;
+      }
+      _model.config.ledStrip.brightness = std::min<uint8_t>(m.readU8(), 100);
+      _model.config.ledStrip.rainbowDelta = m.readU16();
+      _model.config.ledStrip.rainbowFreq = m.readU16();
+      _model.reload();
       break;
 
     case MSP_SET_VTXTABLE_BAND:
@@ -3593,7 +3619,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU32(_model.state.gps.accuracy.vertical);        // vertical accuracy in mm
       r.writeU32(_model.state.gps.accuracy.speed);           // speed accuracy in mm/s
       r.writeU32(_model.state.gps.accuracy.heading);         // heading accuracy in deg x 1e5
-      r.writeU32(_model.state.gps.lastMsgTs / 1000);         // lastMessageDt in ms
+      r.writeU32(_model.state.gps.interval / 1000);          // lastMessageDt in ms
       r.writeU8(_model.state.gps.numSats);                   // number of satellites used
       r.writeU8(_model.state.gps.fixType);                   // fix type (0=no, 1=dead reck, 2=2D, 3=3D, 4=GNSS+DR, 5=time only)
       break;
@@ -3741,6 +3767,12 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       r.writeU8(_model.config.ledStrip.auxChannel);
       break;
 
+    case MSP2_GET_LED_STRIP_CONFIG_VALUES:
+      r.writeU8(_model.config.ledStrip.brightness);
+      r.writeU16(_model.config.ledStrip.rainbowDelta);
+      r.writeU16(_model.config.ledStrip.rainbowFreq);
+      break;
+
     case MSP_VTXTABLE_BAND:
       {
         uint8_t band = m.remain() ? m.readU8() : 0;
@@ -3847,7 +3879,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
   case MSP_RAW_GPS:
-      r.writeU8(_model.state.gps.fixType > 2); // STATE(GPS_FIX));
+      r.writeU8(_model.state.gps.fix ? 1 : 0); // STATE(GPS_FIX)
       r.writeU8(_model.state.gps.numSats); // numSat
       r.writeU32(_model.state.gps.location.raw.lat); // lat
       r.writeU32(_model.state.gps.location.raw.lon); // lon
@@ -3859,18 +3891,28 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
   case MSP_COMP_GPS:
-    r.writeU16(std::clamp((uint16_t)lrintf(_model.state.gps.distanceToHome), (uint16_t)0, (uint16_t)std::numeric_limits<uint16_t>::max())); // meters
-    r.writeU16((int16_t)lrintf(Utils::toDeg(_model.state.gps.directionToHome))); // deg
+    {
+      const int32_t distanceMeters = (int32_t)lrintf(_model.state.gps.distanceToHome);
+      int32_t directionDeg = (int32_t)lrintf(Utils::toDeg(_model.state.gps.directionToHome));
+      directionDeg %= 360;
+      if(directionDeg < 0) directionDeg += 360;
+
+      r.writeU16((uint16_t)std::clamp<int32_t>(distanceMeters, 0, (int32_t)std::numeric_limits<uint16_t>::max())); // meters
+      r.writeU16((uint16_t)directionDeg); // deg
+    }
     r.writeU8(_model.state.gps.homeSet ? 1 : 0);  // GPS update
     break;
 
   case MSP_GPSSVINFO:
-      r.writeU8(_model.state.gps.numCh); // GPS_numCh
-      for (size_t i = 0; i < _model.state.gps.numCh; i++) {
+      {
+      const uint8_t numCh = std::min<uint8_t>(_model.state.gps.numCh, SAT_MAX);
+      r.writeU8(numCh); // GPS_numCh
+      for (size_t i = 0; i < numCh; i++) {
         r.writeU8(_model.state.gps.svinfo[i].gnssId); // GPS_svinfo_chn[i]
         r.writeU8(_model.state.gps.svinfo[i].id); // GPS_svinfo_svid[i]
         r.writeU8(static_cast<uint8_t>(_model.state.gps.svinfo[i].quality.value & 0xff)); // GPS_svinfo_quality[i]
         r.writeU8(_model.state.gps.svinfo[i].cno); // GPS_svinfo_cno[i]
+      }
       }
       break;
 

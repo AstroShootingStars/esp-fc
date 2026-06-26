@@ -92,7 +92,10 @@
 #define ESPFC_BUZZER_PIN 5
 #define ESPFC_BUTTON_PIN -1
 #ifndef ESPFC_LED_PIN
-#define ESPFC_LED_PIN -1
+#define ESPFC_LED_PIN 48
+#endif
+#ifndef ESPFC_LED_TYPE
+#define ESPFC_LED_TYPE 1
 #endif
 
 #define ESPFC_ADC_0

@@ -60,6 +60,7 @@ enum SerialFunction {
   SERIAL_FUNCTION_RCDEVICE            = (1 << 14), // 16384
   SERIAL_FUNCTION_LIDAR_TF            = (1 << 15), // 32768
   SERIAL_FUNCTION_FRSKY_OSD           = (1 << 16), // 65536
+  SERIAL_FUNCTION_VTX_MSP             = (1 << 17), // 131072
 };
 
 enum SerialRXProvider {

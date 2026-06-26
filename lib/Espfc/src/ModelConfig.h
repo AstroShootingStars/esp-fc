@@ -1008,6 +1008,9 @@ struct LedStripConfig
   };
   uint8_t auxChannel = AXIS_THRUST;
   uint8_t profile = 2; // STATUS
+  uint8_t brightness = 100;
+  uint16_t rainbowDelta = 0;
+  uint16_t rainbowFreq = 120;
 };
 
 constexpr size_t VTX_TABLE_MAX_BANDS = 8;

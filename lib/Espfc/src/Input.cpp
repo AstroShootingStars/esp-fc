@@ -210,13 +210,27 @@ bool FAST_CODE_ATTR Input::failsafe(InputStatus status)
 
   if(_model.isSwitchActive(MODE_FAILSAFE))
   {
-    if(_model.config.failsafe.killSwitch)
+    const uint8_t switchMode = Utils::clamp<uint8_t>(_model.config.failsafe.killSwitch, (uint8_t)0, (uint8_t)2);
+    if(switchMode == 0)
     {
-      failsafeStage2();
+      failsafeStage1();
+    }
+    else if(switchMode == 1)
+    {
+      // Betaflight switch mode "KILL": force immediate drop/disarm.
+      _model.state.failsafe.phase = FC_FAILSAFE_RX_LOSS_DETECTED;
+      _model.state.input.rxLoss = true;
+      _model.state.input.rxFailSafe = true;
+      if(_model.isModeActive(MODE_ARMED))
+      {
+        _model.state.failsafe.phase = FC_FAILSAFE_LANDED;
+        _model.disarm(DISARM_REASON_FAILSAFE);
+      }
     }
     else
     {
-      failsafeStage1();
+      // Betaflight switch mode "STAGE2": apply configured failsafe procedure.
+      failsafeStage2();
     }
     return true;
   }

@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <cstddef>
 
+namespace Espfc { class Model; }
+
 namespace Espfc::Connect
 {
 
@@ -27,6 +29,7 @@ public:
   StatusLed();
   void begin(int8_t pin, uint8_t type, uint8_t invert);
   void update();
+  void update(const Espfc::Model& model);
   void setStatus(LedStatus newStatus, bool force = false);
 
 private:

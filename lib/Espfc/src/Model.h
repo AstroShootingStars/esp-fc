@@ -486,10 +486,11 @@ class Model
       // configure serial ports
       constexpr uint32_t serialFunctionAllowedMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_RX_SERIAL | SERIAL_FUNCTION_BLACKBOX |
         SERIAL_FUNCTION_GPS | SERIAL_FUNCTION_TELEMETRY_FRSKY | SERIAL_FUNCTION_TELEMETRY_HOTT | SERIAL_FUNCTION_TELEMETRY_IBUS |
-        SERIAL_FUNCTION_VTX_SMARTAUDIO | SERIAL_FUNCTION_FRSKY_OSD;
+        SERIAL_FUNCTION_VTX_SMARTAUDIO | SERIAL_FUNCTION_FRSKY_OSD | SERIAL_FUNCTION_VTX_MSP;
       constexpr uint32_t serialNeedsRxMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_RX_SERIAL;
       constexpr uint32_t serialNeedsTxMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_BLACKBOX | SERIAL_FUNCTION_TELEMETRY_FRSKY |
-        SERIAL_FUNCTION_TELEMETRY_HOTT | SERIAL_FUNCTION_TELEMETRY_IBUS | SERIAL_FUNCTION_VTX_SMARTAUDIO | SERIAL_FUNCTION_FRSKY_OSD;
+        SERIAL_FUNCTION_TELEMETRY_HOTT | SERIAL_FUNCTION_TELEMETRY_IBUS | SERIAL_FUNCTION_VTX_SMARTAUDIO |
+        SERIAL_FUNCTION_FRSKY_OSD | SERIAL_FUNCTION_VTX_MSP;
       constexpr uint32_t serialExclusiveMask = SERIAL_FUNCTION_MSP | SERIAL_FUNCTION_RX_SERIAL | SERIAL_FUNCTION_GPS |
         SERIAL_FUNCTION_BLACKBOX | SERIAL_FUNCTION_TELEMETRY_FRSKY | SERIAL_FUNCTION_TELEMETRY_HOTT |
         SERIAL_FUNCTION_TELEMETRY_IBUS | SERIAL_FUNCTION_VTX_SMARTAUDIO | SERIAL_FUNCTION_FRSKY_OSD;
@@ -893,7 +894,7 @@ class Model
       config.failsafe.delay = constrain(config.failsafe.delay, 0, 255);
       config.failsafe.offDelay = constrain(config.failsafe.offDelay, 0, 255);
       config.failsafe.throttle = constrain(config.failsafe.throttle, config.input.minRc, config.input.maxRc);
-      config.failsafe.killSwitch = constrain(config.failsafe.killSwitch, 0, 1);
+      config.failsafe.killSwitch = constrain(config.failsafe.killSwitch, 0, 2);
       config.failsafe.throttleLowDelay = constrain(config.failsafe.throttleLowDelay, 0, 1000);
       config.failsafe.procedure = constrain(config.failsafe.procedure, 0, 2);
       for(size_t i = 0; i < INPUT_CHANNELS; i++)

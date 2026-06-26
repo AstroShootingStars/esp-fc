@@ -1,6 +1,8 @@
 #include "StatusLed.hpp"
 #include "Target/Target.h"
+#include "Model.h"
 #include <Arduino.h>
+#include <algorithm>
 
 #ifdef ESPFC_LED_WS2812
 #include "driver/i2s.h"
@@ -8,7 +10,7 @@
 // https://docs.espressif.com/projects/esp-idf/en/v4.4.4/esp32/api-reference/peripherals/i2s.html
 // https://github.com/vunam/esp32-i2s-ws2812/blob/master/ws2812.c
 
-static constexpr size_t LED_NUMBER = 1;
+static constexpr size_t LED_NUMBER = Espfc::LED_STRIP_MAX_LENGTH;
 static constexpr size_t PIXEL_SIZE = 12; // each colour takes 4 bytes in buffer
 static constexpr size_t ZERO_BUFFER = 32;
 static constexpr size_t SIZE_BUFFER = LED_NUMBER * PIXEL_SIZE + ZERO_BUFFER;
@@ -92,14 +94,23 @@ static void ws2812_write_pixel(uint8_t * buffer, const ws2812_pixel_t& pixel)
 #endif
 }
 
-static void ws2812_update(const ws2812_pixel_t * pixels)
+static void ws2812_update(const ws2812_pixel_t * pixels, size_t count)
 {
   size_t bytes_written = 0;
-  for (size_t i = 0; i < LED_NUMBER; i++)
+  const ws2812_pixel_t pixelOff = {0, 0, 0};
+  const size_t ledCount = std::min(count, LED_NUMBER);
+  for (size_t i = 0; i < ledCount; i++)
   {
     size_t loc = i * PIXEL_SIZE;
     ws2812_write_pixel(out_buffer + loc, pixels[i]);
   }
+
+  for(size_t i = ledCount; i < LED_NUMBER; i++)
+  {
+    size_t loc = i * PIXEL_SIZE;
+    ws2812_write_pixel(out_buffer + loc, pixelOff);
+  }
+
   i2s_zero_dma_buffer(I2S_NUM);
   i2s_write(I2S_NUM, out_buffer, SIZE_BUFFER, &bytes_written, portMAX_DELAY);
 }
@@ -115,6 +126,140 @@ static const ws2812_pixel_t PIXEL_OFF[] = {{0, 0, 0}};
 
 namespace Espfc::Connect
 {
+
+namespace {
+
+constexpr uint8_t LED_BASEFUNCTION_COUNT = 10;
+constexpr uint8_t LED_OVERLAY_BLINK = 3;
+constexpr uint8_t LED_OVERLAY_RAINBOW = 1;
+
+constexpr uint8_t LED_FUNCTION_COLOR = 0;
+constexpr uint8_t LED_FUNCTION_FLIGHT_MODE = 1;
+constexpr uint8_t LED_FUNCTION_ARM_STATE = 2;
+constexpr uint8_t LED_FUNCTION_BATTERY = 3;
+constexpr uint8_t LED_FUNCTION_RSSI = 4;
+constexpr uint8_t LED_FUNCTION_GPS = 5;
+constexpr uint8_t LED_FUNCTION_THRUST_RING = 6;
+
+constexpr uint8_t LED_DIRECTION_COUNT_LOCAL = 6;
+constexpr uint8_t LED_MODE_ORIENTATION = 0;
+constexpr uint8_t LED_MODE_HEADFREE = 1;
+constexpr uint8_t LED_MODE_HORIZON = 2;
+constexpr uint8_t LED_MODE_ANGLE = 3;
+constexpr uint8_t LED_MODE_MAG = 4;
+
+constexpr uint8_t LED_SCOLOR_DISARMED = 0;
+constexpr uint8_t LED_SCOLOR_ARMED = 1;
+constexpr uint8_t LED_SCOLOR_ANIMATION = 2;
+constexpr uint8_t LED_SCOLOR_BACKGROUND = 3;
+constexpr uint8_t LED_SCOLOR_BLINKBACKGROUND = 4;
+constexpr uint8_t LED_SCOLOR_GPSNOSATS = 5;
+constexpr uint8_t LED_SCOLOR_GPSNOLOCK = 6;
+constexpr uint8_t LED_SCOLOR_GPSLOCKED = 7;
+
+constexpr uint8_t LED_FUNCTION_OFFSET = 8;
+constexpr uint8_t LED_OVERLAY_OFFSET = 12;
+constexpr uint8_t LED_COLOR_OFFSET = 22;
+constexpr uint8_t LED_DIRECTION_OFFSET = 26;
+
+constexpr uint8_t LED_FUNCTION_MASK = 0x0f;
+constexpr uint16_t LED_OVERLAY_MASK = 0x03ff;
+constexpr uint8_t LED_COLOR_MASK = 0x0f;
+constexpr uint8_t LED_DIRECTION_MASK = 0x3f;
+
+inline uint8_t getFunction(uint32_t config)
+{
+  return (config >> LED_FUNCTION_OFFSET) & LED_FUNCTION_MASK;
+}
+
+inline uint16_t getOverlay(uint32_t config)
+{
+  return (config >> LED_OVERLAY_OFFSET) & LED_OVERLAY_MASK;
+}
+
+inline uint8_t getColor(uint32_t config)
+{
+  return (config >> LED_COLOR_OFFSET) & LED_COLOR_MASK;
+}
+
+inline uint8_t getDirection(uint32_t config)
+{
+  return (config >> LED_DIRECTION_OFFSET) & LED_DIRECTION_MASK;
+}
+
+inline bool getOverlayBit(uint32_t config, uint8_t id)
+{
+  return (getOverlay(config) >> id) & 0x01;
+}
+
+ws2812_pixel_t hsvToRgb(const LedHsvConfig& hsv, uint8_t brightness)
+{
+  const float h = (float)(hsv.h % 360) / 60.0f;
+  const float sat = (255.0f - (float)hsv.s) / 255.0f; // Betaflight stores saturation inverted.
+  const float val = (float)hsv.v / 255.0f;
+
+  const int sector = (int)h;
+  const float f = h - (float)sector;
+  const float p = val * (1.0f - sat);
+  const float q = val * (1.0f - sat * f);
+  const float t = val * (1.0f - sat * (1.0f - f));
+
+  float r = 0.0f;
+  float g = 0.0f;
+  float b = 0.0f;
+
+  switch(sector)
+  {
+    case 0: r = val; g = t; b = p; break;
+    case 1: r = q; g = val; b = p; break;
+    case 2: r = p; g = val; b = t; break;
+    case 3: r = p; g = q; b = val; break;
+    case 4: r = t; g = p; b = val; break;
+    default: r = val; g = p; b = q; break;
+  }
+
+  const uint8_t scale = std::min<uint8_t>(brightness, 100);
+  const float bs = (float)scale / 100.0f;
+
+  ws2812_pixel_t rgb;
+  rgb.r = (uint8_t)std::clamp((int)lrintf(r * 255.0f * bs), 0, 255);
+  rgb.g = (uint8_t)std::clamp((int)lrintf(g * 255.0f * bs), 0, 255);
+  rgb.b = (uint8_t)std::clamp((int)lrintf(b * 255.0f * bs), 0, 255);
+  return rgb;
+}
+
+const LedHsvConfig& getSpecialColor(const Model& model, uint8_t specialColorIdx)
+{
+  const uint8_t specialIdx = std::min<uint8_t>(specialColorIdx, LED_SPECIAL_COLOR_COUNT - 1);
+  const uint8_t colorIdx = std::min<uint8_t>(model.config.ledStrip.specialColors[specialIdx], LED_CONFIGURABLE_COLOR_COUNT - 1);
+  return model.config.ledStrip.colors[colorIdx];
+}
+
+const LedHsvConfig& getDirectionalColor(const Model& model, uint8_t mode, uint8_t directionMask)
+{
+  const uint8_t modeIdx = std::min<uint8_t>(mode, LED_MODE_COUNT - 1);
+  for(uint8_t i = 0; i < LED_DIRECTION_COUNT_LOCAL; i++)
+  {
+    if((directionMask >> i) & 0x01)
+    {
+      const uint8_t colorIdx = std::min<uint8_t>(model.config.ledStrip.modeColors[modeIdx][i], LED_CONFIGURABLE_COLOR_COUNT - 1);
+      return model.config.ledStrip.colors[colorIdx];
+    }
+  }
+
+  return getSpecialColor(model, LED_SCOLOR_DISARMED);
+}
+
+uint8_t getActiveFlightModeColorMode(const Model& model)
+{
+  if(model.isModeActive(MODE_HEADFREE)) return LED_MODE_HEADFREE;
+  if(model.isModeActive(MODE_MAG)) return LED_MODE_MAG;
+  if(model.isModeActive(MODE_HORIZON)) return LED_MODE_HORIZON;
+  if(model.isModeActive(MODE_ANGLE)) return LED_MODE_ANGLE;
+  return LED_MODE_ORIENTATION;
+}
+
+}
 
 static int LED_OFF_PATTERN[] = {0};
 static int LED_BOOT_PATTERN[] = {80, 80, 80, 300, 0};
@@ -197,6 +342,107 @@ void StatusLed::update()
   _step++;
 }
 
+void StatusLed::update(const Espfc::Model& model)
+{
+#ifdef ESPFC_LED_WS2812
+  if(_type != LED_STRIP || !model.isFeatureActive(FEATURE_LED_STRIP))
+  {
+    update();
+    return;
+  }
+
+  if(_pin == -1) return;
+
+  const uint32_t now = millis();
+  if(now < _next) return;
+  _next = now + 16; // ~60 Hz
+
+  size_t ledCount = 0;
+  for(size_t i = 0; i < LED_STRIP_MAX_LENGTH; i++)
+  {
+    if(model.config.ledStrip.ledConfig[i] != 0)
+    {
+      ledCount = i + 1;
+    }
+  }
+
+  // Fall back to single-pixel status behavior until a strip layout is configured.
+  if(ledCount == 0)
+  {
+    _write(_state);
+    return;
+  }
+
+  static ws2812_pixel_t pixels[LED_STRIP_MAX_LENGTH];
+
+  const bool blinkActive = ((now / 125) & 0x07) < 2;
+  const uint8_t activeMode = getActiveFlightModeColorMode(model);
+  const bool armed = model.isModeActive(MODE_ARMED);
+
+  for(size_t i = 0; i < ledCount; i++)
+  {
+    const uint32_t cfg = model.config.ledStrip.ledConfig[i];
+    const uint8_t fn = getFunction(cfg);
+    const uint8_t colorIdx = std::min<uint8_t>(getColor(cfg), LED_CONFIGURABLE_COLOR_COUNT - 1);
+    const uint8_t dirMask = getDirection(cfg);
+
+    const LedHsvConfig* selected = &getSpecialColor(model, LED_SCOLOR_BACKGROUND);
+
+    switch(fn)
+    {
+      case LED_FUNCTION_COLOR:
+      case LED_FUNCTION_THRUST_RING:
+        selected = &model.config.ledStrip.colors[colorIdx];
+        break;
+      case LED_FUNCTION_FLIGHT_MODE:
+        selected = &getDirectionalColor(model, activeMode, dirMask);
+        break;
+      case LED_FUNCTION_ARM_STATE:
+        selected = &getSpecialColor(model, armed ? LED_SCOLOR_ARMED : LED_SCOLOR_DISARMED);
+        break;
+      case LED_FUNCTION_GPS:
+        if(!model.state.gps.present || model.state.gps.numSats == 0) selected = &getSpecialColor(model, LED_SCOLOR_GPSNOSATS);
+        else if(!model.state.gps.fix) selected = &getSpecialColor(model, LED_SCOLOR_GPSNOLOCK);
+        else selected = &getSpecialColor(model, LED_SCOLOR_GPSLOCKED);
+        break;
+      case LED_FUNCTION_BATTERY:
+      case LED_FUNCTION_RSSI:
+      default:
+        if(fn >= LED_BASEFUNCTION_COUNT)
+        {
+          selected = &getSpecialColor(model, LED_SCOLOR_BACKGROUND);
+        }
+        else
+        {
+          selected = &getSpecialColor(model, armed ? LED_SCOLOR_ARMED : LED_SCOLOR_DISARMED);
+        }
+        break;
+    }
+
+    LedHsvConfig effective = *selected;
+
+    if(getOverlayBit(cfg, LED_OVERLAY_RAINBOW))
+    {
+      const uint16_t delta = model.config.ledStrip.rainbowDelta;
+      const uint16_t freq = std::max<uint16_t>(model.config.ledStrip.rainbowFreq, 1);
+      const uint16_t phase = (uint16_t)((now / freq) % 360u);
+      effective.h = (effective.h + phase + (uint16_t)(delta * i)) % 360u;
+    }
+
+    if(getOverlayBit(cfg, LED_OVERLAY_BLINK) && !blinkActive)
+    {
+      effective = getSpecialColor(model, LED_SCOLOR_BLINKBACKGROUND);
+    }
+
+    pixels[i] = hsvToRgb(effective, model.config.ledStrip.brightness);
+  }
+
+  ws2812_update(pixels, ledCount);
+#else
+  update();
+#endif
+}
+
 void StatusLed::_write(uint8_t val)
 {
 #ifdef ESPFC_LED_WS2812
@@ -204,22 +450,22 @@ void StatusLed::_write(uint8_t val)
   {
     if(!val)
     {
-      ws2812_update(PIXEL_OFF);
+      ws2812_update(PIXEL_OFF, 1);
       return;
     }
 
     switch(_status)
     {
       case LED_BOOT:
-        ws2812_update(PIXEL_BOOT);
+        ws2812_update(PIXEL_BOOT, 1);
         break;
       case LED_ERROR:
-        ws2812_update(PIXEL_ERROR);
+        ws2812_update(PIXEL_ERROR, 1);
         break;
       case LED_ON:
       case LED_OK:
       default:
-        ws2812_update(PIXEL_OK);
+        ws2812_update(PIXEL_OK, 1);
         break;
     }
     return;

@@ -161,7 +161,7 @@ int FAST_CODE_ATTR Espfc::update(bool externalTrigger)
   _serial.update();
   _buzzer.update();
   _hardware.updateOled();
-  _model.state.led.update();
+  _model.state.led.update(_model);
   _model.state.stats.update();
 
 #if defined(ESPFC_STAB_DEBUG)

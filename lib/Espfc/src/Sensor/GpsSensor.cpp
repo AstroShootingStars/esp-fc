@@ -663,7 +663,7 @@ void GpsSensor::handleNavPvt() const
 {
   const auto &m = *_ubxMsg.getAs<Gps::UbxNavPvt92>();
 
-  _model.state.gps.fix = m.fixType == 3 && m.flags.gnssFixOk;
+  _model.state.gps.fix = m.fixType >= 2 && m.flags.gnssFixOk;
   _model.state.gps.fixType = m.fixType;
   _model.state.gps.numSats = m.numSV;
 
