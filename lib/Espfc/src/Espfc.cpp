@@ -31,11 +31,7 @@ void runBootLedAnimation(Model& model)
 {
   // Show explicit boot state (red blink) on both simple and strip LEDs.
   model.state.led.setStatus(Connect::LED_BOOT, true);
-  for(size_t i = 0; i < 2; i++)
-  {
-    delay(20);
-    model.state.led.update();
-  }
+  model.state.led.update();
 }
 
 void updateBootLedStatus(Model& model)
@@ -83,11 +79,8 @@ int Espfc::begin()
 
   _model.state.led.begin(_model.config.pin[PIN_LED_BLINK], _model.config.led.type, _model.config.led.invert);
 
-  // Keep startup responsive on power cycle while still giving peripherals a brief settle window.
-  delay(50);
-
-  // Bring up serial/MSP first so configurator handshakes are available immediately after reset.
-  _serial.begin();      // requires _model.load()
+  // Keep startup responsive while allowing a minimal settle window.
+  delay(5);
 
   // Short boot animation for RGB onboard LED while subsystems initialize.
   runBootLedAnimation(_model);
@@ -97,6 +90,10 @@ int Espfc::begin()
   _model.begin();       // requires _hardware.begin()
   _mixer.begin();
   _sensor.begin();      // requires _hardware.begin()
+
+  // Start USB serial/MSP after heavy init so visible COM endpoint is responsive.
+  _serial.begin();      // requires _model.load()
+
   _input.begin();       // requires _serial.begin()
   _actuator.begin();    // requires _model.begin()
   _controller.begin();

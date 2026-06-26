@@ -71,6 +71,22 @@ After flashing you need to configure few things first:
  3. Test motors without propellers
  4. Have fun ;)
 
+### Windows ESP32-S3 port check
+
+If COM port changes between reconnects on ESP32-S3, run this helper before opening Betaflight Configurator:
+
+```powershell
+pwsh ./bin/check-fc-msp-port.ps1
+```
+
+To force detection right after a power-cycle/reset (recommended when ports alternate), start wait mode and then power-cycle the FC:
+
+```powershell
+pwsh ./bin/check-fc-msp-port.ps1 -WaitForTinyUsb -WaitTimeoutSeconds 30 -ReadyChecks 3
+```
+
+It prefers the TinyUSB CDC endpoint (typically used for MSP handshake), probes `MSP_API_VERSION`, and prints the recommended COM port.
+
 > [!NOTE]
 > Not all functions displayed in configurator are avalable in firmware. The rule of thumb is if you cannot change specific option in Betaflight Configurator, that means it is not supported. It usually rolls back to previous value after save. It is strongly recommended to follow [setup guide](/docs/setup.md).
 

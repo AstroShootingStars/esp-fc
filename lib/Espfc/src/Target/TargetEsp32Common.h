@@ -60,6 +60,7 @@ template<>
 inline int targetSerialInit(USBCDC& dev, const SerialDeviceConfig& conf)
 {
   (void)conf;
+  dev.enableReboot(false);
   dev.begin(conf.baud);
   return 1;
 }

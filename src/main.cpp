@@ -23,6 +23,19 @@
 
 #ifdef ESP32
 void IRAM_ATTR serialEventRun(void) {}
+
+RTC_DATA_ATTR static bool g_powerOnRestartDone = false;
+
+static void normalizePowerOnUsbState()
+{
+#if defined(ESP32S3)
+  if(esp_reset_reason() == ESP_RST_POWERON && !g_powerOnRestartDone)
+  {
+    g_powerOnRestartDone = true;
+    ESP.restart();
+  }
+#endif
+}
 #endif
 
 Espfc::Espfc espfc;
@@ -91,6 +104,7 @@ Espfc::Espfc espfc;
       // internal task priorities
       // PRO(0): hi-res timer(22), timer(1), event-loop(20), lwip(18/any), wifi(23), wpa(2/any), BT/vhci(23), NimBle(21), BT/other(19,20,22), Eth(15), Mqtt(5/any)
       // APP(1): free
+      normalizePowerOnUsbState();
       espfc.load();
       xTaskCreateUniversal(gyroTask, "gyroTask", 8192, NULL, 24, &gyroTaskHandle, 1);
       xTaskCreateUniversal(pidTask,  "pidTask",  8192, NULL,  1, &pidTaskHandle,  0);
@@ -136,6 +150,7 @@ Espfc::Espfc espfc;
   // single core
   void setup()
   {
+    normalizePowerOnUsbState();
     espfc.load();
     espfc.begin();
   }

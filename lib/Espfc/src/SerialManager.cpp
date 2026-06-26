@@ -31,6 +31,7 @@ uint32_t g_mspInitMs = 0;
 uint32_t g_mspNextReinitMs = 0;
 bool g_mspSeen = false;
 int8_t g_startupMspPort = -1;
+constexpr bool USB_REBIND_ENABLED = false;
 constexpr uint32_t USB_REBIND_INITIAL_DELAY_MS = 300;
 constexpr uint32_t USB_REBIND_INTERVAL_MS = 750;
 constexpr uint32_t USB_STARTUP_PRIORITY_MS = 20000;
@@ -78,6 +79,10 @@ int SerialManager::begin()
     {
       functionMask |= SERIAL_FUNCTION_MSP;
       if(baud == SERIAL_SPEED_NONE) baud = SERIAL_SPEED_115200;
+      // Persist to active runtime config because update() checks config.serial[*].functionMask
+      // to decide whether MSP parser is executed on this port.
+      _model.config.serial[i].functionMask |= SERIAL_FUNCTION_MSP;
+      if(_model.config.serial[i].baud == SERIAL_SPEED_NONE) _model.config.serial[i].baud = SERIAL_SPEED_115200;
     }
   #endif
 
@@ -234,7 +239,13 @@ int FAST_CODE_ATTR SerialManager::update()
     int8_t startupPort = g_startupMspPort;
 
     // Ensure the startup-priority port always points to a live MSP stream.
-    if(startupPort < 0 || !_model.state.serial[startupPort].stream || !(_model.config.serial[startupPort].functionMask & SERIAL_FUNCTION_MSP))
+        if(startupPort < 0 || !_model.state.serial[startupPort].stream
+    #ifdef ESPFC_SERIAL_USB
+      || (startupPort != SERIAL_USB && !(_model.config.serial[startupPort].functionMask & SERIAL_FUNCTION_MSP))
+    #else
+      || !(_model.config.serial[startupPort].functionMask & SERIAL_FUNCTION_MSP)
+    #endif
+        )
     {
       startupPort = -1;
 #ifdef ESPFC_SERIAL_USB
@@ -274,7 +285,7 @@ int FAST_CODE_ATTR SerialManager::update()
 #ifdef ESPFC_SERIAL_USB
   // Cold power-up can leave USB endpoints racey on some hosts. Rebind USB MSP
   // periodically during startup, then stop once MSP traffic is seen.
-  if(startupMspPriority && g_startupMspPort == SERIAL_USB && (int32_t)(nowMs - g_mspNextReinitMs) >= 0)
+  if(USB_REBIND_ENABLED && startupMspPriority && g_startupMspPort == SERIAL_USB && (int32_t)(nowMs - g_mspNextReinitMs) >= 0)
   {
     Device::SerialDevice * usbPort = getSerialPortById(SERIAL_USB);
     if(usbPort)
@@ -291,20 +302,25 @@ int FAST_CODE_ATTR SerialManager::update()
 
   const SerialPortConfig& sc = _model.config.serial[_current];
   SerialPortState& ss = _model.state.serial[_current];
+#ifdef ESPFC_SERIAL_USB
+  const bool mspEnabledOnCurrent = (sc.functionMask & SERIAL_FUNCTION_MSP) || (_current == SERIAL_USB);
+#else
+  const bool mspEnabledOnCurrent = (sc.functionMask & SERIAL_FUNCTION_MSP);
+#endif
 
   if(ss.stream && !(sc.functionMask & SERIAL_FUNCTION_RX_SERIAL))
   {
     Utils::Stats::Measure measure(_model.state.stats, COUNTER_SERIAL);
     if(startupMspPriority)
     {
-      if(_current == static_cast<size_t>(g_startupMspPort) && (sc.functionMask & SERIAL_FUNCTION_MSP))
+      if(_current == static_cast<size_t>(g_startupMspPort) && mspEnabledOnCurrent)
       {
         processMsp(ss);
       }
       next();
       return 1;
     }
-    if (sc.functionMask & SERIAL_FUNCTION_MSP)
+    if(mspEnabledOnCurrent)
     {
       processMsp(ss);
     }
