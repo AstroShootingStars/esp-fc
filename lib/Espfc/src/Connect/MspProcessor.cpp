@@ -3879,10 +3879,25 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_RESET_CONF:
-      if(!_model.isModeActive(MODE_ARMED))
       {
-        _model.reset();
-        _model.save();
+        // Betaflight-compatible: optional payload byte may be present on newer APIs.
+        if(m.remain() >= 1) m.readU8();
+
+        bool success = false;
+        if(!_model.isModeActive(MODE_ARMED))
+        {
+          _model.reset();
+          _model.save();
+          success = true;
+        }
+
+        r.writeU8(success ? 1 : 0);
+        if(success)
+        {
+          _postCommand = [this]() {
+            processRestart();
+          };
+        }
       }
       break;
 
