@@ -471,6 +471,34 @@ class Model
       }
 
       // sanitize throttle and motor limits
+      config.output.minCommand = constrain(config.output.minCommand, 900, 2000);
+      config.output.minThrottle = constrain(config.output.minThrottle, 1000, 2000);
+      config.output.maxThrottle = constrain(config.output.maxThrottle, 1000, 2000);
+      config.output.dshotIdle = constrain(config.output.dshotIdle, 0, 2000);
+      config.output.dshotTelemetry = constrain(config.output.dshotTelemetry, (int8_t)0, (int8_t)1);
+      config.output.motorPoles = constrain(config.output.motorPoles, (int8_t)1, (int8_t)120);
+
+      if(config.output.minThrottle > config.output.maxThrottle) {
+        config.output.minThrottle = config.output.maxThrottle;
+      }
+      if(config.output.minCommand > config.output.minThrottle) {
+        config.output.minCommand = config.output.minThrottle;
+      }
+#if !defined(ESP32S2)
+      config.output.deadband3dLow = constrain(config.output.deadband3dLow, 1000, 2000);
+      config.output.deadband3dHigh = constrain(config.output.deadband3dHigh, 1000, 2000);
+      config.output.neutral3d = constrain(config.output.neutral3d, 1000, 2000);
+      if(config.output.deadband3dLow > config.output.deadband3dHigh) {
+        std::swap(config.output.deadband3dLow, config.output.deadband3dHigh);
+      }
+      if(config.output.neutral3d < config.output.deadband3dLow) {
+        config.output.neutral3d = config.output.deadband3dLow;
+      }
+      if(config.output.neutral3d > config.output.deadband3dHigh) {
+        config.output.neutral3d = config.output.deadband3dHigh;
+      }
+#endif
+
       if(config.output.throttleLimitType < 0 || config.output.throttleLimitType >= THROTTLE_LIMIT_TYPE_MAX) {
         config.output.throttleLimitType = THROTTLE_LIMIT_TYPE_NONE;
       }
@@ -866,6 +894,16 @@ class Model
       config.gps.enableGalileo = constrain(config.gps.enableGalileo, 0, 1);
       config.controller.pidController = constrain(config.controller.pidController, (uint8_t)0, (uint8_t)3);
       config.dterm.feedForwardTransition = constrain(config.dterm.feedForwardTransition, 0, 100);
+      config.dterm.vbatPidCompensation = constrain(config.dterm.vbatPidCompensation, (uint8_t)0, (uint8_t)100);
+      config.dterm.setpointWeight = constrain(config.dterm.setpointWeight, (int16_t)0, (int16_t)255);
+      config.dterm.dMinRoll = constrain(config.dterm.dMinRoll, (uint8_t)0, (uint8_t)255);
+      config.dterm.dMinPitch = constrain(config.dterm.dMinPitch, (uint8_t)0, (uint8_t)255);
+      config.dterm.dMinYaw = constrain(config.dterm.dMinYaw, (uint8_t)0, (uint8_t)255);
+      config.dterm.dMinGain = constrain(config.dterm.dMinGain, (uint8_t)0, (uint8_t)255);
+      config.dterm.dMinAdvance = constrain(config.dterm.dMinAdvance, (uint8_t)0, (uint8_t)255);
+      config.iterm.relax = constrain(config.iterm.relax, (int8_t)0, (int8_t)(ITERM_RELAX_COUNT - 1));
+      config.iterm.relaxCutoff = constrain(config.iterm.relaxCutoff, (int8_t)0, (int8_t)255);
+      config.level.antiGravityGain = constrain(config.level.antiGravityGain, (uint8_t)0, (uint8_t)255);
       config.level.horizonStrength = constrain(config.level.horizonStrength, 0, 200);
       config.input.throttleExpo = constrain(config.input.throttleExpo, 0, 100);
       // receiver config validation

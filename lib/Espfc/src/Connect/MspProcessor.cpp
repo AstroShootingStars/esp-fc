@@ -178,6 +178,14 @@ namespace {
 constexpr uint8_t MSP_SELECT_SETTING_RATE_PROFILE_MASK = 0x80;
 constexpr uint8_t MSP_SELECT_SETTING_BATTERY_PROFILE_MASK = 0x40;
 
+static inline uint8_t normalizeProfileIndex(uint8_t index, uint8_t count)
+{
+  if(count == 0) return 0;
+  if(index < count) return index; // native 0-based
+  if(index > 0 && (uint8_t)(index - 1) < count) return (uint8_t)(index - 1); // compatibility 1-based
+  return index;
+}
+
 static char pidProfileNameStorage[Espfc::PID_PROFILE_COUNT][Espfc::MODEL_NAME_LEN + 1] = {};
 static char rateProfileNameStorage[Espfc::RATE_PROFILE_COUNT][Espfc::MODEL_NAME_LEN + 1] = {};
 
@@ -1294,7 +1302,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_SET_MIXER_CONFIG:
       _model.config.mixer.type = m.readU8(); // mixerMode, QUAD_X
-      _model.config.mixer.yawReverse = m.readU8(); // yaw_motors_reversed
+      // Betaflight may omit yaw_motors_reversed in shorter payloads.
+      if(m.remain() >= 1) _model.config.mixer.yawReverse = m.readU8();
       _model.reload();
       break;
 
@@ -1700,7 +1709,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_MOTOR_CONFIG:
-      r.writeU16(_model.config.output.minThrottle); // minthrottle
+      // Betaflight 4.6+ treats minthrottle as deprecated and expects 0 in MSP_MOTOR_CONFIG.
+      r.writeU16(0); // minthrottle (deprecated)
       r.writeU16(_model.config.output.maxThrottle); // maxthrottle
       r.writeU16(_model.config.output.minCommand);  // mincommand
       r.writeU8(_model.state.currentMixer.count);   // motor count
@@ -1711,9 +1721,9 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SET_MOTOR_CONFIG:
-      _model.config.output.minThrottle = m.readU16(); // minthrottle
-      _model.config.output.maxThrottle = m.readU16(); // maxthrottle
-      _model.config.output.minCommand = m.readU16();  // mincommand
+      if(m.remain() >= 2) m.readU16(); // minthrottle (deprecated, ignored)
+      if(m.remain() >= 2) _model.config.output.maxThrottle = m.readU16(); // maxthrottle
+      if(m.remain() >= 2) _model.config.output.minCommand = m.readU16();  // mincommand
       if(m.remain() >= 2)
       {
         _model.config.output.motorPoles = m.readU8();
@@ -1723,18 +1733,32 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_MOTOR_3D_CONFIG:
-      r.writeU16(1406); // deadband3d_low;
-      r.writeU16(1514); // deadband3d_high;
-      r.writeU16(1460); // neutral3d;
+    #if !defined(ESP32S2)
+      r.writeU16(_model.config.output.deadband3dLow); // deadband3d_low
+      r.writeU16(_model.config.output.deadband3dHigh); // deadband3d_high
+      r.writeU16(_model.config.output.neutral3d); // neutral3d
+    #else
+      r.writeU16(1406);
+      r.writeU16(1514);
+      r.writeU16(1460);
+    #endif
       break;
 
     case MSP_SET_MOTOR_3D_CONFIG:
-      // Reversible ESC configuration is not used by this firmware yet; consume payload for compatibility.
       if(m.remain() >= 6)
       {
-        m.readU16(); // deadband3d_low
-        m.readU16(); // deadband3d_high
-        m.readU16(); // neutral3d
+        const int16_t deadband3dLow = m.readU16();
+        const int16_t deadband3dHigh = m.readU16();
+        const int16_t neutral3d = m.readU16();
+    #if !defined(ESP32S2)
+        _model.config.output.deadband3dLow = std::clamp<int16_t>(deadband3dLow, 1000, 2000);
+        _model.config.output.deadband3dHigh = std::clamp<int16_t>(deadband3dHigh, 1000, 2000);
+        _model.config.output.neutral3d = std::clamp<int16_t>(neutral3d, 1000, 2000);
+        if(_model.config.output.deadband3dLow > _model.config.output.deadband3dHigh)
+        {
+          std::swap(_model.config.output.deadband3dLow, _model.config.output.deadband3dHigh);
+        }
+    #endif
       }
       _model.reload();
       break;
@@ -2242,7 +2266,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         _model.config.gyro.rpmFilter.minFreq = m.readU8();  // gyro_rpm_notch_min
       }
       // 1.43+
-      if (m.remain() >= 1) {
+      if (m.remain() >= 2) {
         _model.config.gyro.dynamicFilter.max_freq = m.readU16(); // dyn_notch_max_hz
       }
       _model.reload();
@@ -2277,111 +2301,138 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_PID_ADVANCED: /// !!!FINISHED HERE!!!
-      r.writeU16(0);
-      r.writeU16(0);
-      r.writeU16(0); // was pidProfile.yaw_p_limit
-      r.writeU8(0); // reserved
+      r.writeU16(_model.config.pidAdvanced.feedforwardAveraging);
+      r.writeU16(_model.config.pidAdvanced.feedforwardSmoothness);
+      r.writeU16(_model.config.pidAdvanced.yawPLimit);
+      r.writeU8(_model.config.pidAdvanced.reserved0); // reserved
       r.writeU8(_model.config.dterm.vbatPidCompensation); // vbatPidCompensation;
       r.writeU8(_model.config.dterm.feedForwardTransition); // feedForwardTransition;
       r.writeU8((uint8_t)std::min(_model.config.dterm.setpointWeight, (int16_t)255)); // was low byte of dtermSetpointWeight
-      r.writeU8(0); // reserved
-      r.writeU8(0); // reserved
-      r.writeU8(0); // reserved
-      r.writeU16(0); // rateAccelLimit;
-      r.writeU16(0); // yawRateAccelLimit;
+      r.writeU8(_model.config.pidAdvanced.reserved1); // reserved
+      r.writeU8(_model.config.pidAdvanced.reserved2); // reserved
+      r.writeU8(_model.config.pidAdvanced.reserved3); // reserved
+      r.writeU16(_model.config.pidAdvanced.rateAccelLimit);
+      r.writeU16(_model.config.pidAdvanced.yawRateAccelLimit);
       r.writeU8(_model.config.level.angleLimit); // levelAngleLimit;
       r.writeU8(_model.config.level.horizonStrength); // horizon strength
-      r.writeU16(0); // itermThrottleThreshold;
-      r.writeU16(1000); // itermAcceleratorGain; anti_gravity_gain, 0 in 1.45+
+      r.writeU16(_model.config.pidAdvanced.itermThrottleThreshold);
+      r.writeU16(_model.config.level.antiGravityGain); // itermAcceleratorGain; anti_gravity_gain, 0 in 1.45+
       r.writeU16(_model.config.dterm.setpointWeight);
       r.writeU8(_model.config.iterm.itermRotation ? 1 : 0); // iterm rotation
-      r.writeU8(0); // smart feed forward
+      r.writeU8(_model.config.pidAdvanced.smartFeedForward);
       r.writeU8(_model.config.iterm.relax); // iterm relax
-      r.writeU8(1); // iterm relax type (setpoint only)
-      r.writeU8(0); // abs control gain
-      r.writeU8(0); // throttle boost
-      r.writeU8(0); // acro trainer max angle
+      r.writeU8(_model.config.pidAdvanced.itermRelaxType);
+      r.writeU8(_model.config.pidAdvanced.absControlGain);
+      r.writeU8(_model.config.pidAdvanced.throttleBoost);
+      r.writeU8(_model.config.pidAdvanced.acroTrainerAngleLimit);
       r.writeU16(_model.config.pid[FC_PID_ROLL].F); //pid roll f
       r.writeU16(_model.config.pid[FC_PID_PITCH].F); //pid pitch f
       r.writeU16(_model.config.pid[FC_PID_YAW].F); //pid yaw f
-      r.writeU8(0); // antigravity mode
+      r.writeU8(_model.config.pidAdvanced.antiGravityMode);
       // 1.41+
       r.writeU8(_model.config.dterm.dMinRoll); // d min roll
       r.writeU8(_model.config.dterm.dMinPitch); // d min pitch
       r.writeU8(_model.config.dterm.dMinYaw); // d min yaw
-      r.writeU8(37); // d min gain (default)
-      r.writeU8(20); // d min advance (default)
+      r.writeU8(_model.config.dterm.dMinGain); // d min gain
+      r.writeU8(_model.config.dterm.dMinAdvance); // d min advance
       r.writeU8(_model.config.level.integratedYaw ? 1 : 0); // use_integrated_yaw
-      r.writeU8(0); // integrated_yaw_relax
+      r.writeU8(_model.config.pidAdvanced.integratedYawRelax);
       // 1.42+
       r.writeU8(_model.config.iterm.relaxCutoff); // iterm_relax_cutoff
       // 1.43+
       r.writeU8(_model.config.output.motorLimit); // motor_output_limit
-      r.writeU8(0); // auto_profile_cell_count
-      r.writeU8(0); // idle_min_rpm
+      r.writeU8(_model.config.pidAdvanced.autoProfileCellCount);
+      r.writeU8(_model.config.pidAdvanced.idleMinRpm);
+      // 1.44+
+      r.writeU8(_model.config.pidAdvanced.ffAveraging44);
+      r.writeU8(_model.config.pidAdvanced.ffSmoothness44);
+      r.writeU8(_model.config.pidAdvanced.ffBoost44);
+      r.writeU8(_model.config.pidAdvanced.ffMaxRateLimit44);
+      r.writeU8(_model.config.pidAdvanced.ffJitterFactor44);
+      r.writeU8(_model.config.pidAdvanced.vbatSagCompensation44);
+      r.writeU8(_model.config.pidAdvanced.thrustLinearization44);
+      // 1.45+
+      r.writeU8(_model.config.pidAdvanced.tpaMode45);
+      r.writeU8(_model.config.pidAdvanced.tpaRate45);
+      r.writeU16(_model.config.pidAdvanced.tpaBreakpoint45);
       break;
 
     case MSP_SET_PID_ADVANCED:
     {
-      m.readU16();
-      m.readU16();
-      m.readU16(); // was pidProfile.yaw_p_limit
-      m.readU8(); // reserved
-      m.readU8();
-      _model.config.dterm.feedForwardTransition = m.readU8();
-      const uint8_t legacySetpointWeight = m.readU8();
-      m.readU8(); // reserved
-      m.readU8(); // reserved
-      m.readU8(); // reserved
-      m.readU16();
-      m.readU16();
-      if (m.remain() >= 2) {
-        _model.config.level.angleLimit = m.readU8();
-        _model.config.level.horizonStrength = m.readU8();
+      uint8_t legacySetpointWeight = (uint8_t)std::clamp<int16_t>(_model.config.dterm.setpointWeight, 0, 255);
+      bool hasLegacySetpointWeight = false;
+
+      if(m.remain() >= 2) _model.config.pidAdvanced.feedforwardAveraging = m.readU16();
+      if(m.remain() >= 2) _model.config.pidAdvanced.feedforwardSmoothness = m.readU16();
+      if(m.remain() >= 2) _model.config.pidAdvanced.yawPLimit = m.readU16(); // legacy yaw p limit
+      if(m.remain() >= 1) _model.config.pidAdvanced.reserved0 = m.readU8(); // reserved
+      if(m.remain() >= 1) _model.config.dterm.vbatPidCompensation = std::clamp<uint8_t>(m.readU8(), 0, 100);
+      if(m.remain() >= 1) _model.config.dterm.feedForwardTransition = m.readU8();
+      if(m.remain() >= 1) {
+        legacySetpointWeight = m.readU8();
+        hasLegacySetpointWeight = true;
       }
-      if (m.remain() >= 4) {
-        m.readU16(); // itermThrottleThreshold;
-        m.readU16(); // itermAcceleratorGain; anti_gravity_gain
-      }
-      if (m.remain() >= 2) {
+      if(m.remain() >= 1) _model.config.pidAdvanced.reserved1 = m.readU8(); // reserved
+      if(m.remain() >= 1) _model.config.pidAdvanced.reserved2 = m.readU8(); // reserved
+      if(m.remain() >= 1) _model.config.pidAdvanced.reserved3 = m.readU8(); // reserved
+      if(m.remain() >= 2) _model.config.pidAdvanced.rateAccelLimit = m.readU16();
+      if(m.remain() >= 2) _model.config.pidAdvanced.yawRateAccelLimit = m.readU16();
+
+      if(m.remain() >= 1) _model.config.level.angleLimit = m.readU8();
+      if(m.remain() >= 1) _model.config.level.horizonStrength = m.readU8();
+
+      if(m.remain() >= 2) _model.config.pidAdvanced.itermThrottleThreshold = m.readU16(); // itermThrottleThreshold
+      if(m.remain() >= 2) _model.config.level.antiGravityGain = (uint8_t)std::min<uint16_t>(m.readU16(), 255); // itermAcceleratorGain
+
+      if(m.remain() >= 2) {
         _model.config.dterm.setpointWeight = m.readU16();
-      }
-      else {
+      } else if(hasLegacySetpointWeight) {
         _model.config.dterm.setpointWeight = legacySetpointWeight;
       }
-      if (m.remain() >= 14) {
-        _model.config.iterm.itermRotation = m.readU8() != 0; // iterm rotation
-        m.readU8(); // smart feed forward
-        _model.config.iterm.relax = m.readU8(); // iterm relax
-        m.readU8(); // iterm relax type
-        m.readU8(); // abs control gain
-        m.readU8(); // throttle boost
-        m.readU8(); // acro trainer max angle
-        _model.config.pid[FC_PID_ROLL].F = m.readU16(); // pid roll f
-        _model.config.pid[FC_PID_PITCH].F = m.readU16(); // pid pitch f
-        _model.config.pid[FC_PID_YAW].F = m.readU16(); // pid yaw f
-        m.readU8(); // antigravity mode
-      }
+
+      if(m.remain() >= 1) _model.config.iterm.itermRotation = m.readU8() != 0; // iterm rotation
+      if(m.remain() >= 1) _model.config.pidAdvanced.smartFeedForward = m.readU8(); // smart feed forward
+      if(m.remain() >= 1) _model.config.iterm.relax = m.readU8(); // iterm relax
+      if(m.remain() >= 1) _model.config.pidAdvanced.itermRelaxType = m.readU8(); // iterm relax type
+      if(m.remain() >= 1) _model.config.pidAdvanced.absControlGain = m.readU8(); // abs control gain
+      if(m.remain() >= 1) _model.config.pidAdvanced.throttleBoost = m.readU8(); // throttle boost
+      if(m.remain() >= 1) _model.config.pidAdvanced.acroTrainerAngleLimit = m.readU8(); // acro trainer max angle
+      if(m.remain() >= 2) _model.config.pid[FC_PID_ROLL].F = m.readU16(); // pid roll f
+      if(m.remain() >= 2) _model.config.pid[FC_PID_PITCH].F = m.readU16(); // pid pitch f
+      if(m.remain() >= 2) _model.config.pid[FC_PID_YAW].F = m.readU16(); // pid yaw f
+      if(m.remain() >= 1) _model.config.pidAdvanced.antiGravityMode = m.readU8(); // antigravity mode
+
       // 1.41+
-      if (m.remain() >= 7) {
-        _model.config.dterm.dMinRoll = m.readU8(); // d min roll
-        _model.config.dterm.dMinPitch = m.readU8(); // d min pitch
-        _model.config.dterm.dMinYaw = m.readU8(); // d min yaw
-        m.readU8(); // d min gain (per-item, not yet supported)
-        m.readU8(); // d min advance (per-item, not yet supported)
-        _model.config.level.integratedYaw = m.readU8() != 0; // use_integrated_yaw
-        m.readU8(); // integrated_yaw_relax
-      }
+      if(m.remain() >= 1) _model.config.dterm.dMinRoll = m.readU8(); // d min roll
+      if(m.remain() >= 1) _model.config.dterm.dMinPitch = m.readU8(); // d min pitch
+      if(m.remain() >= 1) _model.config.dterm.dMinYaw = m.readU8(); // d min yaw
+      if(m.remain() >= 1) _model.config.dterm.dMinGain = m.readU8(); // d min gain
+      if(m.remain() >= 1) _model.config.dterm.dMinAdvance = m.readU8(); // d min advance
+      if(m.remain() >= 1) _model.config.level.integratedYaw = m.readU8() != 0; // use_integrated_yaw
+      if(m.remain() >= 1) _model.config.pidAdvanced.integratedYawRelax = m.readU8(); // integrated_yaw_relax
+
       // 1.42+
-      if (m.remain() >= 1) {
-        _model.config.iterm.relaxCutoff = m.readU8(); // iterm_relax_cutoff
-      }
+      if(m.remain() >= 1) _model.config.iterm.relaxCutoff = m.readU8(); // iterm_relax_cutoff
+
       // 1.43+
-      if (m.remain() >= 3) {
-        _model.config.output.motorLimit = m.readU8(); // motor_output_limit
-        m.readU8(); // auto_profile_cell_count
-        m.readU8(); // idle_min_rpm
-      }
+      if(m.remain() >= 1) _model.config.output.motorLimit = m.readU8(); // motor_output_limit
+      if(m.remain() >= 1) _model.config.pidAdvanced.autoProfileCellCount = m.readU8(); // auto_profile_cell_count
+      if(m.remain() >= 1) _model.config.pidAdvanced.idleMinRpm = m.readU8(); // idle_min_rpm
+
+      // 1.44+
+      if(m.remain() >= 1) _model.config.pidAdvanced.ffAveraging44 = m.readU8();
+      if(m.remain() >= 1) _model.config.pidAdvanced.ffSmoothness44 = m.readU8();
+      if(m.remain() >= 1) _model.config.pidAdvanced.ffBoost44 = m.readU8();
+      if(m.remain() >= 1) _model.config.pidAdvanced.ffMaxRateLimit44 = m.readU8();
+      if(m.remain() >= 1) _model.config.pidAdvanced.ffJitterFactor44 = m.readU8();
+      if(m.remain() >= 1) _model.config.pidAdvanced.vbatSagCompensation44 = m.readU8();
+      if(m.remain() >= 1) _model.config.pidAdvanced.thrustLinearization44 = m.readU8();
+
+      // 1.45+
+      if(m.remain() >= 1) _model.config.pidAdvanced.tpaMode45 = m.readU8();
+      if(m.remain() >= 1) _model.config.pidAdvanced.tpaRate45 = m.readU8();
+      if(m.remain() >= 2) _model.config.pidAdvanced.tpaBreakpoint45 = m.readU16();
+
       _model.syncActivePidProfile();  // Update active PID profile with new values
       _model.reload();
       break;
@@ -2805,13 +2856,15 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         if(m.remain() >= 1)
         {
           const uint8_t profileType = selector;
-          const uint8_t index = m.readU8();
+          const uint8_t indexRaw = m.readU8();
           if(profileType == 0)
           {
+            const uint8_t index = normalizeProfileIndex(indexRaw, RATE_PROFILE_COUNT);
             _model.selectRateProfile(index);
           }
           else if(profileType == 1)
           {
+            const uint8_t index = normalizeProfileIndex(indexRaw, PID_PROFILE_COUNT);
             _model.selectPidProfile(index);
           }
         }
@@ -2820,7 +2873,8 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           // Betaflight-style single-byte selector uses high-bit masks.
           if(selector & MSP_SELECT_SETTING_RATE_PROFILE_MASK)
           {
-            _model.selectRateProfile(selector & ~MSP_SELECT_SETTING_RATE_PROFILE_MASK);
+            const uint8_t index = normalizeProfileIndex((uint8_t)(selector & ~MSP_SELECT_SETTING_RATE_PROFILE_MASK), RATE_PROFILE_COUNT);
+            _model.selectRateProfile(index);
           }
           else if(selector & MSP_SELECT_SETTING_BATTERY_PROFILE_MASK)
           {
@@ -2830,9 +2884,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
           {
             // PID profile selector in current configurator builds.
             // Fallback to legacy rate profile behavior if PID selection fails.
-            if(!_model.selectPidProfile(selector))
+            const uint8_t pidIndex = normalizeProfileIndex(selector, PID_PROFILE_COUNT);
+            if(!_model.selectPidProfile(pidIndex))
             {
-              _model.selectRateProfile(selector);
+              const uint8_t rateIndex = normalizeProfileIndex(selector, RATE_PROFILE_COUNT);
+              _model.selectRateProfile(rateIndex);
             }
           }
         }
@@ -2843,24 +2899,28 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       if(m.remain() >= 3)
       {
         const uint8_t profileType = m.readU8(); // 0=pid, 1=rate (Betaflight configurator)
-        const uint8_t destIdx = m.readU8();
-        const uint8_t srcIdx = m.readU8();
-        if(profileType == 0 && srcIdx < PID_PROFILE_COUNT && destIdx < PID_PROFILE_COUNT)
+        const uint8_t destRaw = m.readU8();
+        const uint8_t srcRaw = m.readU8();
+        const uint8_t destPidIdx = normalizeProfileIndex(destRaw, PID_PROFILE_COUNT);
+        const uint8_t srcPidIdx = normalizeProfileIndex(srcRaw, PID_PROFILE_COUNT);
+        const uint8_t destRateIdx = normalizeProfileIndex(destRaw, RATE_PROFILE_COUNT);
+        const uint8_t srcRateIdx = normalizeProfileIndex(srcRaw, RATE_PROFILE_COUNT);
+        if(profileType == 0 && srcPidIdx < PID_PROFILE_COUNT && destPidIdx < PID_PROFILE_COUNT)
         {
-          _model.config.pidProfiles[destIdx] = _model.config.pidProfiles[srcIdx];
+          _model.config.pidProfiles[destPidIdx] = _model.config.pidProfiles[srcPidIdx];
         }
-        else if(profileType == 1 && srcIdx < RATE_PROFILE_COUNT && destIdx < RATE_PROFILE_COUNT)
+        else if(profileType == 1 && srcRateIdx < RATE_PROFILE_COUNT && destRateIdx < RATE_PROFILE_COUNT)
         {
-          _model.config.rateProfiles[destIdx] = _model.config.rateProfiles[srcIdx];
+          _model.config.rateProfiles[destRateIdx] = _model.config.rateProfiles[srcRateIdx];
         }
         // Legacy fallback for older clients with inverted type mapping.
-        else if(profileType == 0 && srcIdx < RATE_PROFILE_COUNT && destIdx < RATE_PROFILE_COUNT)
+        else if(profileType == 0 && srcRateIdx < RATE_PROFILE_COUNT && destRateIdx < RATE_PROFILE_COUNT)
         {
-          _model.config.rateProfiles[destIdx] = _model.config.rateProfiles[srcIdx];
+          _model.config.rateProfiles[destRateIdx] = _model.config.rateProfiles[srcRateIdx];
         }
-        else if(profileType == 1 && srcIdx < PID_PROFILE_COUNT && destIdx < PID_PROFILE_COUNT)
+        else if(profileType == 1 && srcPidIdx < PID_PROFILE_COUNT && destPidIdx < PID_PROFILE_COUNT)
         {
-          _model.config.pidProfiles[destIdx] = _model.config.pidProfiles[srcIdx];
+          _model.config.pidProfiles[destPidIdx] = _model.config.pidProfiles[srcPidIdx];
         }
       }
       break;
@@ -2874,7 +2934,10 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_SET_PID_CONTROLLER:
-      if(m.remain()) _model.config.controller.pidController = m.readU8();
+      if(m.remain()) {
+        _model.config.controller.pidController = m.readU8();
+        _model.reload();
+      }
       break;
 
     case MSP_SET_RESET_CURR_PID:

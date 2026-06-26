@@ -923,6 +923,39 @@ struct ControllerConfig
   uint8_t pidController = 1;
 };
 
+struct PidAdvancedCompatConfig
+{
+  uint16_t feedforwardAveraging = 0;
+  uint16_t feedforwardSmoothness = 0;
+  uint16_t yawPLimit = 0;
+  uint8_t reserved0 = 0;
+  uint8_t reserved1 = 0;
+  uint8_t reserved2 = 0;
+  uint8_t reserved3 = 0;
+  uint16_t rateAccelLimit = 0;
+  uint16_t yawRateAccelLimit = 0;
+  uint16_t itermThrottleThreshold = 0;
+  uint8_t smartFeedForward = 0;
+  uint8_t itermRelaxType = 1;
+  uint8_t absControlGain = 0;
+  uint8_t throttleBoost = 0;
+  uint8_t acroTrainerAngleLimit = 0;
+  uint8_t antiGravityMode = 0;
+  uint8_t integratedYawRelax = 0;
+  uint8_t autoProfileCellCount = 0;
+  uint8_t idleMinRpm = 0;
+  uint8_t ffAveraging44 = 0;
+  uint8_t ffSmoothness44 = 0;
+  uint8_t ffBoost44 = 0;
+  uint8_t ffMaxRateLimit44 = 0;
+  uint8_t ffJitterFactor44 = 0;
+  uint8_t vbatSagCompensation44 = 0;
+  uint8_t thrustLinearization44 = 0;
+  uint8_t tpaMode45 = 0;
+  uint8_t tpaRate45 = 0;
+  uint16_t tpaBreakpoint45 = 0;
+};
+
 constexpr size_t SERVO_MIX_RULES_MAX = 16; // Protocol-visible rule slots
 
 #if defined(ESP32S2)
@@ -1252,6 +1285,7 @@ class ModelConfig
     ItermConfig iterm;
     AltHoldConfig altHold;
     ControllerConfig controller;
+    PidAdvancedCompatConfig pidAdvanced;
     // hardware
     int8_t pin[PIN_COUNT] = {
 #ifdef ESPFC_INPUT
