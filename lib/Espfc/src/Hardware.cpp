@@ -757,16 +757,15 @@ void Hardware::restartToBootloader(const Model& model, BootloaderRequestType req
   }
   targetReset();
 #elif defined(ESP32S3) || defined(ESP32S2) || defined(ESP32C3)
-  // Force USB serial link teardown so host apps observe a real disconnect.
+  // Keep USB serial stack alive so host can keep a flashable COM path.
 #ifdef ESPFC_SERIAL_USB_DEV
   ESPFC_SERIAL_USB_DEV.flush();
-  ESPFC_SERIAL_USB_DEV.end();
-  delay(80);
+  delay(10);
 #endif
 
   // BOOT button equivalent: force ROM download mode on next reset.
   REG_SET_BIT(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
-  esp_restart_noos();
+  esp_restart_noos_dig();
   while(1) {}
 #else
   // Best-effort fallback on non-RP targets where explicit bootloader entry is board/ROM-specific.
