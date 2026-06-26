@@ -227,7 +227,43 @@ int SerialManager::begin()
 int FAST_CODE_ATTR SerialManager::update()
 {
   const uint32_t nowMs = millis();
-  const bool startupMspPriority = !g_mspSeen && g_startupMspPort >= 0 && g_mspInitMs && (uint32_t)(nowMs - g_mspInitMs) <= USB_STARTUP_PRIORITY_MS;
+  bool startupMspPriority = !g_mspSeen && g_mspInitMs && (uint32_t)(nowMs - g_mspInitMs) <= USB_STARTUP_PRIORITY_MS;
+
+  if(startupMspPriority)
+  {
+    int8_t startupPort = g_startupMspPort;
+
+    // Ensure the startup-priority port always points to a live MSP stream.
+    if(startupPort < 0 || !_model.state.serial[startupPort].stream || !(_model.config.serial[startupPort].functionMask & SERIAL_FUNCTION_MSP))
+    {
+      startupPort = -1;
+#ifdef ESPFC_SERIAL_USB
+      if(_model.state.serial[SERIAL_USB].stream)
+      {
+        startupPort = SERIAL_USB;
+        _model.config.serial[SERIAL_USB].functionMask |= SERIAL_FUNCTION_MSP;
+      }
+#endif
+
+      if(startupPort < 0)
+      {
+        for(int i = 0; i < SERIAL_UART_COUNT; i++)
+        {
+          if(_model.state.serial[i].stream && (_model.config.serial[i].functionMask & SERIAL_FUNCTION_MSP))
+          {
+            startupPort = i;
+            break;
+          }
+        }
+      }
+      g_startupMspPort = startupPort;
+    }
+
+    if(g_startupMspPort < 0)
+    {
+      startupMspPriority = false;
+    }
+  }
 
   // During startup, process MSP port first to reduce first-connect races.
   if(startupMspPriority)
