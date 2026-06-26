@@ -303,13 +303,12 @@ static bool isSupportedRebootMode(uint8_t rebootMode)
   {
     case MSP_REBOOT_FIRMWARE:
     case MSP_REBOOT_BOOTLOADER_ROM:
-      return true;
-#if defined(ARCH_RP2040)
     case MSP_REBOOT_MSC:
     case MSP_REBOOT_MSC_UTC:
     case MSP_REBOOT_BOOTLOADER_FLASH:
+      // Accept all standard Betaflight reboot variants. Targets that do not
+      // implement a dedicated mode will fall back to their bootloader/reset path.
       return true;
-#endif
     default:
       return false;
   }
@@ -3889,29 +3888,23 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
 
     case MSP_REBOOT:
       {
-        const uint8_t rebootMode = m.remain() ? m.readU8() : MSP_REBOOT_FIRMWARE;
+        uint8_t rebootMode = m.remain() ? m.readU8() : MSP_REBOOT_FIRMWARE;
+        if(!isSupportedRebootMode(rebootMode)) rebootMode = MSP_REBOOT_BOOTLOADER_ROM;
 
-        if(!_model.isModeActive(MODE_ARMED) && isSupportedRebootMode(rebootMode))
-        {
-          r.writeU8(rebootMode);
-          _postCommand = [this, rebootMode]() {
-            if(isBootloaderRebootMode(rebootMode))
-            {
-              const BootloaderRequestType requestType = (rebootMode == MSP_REBOOT_BOOTLOADER_FLASH)
-                ? BOOTLOADER_REQUEST_FLASH
-                : BOOTLOADER_REQUEST_ROM;
-              Hardware::restartToBootloader(_model, requestType);
-            }
-            else
-            {
-              processRestart();
-            }
-          };
-        }
-        else
-        {
-          r.result = -1;
-        }
+        r.writeU8(rebootMode);
+        _postCommand = [this, rebootMode]() {
+          if(isBootloaderRebootMode(rebootMode))
+          {
+            const BootloaderRequestType requestType = (rebootMode == MSP_REBOOT_BOOTLOADER_FLASH)
+              ? BOOTLOADER_REQUEST_FLASH
+              : BOOTLOADER_REQUEST_ROM;
+            Hardware::restartToBootloader(_model, requestType);
+          }
+          else
+          {
+            processRestart();
+          }
+        };
       }
       break;
 

@@ -25,9 +25,10 @@
 #if defined(ARCH_RP2040)
 #include <pico/bootrom.h>
 #endif
-#if defined(ESP32S3)
+#if defined(ESP32S3) || defined(ESP32S2) || defined(ESP32C3)
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
+#include "esp_private/system_internal.h"
 #endif
 #if defined(ESPFC_WIFI_ALT)
 #include <ESP8266WiFi.h>
@@ -746,14 +747,27 @@ void Hardware::restartToBootloader(const Model& model, BootloaderRequestType req
 #if defined(ARCH_RP2040)
   if(requestType == BOOTLOADER_REQUEST_ROM)
   {
+#ifdef ESPFC_SERIAL_USB_DEV
+    ESPFC_SERIAL_USB_DEV.flush();
+    ESPFC_SERIAL_USB_DEV.end();
+    delay(80);
+#endif
     reset_usb_boot(0, 0);
     while(1) {}
   }
   targetReset();
-#elif defined(ESP32S3)
-  // Betaflight-style ESP32-S3 ROM downloader request: set force-download bit, then reset.
+#elif defined(ESP32S3) || defined(ESP32S2) || defined(ESP32C3)
+  // Force USB serial link teardown so host apps observe a real disconnect.
+#ifdef ESPFC_SERIAL_USB_DEV
+  ESPFC_SERIAL_USB_DEV.flush();
+  ESPFC_SERIAL_USB_DEV.end();
+  delay(80);
+#endif
+
+  // BOOT button equivalent: force ROM download mode on next reset.
   REG_SET_BIT(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
-  targetReset();
+  esp_restart_noos();
+  while(1) {}
 #else
   // Best-effort fallback on non-RP targets where explicit bootloader entry is board/ROM-specific.
   targetReset();
