@@ -923,11 +923,11 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         const uint32_t boxModeMask = modeMaskToBoxMask(modeStatusMask);
         r.writeU16(loopTimeUs);
         r.writeU16(_model.state.i2cErrorCount); // i2c error count
-        // Report runtime-active sensors for status icons.
+        // Report only runtime-active sensors so UI icons reflect detected hardware.
         const uint16_t sensorMask =
-          ((_model.accelActive() || _model.config.accel.dev != GYRO_NONE) ? 1 : 0) |
+          ((_model.accelActive() ? 1 : 0)) |
           (((_model.baroActive()) ? 1 : 0) << 1) |
-          (((_model.magActive() || _model.config.mag.dev != MAG_NONE) ? 1 : 0) << 2) |
+          (((_model.magActive() ? 1 : 0)) << 2) |
           (((_model.gpsActive()) ? 1 : 0) << 3) |
           ((0) << 4) |
           (((_model.gyroActive()) ? 1 : 0) << 5);
