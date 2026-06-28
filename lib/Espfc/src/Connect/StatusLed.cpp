@@ -193,7 +193,7 @@ inline bool getOverlayBit(uint32_t config, uint8_t id)
   return (getOverlay(config) >> id) & 0x01;
 }
 
-ws2812_pixel_t hsvToRgb(const LedHsvConfig& hsv, uint8_t brightness)
+[[maybe_unused]] ws2812_pixel_t hsvToRgb(const LedHsvConfig& hsv, uint8_t brightness)
 {
   const float h = (float)(hsv.h % 360) / 60.0f;
   const float sat = (255.0f - (float)hsv.s) / 255.0f; // Betaflight stores saturation inverted.
@@ -236,7 +236,7 @@ const LedHsvConfig& getSpecialColor(const Model& model, uint8_t specialColorIdx)
   return model.config.ledStrip.colors[colorIdx];
 }
 
-const LedHsvConfig& getDirectionalColor(const Model& model, uint8_t mode, uint8_t directionMask)
+[[maybe_unused]] const LedHsvConfig& getDirectionalColor(const Model& model, uint8_t mode, uint8_t directionMask)
 {
   const uint8_t modeIdx = std::min<uint8_t>(mode, LED_MODE_COUNT - 1);
   for(uint8_t i = 0; i < LED_DIRECTION_COUNT_LOCAL; i++)
@@ -251,7 +251,7 @@ const LedHsvConfig& getDirectionalColor(const Model& model, uint8_t mode, uint8_
   return getSpecialColor(model, LED_SCOLOR_DISARMED);
 }
 
-uint8_t getActiveFlightModeColorMode(const Model& model)
+[[maybe_unused]] uint8_t getActiveFlightModeColorMode(const Model& model)
 {
   if(model.isModeActive(MODE_HEADFREE)) return LED_MODE_HEADFREE;
   if(model.isModeActive(MODE_MAG)) return LED_MODE_MAG;

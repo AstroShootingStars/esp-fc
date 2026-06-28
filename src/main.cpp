@@ -9,7 +9,9 @@
 #include <printf.h>
 #include <blackbox/blackbox.h>
 #include <EscDriver.h>
+#if defined(ESP8266)
 #include <EspWire.h>
+#endif
 #include <Gps.hpp>
 #if defined(ESPFC_ESPNOW)
 #include <EspNowRcLink/Receiver.h>

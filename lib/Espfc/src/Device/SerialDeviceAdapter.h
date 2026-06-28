@@ -22,11 +22,17 @@ class SerialDeviceAdapter: public SerialDevice
   public:
     SerialDeviceAdapter(T& dev): _dev(dev) {}
     void begin(const SerialDeviceConfig& conf) override { targetSerialInit(_dev, conf); }
-    void updateBaudRate(int baud) override { _dev.updateBaudRate(baud); };
+      void updateBaudRate(int baud) override {
+  #if defined(STM32F7xx) || defined(STM32F7) || defined(STM32H7xx) || defined(STM32H7)
+    _dev.begin(baud);
+  #else
+    _dev.updateBaudRate(baud);
+  #endif
+      };
     int available() override { return _dev.available(); }
     int read() override { return _dev.read(); }
     size_t readMany(uint8_t * c, size_t l) override {
-#if defined(ARCH_RP2040)
+#if defined(ARCH_RP2040) || defined(STM32F7xx) || defined(STM32F7) || defined(STM32H7xx) || defined(STM32H7)
       size_t count = std::min(l, (size_t)available());
       for(size_t i = 0; i < count; i++)
       {

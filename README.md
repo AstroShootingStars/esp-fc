@@ -100,6 +100,8 @@ It prefers the TinyUSB CDC endpoint (typically used for MSP handshake), probes `
  * **ESP32-S3** - recommended
  * **ESP32-S2** - experimantal
  * **ESP32-C3** - experimantal, lack of performance, no FPU
+* **STM32F7** - experimental target scaffolding (STM32 core / HAL+LL)
+* **STM32H7** - experimental target scaffolding (STM32 core / HAL+LL)
  * **RP2350** - experimantal, partially works
  * **RP2040** - experimantal, lack of performance, no FPU
  * **ESP8266** - obsolete, no longer developed

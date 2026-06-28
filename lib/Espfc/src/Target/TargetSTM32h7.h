@@ -1,0 +1,55 @@
+#pragma once
+
+#include <Arduino.h>
+
+#define ESPFC_INPUT
+#define ESPFC_INPUT_PIN 2
+
+#define ESPFC_OUTPUT_COUNT 4
+#define ESPFC_OUTPUT_0 3
+#define ESPFC_OUTPUT_1 5
+#define ESPFC_OUTPUT_2 6
+#define ESPFC_OUTPUT_3 9
+
+#define ESPFC_SERIAL_0
+#define ESPFC_SERIAL_0_DEV Serial
+#define ESPFC_SERIAL_0_DEV_T HardwareSerial
+#define ESPFC_SERIAL_0_TX -1
+#define ESPFC_SERIAL_0_RX -1
+#define ESPFC_SERIAL_0_FN (SERIAL_FUNCTION_MSP)
+#define ESPFC_SERIAL_0_BAUD (SERIAL_SPEED_115200)
+#define ESPFC_SERIAL_0_BBAUD (SERIAL_SPEED_NONE)
+
+#define ESPFC_SERIAL_DEBUG_PORT SERIAL_UART_0
+#define SERIAL_TX_FIFO_SIZE 256
+
+#define ESPFC_SPI_0
+#define ESPFC_SPI_0_DEV SPI
+#define ESPFC_SPI_0_SCK 13
+#define ESPFC_SPI_0_MOSI 11
+#define ESPFC_SPI_0_MISO 12
+#define ESPFC_SPI_CS_GYRO 10
+#define ESPFC_SPI_CS_BARO 4
+
+#define ESPFC_I2C_0
+#define ESPFC_I2C_0_SCL 15
+#define ESPFC_I2C_0_SDA 14
+
+#define ESPFC_BUZZER_PIN -1
+#define ESPFC_BUTTON_PIN -1
+#define ESPFC_LED_PIN -1
+#define ESPFC_LED_TYPE 0
+
+#define ESPFC_ADC_0
+#define ESPFC_ADC_0_PIN -1
+
+#define ESPFC_ADC_SCALE (3.3f / 4096.0f)
+
+#define ESPFC_FEATURE_MASK (FEATURE_RX_SERIAL | FEATURE_MOTOR_STOP | FEATURE_TELEMETRY | FEATURE_DYNAMIC_FILTER)
+
+#define ESPFC_GYRO_I2C_RATE_MAX 2000
+#define ESPFC_GYRO_SPI_RATE_MAX 8000
+
+// DSP acceleration is ESP-IDF specific; keep disabled for STM32 scaffold.
+
+#include "Target/TargetSTM32Common.h"

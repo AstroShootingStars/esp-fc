@@ -24,6 +24,10 @@
 
 #if defined(ESP8266)
 #define ESPFC_TARGET "ESP8266"
+#elif defined(STM32H7xx) || defined(STM32H7)
+#define ESPFC_TARGET "STM32H7"
+#elif defined(STM32F7xx) || defined(STM32F7)
+#define ESPFC_TARGET "STM32F7"
 #elif defined(ESP32S3)
 #define ESPFC_TARGET "ESP32S3"
 #elif defined(ESP32S2)
@@ -109,7 +113,9 @@ extern const char * boardIdentifier;
 #endif
 
 #define offsetof(TYPE, MEMBER) __builtin_offsetof (TYPE, MEMBER)
+#ifndef UNUSED
 #define UNUSED(v) ((void)v)
+#endif
 #define ARRAYLEN(x) (sizeof(x) / sizeof((x)[0]))
 #define STATIC_ASSERT(condition, name) \
     typedef char assert_failed_ ## name [(condition) ? 1 : -1 ] __attribute__((unused))
@@ -1213,9 +1219,11 @@ extern gpsSolutionData_t gpsSol;
 
 // ESC 4-Way IF
 
+#if !defined(STM32F7xx) && !defined(STM32F7) && !defined(STM32H7xx) && !defined(STM32H7)
 #define USE_SERIAL_4WAY_BLHELI_INTERFACE
 #define USE_SERIAL_4WAY_BLHELI_BOOTLOADER
 #define USE_SERIAL_4WAY_SK_BOOTLOADER
+#endif
 
 typedef int8_t IO_t;
 
@@ -1229,7 +1237,9 @@ void motorDisable(void);
 void motorEnable(void);
 void motorInitEscDevice(void * driver);
 
-#if defined(UNIT_TEST) || defined(ESP8266) || defined(ARCH_RP2040)
+#if defined(STM32F7xx) || defined(STM32F7) || defined(STM32H7xx) || defined(STM32H7)
+// STM32 Arduino core provides static inline delay helpers in headers.
+#elif defined(UNIT_TEST) || defined(ESP8266) || defined(ARCH_RP2040)
 void delay(unsigned long ms);
 void delayMicroseconds(unsigned int us);
 #else

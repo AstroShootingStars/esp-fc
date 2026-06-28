@@ -1572,7 +1572,7 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         if(m.remain() < 1) break;
         size_t count = m.readU8();
         const int packetSize = 1 + 4 + 1 + 1 + 1 + 1;
-        if(m.remain() < (count * packetSize)) break;
+        if((size_t)m.remain() < (count * (size_t)packetSize)) break;
         while(count-- && m.remain() >= packetSize)
         {
           int id = m.readU8();
@@ -2988,9 +2988,13 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
         switch (ptMode)
         {
           case MSP_PASSTHROUGH_ESC_4WAY:
+#if defined(USE_SERIAL_4WAY_BLHELI_INTERFACE)
             r.writeU8(esc4wayInit());
             serialDeviceInit(&s, 0);
             _postCommand = std::bind(&MspProcessor::processEsc4way, this);
+#else
+            r.writeU8(0);
+#endif
             break;
           default:
             r.writeU8(0);
@@ -4064,7 +4068,9 @@ void MspProcessor::processEsc4way()
 #if defined(ESPFC_MULTI_CORE) && defined(ESPFC_FREE_RTOS)
   timer_pause(TIMER_GROUP_0, TIMER_0);
 #endif
+#if defined(USE_SERIAL_4WAY_BLHELI_INTERFACE)
   esc4wayProcess(getSerialPort());
+#endif
   processRestart();
 }
 

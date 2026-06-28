@@ -1,9 +1,11 @@
 #include "Wireless.h"
+#ifdef ESPFC_SERIAL_SOFT_0_WIFI
 #include <ArduinoOTA.h>
 #if defined(ESPFC_WIFI_ALT) || defined(ARCH_RP2040)
 #include <Updater.h>
 #else
 #include <Update.h>
+#endif
 #endif
 #include <algorithm>
 #include <cstdio>

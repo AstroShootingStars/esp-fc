@@ -3,6 +3,10 @@
 
 #include <Arduino.h>
 
+#ifndef FPSTR
+#define FPSTR(pstr_pointer) (pstr_pointer)
+#endif
+
 #ifdef ESPFC_DEBUG_PIN
 #include "Hal/Gpio.h"
 #define PIN_DEBUG(v) ::Espfc::Hal::Gpio::digitalWrite(ESPFC_DEBUG_PIN, v)

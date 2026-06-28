@@ -1,6 +1,10 @@
 #pragma once
 
-#if defined(ESP32C3)
+#if defined(STM32H7xx) || defined(STM32H7)
+  #include "TargetSTM32h7.h"
+#elif defined(STM32F7xx) || defined(STM32F7)
+  #include "TargetSTM32f7.h"
+#elif defined(ESP32C3)
   #include "TargetESP32c3.h"
 #elif defined(ESP32S2)
   #include "TargetESP32s2.h"

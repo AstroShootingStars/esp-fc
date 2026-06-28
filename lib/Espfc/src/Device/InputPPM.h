@@ -29,6 +29,7 @@ class InputPPM: public InputDevice
 
     void handle();
     static void handle_isr(void* args);
+    static void handle_isr_noarg();
 
     volatile uint16_t _channels[CHANNELS];
     volatile uint32_t _last_tick;

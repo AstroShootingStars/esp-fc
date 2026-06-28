@@ -15,7 +15,11 @@ namespace Utils {
 
 int Storage::begin()
 {
+#if defined(STM32F7xx) || defined(STM32F7) || defined(STM32H7xx) || defined(STM32H7)
+  EEPROM.begin();
+#else
   EEPROM.begin(EEPROM_SIZE);
+#endif
   static_assert(sizeof(ModelConfig) <= EEPROM_SIZE, "ModelConfig Size too big");
   return 1;
 }
@@ -62,7 +66,11 @@ StorageResult Storage::save(const ModelConfig& config)
   EEPROM.write(addr++, size & 0xFF);
   EEPROM.write(addr++, (size >> 8) & 0xFF);
   EEPROM.put(addr, config);
+#if defined(STM32F7xx) || defined(STM32F7) || defined(STM32H7xx) || defined(STM32H7)
+  bool ok = true;
+#else
   bool ok = EEPROM.commit();
+#endif
   if(!ok) return STORAGE_SAVE_ERROR;
   return STORAGE_SAVE_SUCCESS;
 }

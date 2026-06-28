@@ -53,6 +53,14 @@ void FAST_CODE_ATTR BusSPI::transfer(uint8_t devAddr, uint8_t regAddr, uint8_t l
 #if defined(ARCH_RP2040)
   _dev.transfer(regAddr);
   _dev.transfer(in, out, length);
+#elif defined(STM32F7xx) || defined(STM32F7) || defined(STM32H7xx) || defined(STM32H7)
+  _dev.transfer(regAddr);
+  for(uint8_t i = 0; i < length; i++)
+  {
+    const uint8_t tx = in ? in[i] : 0;
+    const uint8_t rx = _dev.transfer(tx);
+    if(out) out[i] = rx;
+  }
 #else
   _dev.transfer(regAddr);
   _dev.transferBytes(in, out, length);

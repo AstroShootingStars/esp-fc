@@ -6,11 +6,16 @@ namespace Espfc {
 
 namespace Device {
 
+static InputPPM* g_inputPpmInstance = nullptr;
+
 void InputPPM::begin(uint8_t pin, int mode)
 {
   if(_pin != -1)
   {
     detachInterrupt(_pin);
+#if defined(STM32F7xx) || defined(STM32F7) || defined(STM32H7xx) || defined(STM32H7)
+    if(g_inputPpmInstance == this) g_inputPpmInstance = nullptr;
+#endif
     _pin = -1;
   }
   if(pin != -1)
@@ -27,6 +32,9 @@ void InputPPM::begin(uint8_t pin, int mode)
     // no mock available
 #elif defined(ARCH_RP2040)
     attachInterruptParam(_pin, InputPPM::handle_isr, (PinStatus)mode, this);
+#elif defined(STM32F7xx) || defined(STM32F7) || defined(STM32H7xx) || defined(STM32H7)
+  g_inputPpmInstance = this;
+  attachInterrupt(_pin, InputPPM::handle_isr_noarg, mode);
 #else
     attachInterruptArg(_pin, InputPPM::handle_isr, this, mode);
 #endif
@@ -88,6 +96,11 @@ void IRAM_ATTR InputPPM::handle()
 void IRAM_ATTR InputPPM::handle_isr(void* args)
 {
   if(args) reinterpret_cast<InputPPM*>(args)->handle();
+}
+
+void IRAM_ATTR InputPPM::handle_isr_noarg()
+{
+  if(g_inputPpmInstance) g_inputPpmInstance->handle();
 }
 
 }
