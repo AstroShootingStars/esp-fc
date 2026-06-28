@@ -120,6 +120,7 @@ static const ws2812_pixel_t PIXEL_OK[] = {{0x80, 0x00, 0x00}};     // green
 // Use strong red + medium green so ERROR appears clearly orange/yellow even if
 // board/channel ordering differs from expected GRB mapping.
 static const ws2812_pixel_t PIXEL_ERROR[] = {{0x60, 0xFF, 0x00}};
+static const ws2812_pixel_t PIXEL_ARMED[] = {{0x00, 0x00, 0xC0}};  // blue
 static const ws2812_pixel_t PIXEL_OFF[] = {{0, 0, 0}};
 
 #endif
@@ -265,6 +266,7 @@ static int LED_OFF_PATTERN[] = {0};
 static int LED_BOOT_PATTERN[] = {80, 80, 80, 300, 0};
 static int LED_OK_PATTERN[] = {100, 900, 0};
 static int LED_ERROR_PATTERN[] = {100, 100, 100, 100, 100, 1500, 0};
+static int LED_ARMED_PATTERN[] = {125, 125, 0};
 static int LED_ON_PATTERN[] = {100, 0};
 
 StatusLed::StatusLed() : _pin(-1), _invert(0), _status(LED_OFF), _next(0), _state(LOW), _step(0), _pattern(LED_OFF_PATTERN) {}
@@ -307,6 +309,10 @@ void StatusLed::setStatus(LedStatus newStatus, bool force)
       break;
     case LED_ERROR:
       _pattern = LED_ERROR_PATTERN;
+      break;
+    case LED_ARMED:
+      _pattern = LED_ARMED_PATTERN;
+      _state = HIGH;
       break;
     case LED_ON:
       _pattern = LED_ON_PATTERN;
@@ -461,6 +467,9 @@ void StatusLed::_write(uint8_t val)
         break;
       case LED_ERROR:
         ws2812_update(PIXEL_ERROR, 1);
+        break;
+      case LED_ARMED:
+        ws2812_update(PIXEL_ARMED, 1);
         break;
       case LED_ON:
       case LED_OK:

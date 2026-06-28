@@ -19,6 +19,7 @@ enum LedStatus
   LED_BOOT,
   LED_OK,
   LED_ERROR,
+  LED_ARMED,
   LED_ON,
 };
 

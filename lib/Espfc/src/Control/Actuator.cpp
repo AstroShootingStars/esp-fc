@@ -708,9 +708,13 @@ void Actuator::updateLed()
     return;
   }
 
-  if(_model.isModeActive(MODE_ARMED) || _model.state.mode.isLongClickActive())
+  if(_model.isModeActive(MODE_ARMED))
   {
-    if(_model.state.mode.isLongClickActive()) _model.setGpsHome();
+    _model.state.led.setStatus(Connect::LED_ARMED);
+  }
+  else if(_model.state.mode.isLongClickActive())
+  {
+    _model.setGpsHome();
     _model.state.led.setStatus(Connect::LED_ON);
   }
   else
