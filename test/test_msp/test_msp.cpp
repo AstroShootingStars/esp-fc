@@ -8,6 +8,7 @@
 #include "Connect/Msp.hpp"
 #include "Connect/MspParser.hpp"
 #include "Connect/MspProcessor.hpp"
+#include "Output/Mixer.h"
 #include "msp/msp_protocol.h"
 #include <Gps.hpp>
 #include <vector>
@@ -452,6 +453,43 @@ void test_msp_set_sensor_alignment_api147_updates_mag_align()
   TEST_ASSERT_EQUAL_UINT8(ALIGN_CW270_DEG, model.config.mag.align);
 }
 
+void test_msp_set_motor_override_stays_active_until_explicit_clear()
+{
+  When(Method(ArduinoFake(), millis)).Return(1000, 11000);
+
+  Model model;
+  model.config.mixer.type = FC_MIXER_QUADX;
+  model.begin();
+
+  MspProcessor proc(model);
+  DummySerial serial;
+  MspResponse rsp;
+
+  uint8_t payload[OUTPUT_CHANNELS * 2] = {0};
+  payload[0] = 0xB0;
+  payload[1] = 0x04;
+  for(size_t i = 1; i < OUTPUT_CHANNELS; i++)
+  {
+    const size_t offset = i * 2;
+    payload[offset] = 0xE8;
+    payload[offset + 1] = 0x03;
+  }
+
+  auto msg = makeCmd(MSP_SET_MOTOR, payload, sizeof(payload));
+  proc.processCommand(msg, rsp, serial);
+
+  TEST_ASSERT_EQUAL_INT(1, rsp.result);
+  TEST_ASSERT_TRUE(model.state.output.disarmedOverrideActive);
+  TEST_ASSERT_EQUAL_UINT16(1200u, model.state.output.disarmed[0]);
+
+  Output::Mixer mixer(model);
+  float outputs[OUTPUT_CHANNELS] = {0};
+  mixer.writeOutput(model.state.currentMixer, outputs);
+
+  TEST_ASSERT_TRUE(model.state.output.disarmedOverrideActive);
+  TEST_ASSERT_EQUAL_UINT16(1200u, model.state.output.us[0]);
+}
+
 int main(int argc, char **argv)
 {
   UNITY_BEGIN();
@@ -472,6 +510,7 @@ int main(int argc, char **argv)
   RUN_TEST(test_msp2_gyro_sensor_itg3205_maps_to_bf_virtual);
   RUN_TEST(test_msp_sensor_alignment_payload_shape_api147);
   RUN_TEST(test_msp_set_sensor_alignment_api147_updates_mag_align);
+  RUN_TEST(test_msp_set_motor_override_stays_active_until_explicit_clear);
 
   return UNITY_END();
 }

@@ -9,8 +9,6 @@ namespace Output {
 
 namespace {
 
-constexpr uint32_t DISARMED_OVERRIDE_TIMEOUT_MS = 500u;
-
 bool isRxReadyForMotorOutput(const Model& model)
 {
   return model.state.input.frameCount >= 5
@@ -22,28 +20,6 @@ bool isRxReadyForMotorOutput(const Model& model)
 int16_t getSafeDisarmedMotorOutput(const Model& model)
 {
   return model.state.mixer.digitalOutput ? 0 : model.config.output.minCommand;
-}
-
-void clearStaleDisarmedOverride(Model& model)
-{
-  if(!model.state.output.disarmedOverrideActive)
-  {
-    return;
-  }
-
-  const uint32_t nowMs = millis();
-  if((uint32_t)(nowMs - model.state.output.disarmedOverrideTime) <= DISARMED_OVERRIDE_TIMEOUT_MS)
-  {
-    return;
-  }
-
-  model.state.output.disarmedOverrideActive = false;
-  for(size_t i = 0; i < OUTPUT_CHANNELS; i++)
-  {
-    model.state.output.disarmed[i] = model.config.output.channel[i].servo
-      ? model.config.output.channel[i].neutral
-      : model.config.output.minCommand;
-  }
 }
 
 int16_t resolveDisarmedOutput(const Model& model, const OutputChannelConfig& channel, int16_t requested)
@@ -306,8 +282,6 @@ float FAST_CODE_ATTR Mixer::limitOutput(float output, const OutputChannelConfig&
 void FAST_CODE_ATTR Mixer::writeOutput(const MixerConfig& mixer, float * out)
 {
   Utils::Stats::Measure mixerMeasure(_model.state.stats, COUNTER_MIXER_WRITE);
-
-  clearStaleDisarmedOverride(_model);
 
   bool stop = _stop();
   const uint8_t beaconCommand = stop ? dshotBeaconCommand() : 0;
