@@ -1,0 +1,7 @@
+{
+   "description": "riscv32-unknown-elf-gcc",
+   "name": "toolchain-rp2040-earlephilhower-riscv",
+   "system": [ "windows_amd64" ],
+   "url": "https://github.com/earlephilhower/pico-quick-toolchain",
+   "version": "5.140200.250530"
+}

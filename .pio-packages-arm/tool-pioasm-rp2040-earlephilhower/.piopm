@@ -1,0 +1,1 @@
+{"type": "tool", "name": "tool-pioasm-rp2040-earlephilhower", "version": "5.140200.250530", "spec": {"owner": "platformio", "id": null, "name": "tool-pioasm-rp2040-earlephilhower", "requirements": null, "uri": "https://github.com/earlephilhower/pico-quick-toolchain/releases/download/4.1.0/x86_64-w64-mingw32.pioasm-9fdfe11.250530.zip"}}

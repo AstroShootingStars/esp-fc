@@ -634,8 +634,10 @@ GPIO5 ◄─────├─ GPIO (optional)│  (Interrupt/shutdown)
             └─────────────────┘
 
 CLI Configuration:
-  set rangefinder_type VL53L0X
-  set rangefinder_address 0x29    # Default I2C address
+  set range_bottom_bus I2C
+  set range_bottom_dev VL53L0X
+  set range_bottom_addr 41        # 0x29 in decimal
+  set range_bottom_enabled 1
   save
 ```
 
@@ -643,17 +645,14 @@ CLI Configuration:
 
 **Enable landing assist mode:**
 ```bash
-# Prerequisite: Enable landing assist in Betaflight Configuration tab
-# Then configure landing speed and behavior
-
-# Enable landing assist feature (if available)
-set landing_assist_mode SOFT    # or AUTO
-
-# Set landing sensitivity (lower = more aggressive)
-set landing_throttle 1000       # Minimum throttle during landing
-
-# Set altitude to trigger landing assist (if rangefinder present)
-set landing_assist_altitude 50  # cm above ground (optional)
+# Landing assist is CLI-configurable
+set landing_assist_enabled 1
+set landing_assist_thr_margin 35
+set landing_assist_desc_rate -90
+set landing_assist_desc_gain 250
+set landing_assist_desc_max 350
+set landing_assist_hold_ms 450
+set landing_assist_ramp 20
 
 save
 ```
@@ -674,7 +673,7 @@ preset landing_indoor
 preset landing_outdoor
 
 # Freeestyle mode (disable auto-landing for tricks)
-preset landing_disabled
+preset landing_freestyle
 ```
 
 ---
@@ -709,9 +708,10 @@ GND ────────├─ GND            │
             └─────────────────┘
 
 CLI Configuration:
-  set pin_input_rf_bottom 14        # Trigger GPIO
-  set pin_input_rf_bottom_echo 27   # Echo GPIO
-  set rangefinder_type HCSR04       # Specify sensor type
+  set range_bottom_bus I2C
+  set range_bottom_dev VL53L0X
+  set range_bottom_addr 41
+  set range_bottom_enabled 1
   save
 ```
 
@@ -727,9 +727,10 @@ GND ────────├─ GND            │
             └─────────────────┘
 
 CLI Configuration:
-  set rangefinder_type VL53L0X
-  set rangefinder_position FRONT
-  set rangefinder_address 0x29
+  set range_front_bus I2C
+  set range_front_dev VL53L0X
+  set range_front_addr 41
+  set range_front_enabled 1
   save
 ```
 
@@ -743,14 +744,17 @@ GPIO27 (ECHO)           |        GPIO21 (SDA)
 5V, GND                 |        3.3V, GND
 
 CLI Configuration:
-  # Bottom rangefinder (GPIO-based)
-  set pin_input_rf_bottom 14
-  set pin_input_rf_bottom_echo 27
-  set rangefinder_type HCSR04
+  # Bottom rangefinder
+  set range_bottom_bus I2C
+  set range_bottom_dev VL53L0X
+  set range_bottom_addr 41
+  set range_bottom_enabled 1
   
-  # Front rangefinder (I2C-based)
-  set rangefinder_type_front VL53L0X
-  set rangefinder_address_front 0x29
+  # Front rangefinder
+  set range_front_bus I2C
+  set range_front_dev VL53L0X
+  set range_front_addr 41
+  set range_front_enabled 1
   
   save
 ```
@@ -762,51 +766,35 @@ CLI Configuration:
 
 **Enable obstacle detection:**
 ```bash
-# Enable bottom rangefinder (landing / altitude support)
-set rangefinder_enabled 1
-set rangefinder_type HCSR04         # or VL53L0X, TFMINI, etc.
-set pin_input_rf_bottom 14
-set pin_input_rf_bottom_echo 27
+# Bottom sensor for altitude/landing context
+set range_bottom_bus I2C
+set range_bottom_dev VL53L0X
+set range_bottom_addr 41
+set range_bottom_enabled 1
 save
 
-# Verify detection
-status                              # Should show rangefinder data
-range_bottom                        # Read bottom rangefinder values
+# Verify detection/config
+status
+range_bottom
 ```
 
 **Enable front obstacle detection:**
 ```bash
-set rangefinder_front_enabled 1
-set rangefinder_type_front VL53L0X
-set rangefinder_address_front 0x29
+set range_front_bus I2C
+set range_front_dev VL53L0X
+set range_front_addr 41
+set range_front_enabled 1
 save
 
-range_front                         # Read front rangefinder values
+range_front
 ```
 
-**Set obstacle warning thresholds:**
+**Set obstacle behavior:**
 ```bash
-# Buzzer alarm if obstacle closer than X cm
-set rangefinder_alert_distance 50   # 50 cm warning threshold
-set rangefinder_max_range 400       # Max measurement range
-
-# Landing assist triggers at this altitude
-set landing_trigger_altitude 30     # 30 cm above ground
-
-save
-```
-
-**Obstacle avoidance tuning:**
-```bash
-# Increase responsiveness to obstacles
-set rangefinder_filter_samples 1    # Raw, unfiltered (fast)
-set rangefinder_filter_samples 3    # Averaged (smoother)
-
-# Adjust altitude fusion blending (barometer vs rangefinder)
-set altitude_fusion_mode GPS_BARO   # GPS + Barometer only
-set altitude_fusion_mode GPS_BARO_RF # GPS + Barometer + Rangefinder
-
-save
+# Obstacle-avoidance parameters are not exposed as direct CLI keys.
+# Configure via MSP2 custom messages:
+# - MSP2_ESPFC_OBSTACLE_AVOIDANCE_CONFIG (0x1F0D)
+# - MSP2_ESPFC_SET_OBSTACLE_AVOIDANCE_CONFIG (0x1F0E)
 ```
 
 ---
@@ -829,7 +817,7 @@ save
 - **Minimum**: 1x Rangefinder (bottom or front)
 - **Recommended**: Dual rangefinders (bottom + front)
 - **Optional**: Lidar for extended range (30+ meters)
-- **CLI Enable**: `set rangefinder_enabled 1` + sensor type/pins
+- **CLI Enable**: `set range_front_*` plus sensor config; obstacle tuning itself uses MSP2 custom config
 
 ---
 
@@ -839,10 +827,10 @@ save
 |---|---|---|
 | **Barometer not detected** | `status` shows "baro rate: 0 Hz" | Verify I2C/SPI bus, check address (0x76/0x77), reboot |
 | **Altitude jumps erratically** | Altitude oscillates by ±10 cm | Increase `vario_i`; check sensor noise; verify ground plane |
-| **Landing assist too aggressive** | Throttle cuts suddenly | Increase `landing_throttle` threshold; reduce sensitivity |
+| **Landing assist too aggressive** | Throttle cuts suddenly | Make descent limiter gentler (`landing_assist_desc_rate`, `landing_assist_desc_gain`) |
 | **Rangefinder returns 0 cm** | Obstacle avoidance inactive | Check GPIO connections; verify sensor power; test with `range_bottom` |
 | **Front rangefinder not working** | Dual setup, front data missing | Verify second sensor I2C address; check for address conflicts |
 | **Ultrasonic noise interference** | HC-SR04 readings jump 10+ cm | Add 100nF capacitor on echo pin; move sensor away from EMI |
-| **Lidar thermal drift** | VL53L0X accuracy decreases over time | Enable `rangefinder_temp_compensation`; warm up sensor first |
+| **Lidar thermal drift** | VL53L0X accuracy decreases over time | Enable `rangefinder_temp_compensation_enabled`; warm up sensor first |
 
 

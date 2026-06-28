@@ -5,6 +5,9 @@
 #include <hardware/gpio.h>
 #include <hardware/pwm.h>
 #include <hardware/dma.h>
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+#include "rp_pwm.pio.h"
+#endif
 
 // spec
 //#define DSHOT150_T0H 2500u
@@ -16,10 +19,101 @@
 #define DSHOT150_T1H 4666u
 #define DSHOT150_T   6666u
 
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+namespace {
+int g_rp_pwm_program_offset[2] = { -1, -1 };
+}
+
+bool EscDriverRP2040::isPioOffloadProtocol() const
+{
+  return _protocol == ESC_PROTOCOL_PWM
+    || _protocol == ESC_PROTOCOL_ONESHOT125
+    || _protocol == ESC_PROTOCOL_ONESHOT42
+    || _protocol == ESC_PROTOCOL_MULTISHOT
+    || _protocol == ESC_PROTOCOL_BRUSHED;
+}
+
+bool EscDriverRP2040::isPioOffloadActive() const
+{
+  return _pio_enabled && isPioOffloadProtocol();
+}
+
+uint32_t EscDriverRP2040::pioPulseToCycles(uint32_t us) const
+{
+  const uint32_t safeUs = constrain(us, 1u, _pio_interval_us > 2 ? _pio_interval_us - 2u : 1u);
+  return safeUs > 2 ? safeUs - 2u : 1u;
+}
+
+void EscDriverRP2040::pioInitChannel(size_t channel, int pin)
+{
+  if(channel >= ESC_CHANNEL_COUNT) return;
+
+  PioSlot& slot = _pio_slots[channel];
+  slot.active = true;
+  slot.pulse = 0;
+
+  slot.pio = (channel < 4) ? pio0 : pio1;
+  slot.sm = channel % 4;
+
+  const uint8_t pioIndex = (slot.pio == pio0) ? 0 : 1;
+  if(g_rp_pwm_program_offset[pioIndex] < 0)
+  {
+    g_rp_pwm_program_offset[pioIndex] = pio_add_program(slot.pio, &rp_pwm_program);
+  }
+  slot.offset = (uint)g_rp_pwm_program_offset[pioIndex];
+
+  pio_gpio_init(slot.pio, pin);
+  pio_sm_set_consecutive_pindirs(slot.pio, slot.sm, pin, 1, true);
+
+  pio_sm_config config = rp_pwm_program_get_default_config(slot.offset);
+  sm_config_set_sideset_pins(&config, pin);
+  sm_config_set_fifo_join(&config, PIO_FIFO_JOIN_TX);
+  sm_config_set_clkdiv(&config, (float)clock_get_hz(clk_sys) / 1000000.0f);
+
+  pio_sm_init(slot.pio, slot.sm, slot.offset, &config);
+  pio_sm_set_enabled(slot.pio, slot.sm, true);
+}
+
+void EscDriverRP2040::pioWriteChannel(size_t channel)
+{
+  if(channel >= ESC_CHANNEL_COUNT) return;
+  PioSlot& slot = _pio_slots[channel];
+  if(!slot.active || slot.pio == nullptr) return;
+
+  const uint32_t periodUs = _pio_interval_us ? _pio_interval_us : 20000u;
+  uint32_t highUs = constrain((uint32_t)slot.pulse, 1u, periodUs > 2 ? periodUs - 2u : 1u);
+  uint32_t lowUs = periodUs > highUs ? periodUs - highUs : 1u;
+
+  pio_sm_put_blocking(slot.pio, slot.sm, pioPulseToCycles(highUs));
+  pio_sm_put_blocking(slot.pio, slot.sm, pioPulseToCycles(lowUs));
+}
+
+void EscDriverRP2040::pioEnd()
+{
+  for(size_t i = 0; i < ESC_CHANNEL_COUNT; ++i)
+  {
+    PioSlot& slot = _pio_slots[i];
+    if(!slot.active || slot.pio == nullptr) continue;
+    pio_sm_set_enabled(slot.pio, slot.sm, false);
+    slot.active = false;
+  }
+}
+#endif
+
 int IRAM_ATTR EscDriverRP2040::attach(size_t channel, int pin, int pulse)
 {
   if(channel >= ESC_CHANNEL_COUNT) return 0;
   if(pin > 28) return 0;
+
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+  if(isPioOffloadProtocol())
+  {
+    _slots[channel].pin = pin;
+    _slots[channel].rawPulse = pulse;
+    pioInitChannel(channel, pin);
+    return 1;
+  }
+#endif
 
   _slots[channel].pin = pin;
   _slots[channel].pulse = usToTicks(pulse);
@@ -100,12 +194,31 @@ bool EscDriverRP2040::isSliceDriven(int slice)
 int IRAM_ATTR EscDriverRP2040::write(size_t channel, int pulse)
 {
   if(channel >= ESC_CHANNEL_COUNT) return 0;
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+  if(isPioOffloadProtocol())
+  {
+    _slots[channel].rawPulse = pulse;
+    return 1;
+  }
+#endif
   _slots[channel].pulse = usToTicks(pulse);
   return 1;
 }
 
 void IRAM_ATTR EscDriverRP2040::apply()
 {
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+  if(isPioOffloadActive())
+  {
+    for(size_t i = 0; i < ESC_CHANNEL_COUNT; ++i)
+    {
+      if(!_slots[i].active()) continue;
+      _slots[i].pulse = _slots[i].rawPulse;
+      pioWriteChannel(i);
+    }
+    return;
+  }
+#endif
   if(_protocol >= ESC_PROTOCOL_DSHOT150 && _protocol <= ESC_PROTOCOL_DSHOT600)
   {
     dshotWriteDMA();
@@ -164,6 +277,11 @@ uint32_t EscDriverRP2040::nsToDshotTicks(uint32_t ns)
 EscDriverRP2040::EscDriverRP2040(): _protocol(ESC_PROTOCOL_PWM), _async(true), _rate(50), _timer(ESC_DRIVER_TIMER1), _divider(F_CPU / 3 / 1000000ul), _interval(usToTicksReal(1000000uL / _rate))
 {
   for(size_t i = 0; i < ESC_CHANNEL_COUNT; ++i) _slots[i] = Slot();
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+  for(size_t i = 0; i < ESC_CHANNEL_COUNT; ++i) _pio_slots[i] = PioSlot();
+  _pio_enabled = false;
+  _pio_interval_us = 0;
+#endif
 }
 
 int EscDriverRP2040::begin(const EscConfig& conf)
@@ -173,6 +291,11 @@ int EscDriverRP2040::begin(const EscConfig& conf)
   _async = _protocol == ESC_PROTOCOL_BRUSHED ? true : conf.async; // force async for brushed
   _rate = constrain(conf.rate, 50, 8000);
   _interval = usToTicksReal(1000000ul / _rate);
+
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+  _pio_enabled = true;
+  _pio_interval_us = 1000000ul / _rate;
+#endif
 
   _dl = nsToDshotTicks(DSHOT150_T0H);
   _dh = nsToDshotTicks(DSHOT150_T1H);
@@ -200,6 +323,14 @@ int EscDriverRP2040::begin(const EscConfig& conf)
       break;
   }
 
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+  if(isPioOffloadProtocol())
+  {
+    clearDmaBuffer();
+    return 1;
+  }
+#endif
+
   clearDmaBuffer();
 
   return 1;
@@ -207,6 +338,13 @@ int EscDriverRP2040::begin(const EscConfig& conf)
 
 void EscDriverRP2040::end()
 {
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+  if(isPioOffloadActive())
+  {
+    pioEnd();
+    return;
+  }
+#endif
   for(size_t i = 0; i < ESC_CHANNEL_COUNT; ++i)
   {
     if(!_slots[i].active()) continue;

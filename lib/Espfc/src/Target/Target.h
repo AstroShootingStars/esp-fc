@@ -14,6 +14,8 @@
   #include "TargetESP32.h"
 #elif defined(ESP8266)
   #include "TargetESP8266.h"
+#elif defined(ARCH_RP2350B)
+  #include "TargetRP2350b.h"
 #elif defined(ARCH_RP2040)
   #include "TargetRP2040.h"
 #elif defined(UNIT_TEST)

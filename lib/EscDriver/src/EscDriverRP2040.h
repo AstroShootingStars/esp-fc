@@ -5,6 +5,10 @@
 
 #include "EscDriver.h"
 #include <hardware/dma.h>
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+#include <hardware/pio.h>
+#include <hardware/clocks.h>
+#endif
 
 // TODO: 
 // https://cocode.se/linux/raspberry/pwm.html
@@ -23,9 +27,10 @@ class EscDriverRP2040: public EscDriverBase
     class Slot
     {
       public:
-        Slot(): pin(-1), pulse(0), slice(0), channel(0), drive(false) {}
+        Slot(): pin(-1), pulse(0), rawPulse(0), slice(0), channel(0), drive(false) {}
         int pin;
         int pulse;
+        int rawPulse;
         int slice;
         int channel;
         bool drive;
@@ -53,6 +58,28 @@ class EscDriverRP2040: public EscDriverBase
     void dshotWriteDMA();
     bool isSliceDriven(int slice);
     void clearDmaBuffer();
+
+#if defined(ESPFC_RP_PIO_OFFLOAD) || defined(ESPFC_RP2350_PIO_OFFLOAD)
+    struct PioSlot
+    {
+      PioSlot(): pio(nullptr), sm(0), offset(0), pulse(0), active(false) {}
+      PIO pio;
+      uint sm;
+      uint offset;
+      uint32_t pulse;
+      bool active;
+    };
+
+    bool isPioOffloadActive() const;
+    bool isPioOffloadProtocol() const;
+    void pioInitChannel(size_t channel, int pin);
+    void pioWriteChannel(size_t channel);
+    void pioEnd();
+
+    PioSlot _pio_slots[ESC_CHANNEL_COUNT];
+    bool _pio_enabled;
+    uint32_t _pio_interval_us;
+#endif
 
     EscProtocol _protocol;
     bool _async;

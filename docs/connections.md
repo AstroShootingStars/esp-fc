@@ -4,6 +4,26 @@
 
 For quick per-target feature and serial-port availability, see [Board capability matrix](setup.md#board-capability-matrix).
 
+## All Boards Quick Connection Matrix
+
+Use this as a fast wiring index before opening the detailed pinout sections below.
+
+| Board Family | Motor Outputs (default) | RX Serial (default) | VTX SmartAudio (default) | I2C (default) | SPI (default) |
+|---|---|---|---|---|---|
+| ESP32 | GPIO27, GPIO25, GPIO4, GPIO12 | UART2 RX=GPIO16 TX=GPIO17 | UART1 TX=GPIO33 RX=GPIO32 | SDA=GPIO21 SCL=GPIO22 | SCK=GPIO18 MOSI=GPIO23 MISO=GPIO19 CS_GYRO=GPIO5 CS_BARO=GPIO13 |
+| ESP32-S2 | GPIO39, GPIO40, GPIO41, GPIO42 | UART1 RX=GPIO16 TX=GPIO17 | UART0 TX=GPIO43 RX=GPIO44 | SDA=GPIO8 SCL=GPIO9 | SCK=GPIO12 MOSI=GPIO11 MISO=GPIO13 CS_GYRO=GPIO10 CS_BARO=GPIO7 |
+| ESP32-S3 (all variants) | GPIO39, GPIO40, GPIO41, GPIO42 | UART2 RX=GPIO17 TX=GPIO18 | UART0 TX=GPIO43 RX=GPIO44 | SDA=GPIO9 SCL=GPIO10 | SCK=GPIO12 MOSI=GPIO11 MISO=GPIO13 CS_GYRO=GPIO8 CS_BARO=GPIO7 |
+| ESP32-C3 | GPIO2, GPIO3, GPIO4, GPIO5 | Board default UART RX_SERIAL | UART0 TX=GPIO21 RX=GPIO20 | I2C supported (see board defaults) | Not used by default target profile |
+| ESP8266 (D1 mini) | GPIO16, GPIO14, GPIO12, GPIO15 | UART0 RX=GPIO3 TX=GPIO1 (shared MSP) | UART1 TX=GPIO2 (TX-only) | SDA=GPIO4 SCL=GPIO5 | Not used by default target profile |
+| RP2040 (Pico) | GPIO2, GPIO3, GPIO4, GPIO5 | UART1 RX=GPIO9 TX=GPIO8 | UART0 TX=GPIO0 RX=GPIO1 | SDA=GPIO6 SCL=GPIO7 | SCK=GPIO10 MOSI=GPIO11 MISO=GPIO12 CS_GYRO=GPIO13 CS_BARO=GPIO14 |
+| RP2350 / RP2350B | GPIO2, GPIO3, GPIO4, GPIO5 | UART1 RX=GPIO9 TX=GPIO8 | UART0 TX=GPIO0 RX=GPIO1 | SDA=GPIO6 SCL=GPIO7 | SCK=GPIO10 MOSI=GPIO11 MISO=GPIO12 CS_GYRO=GPIO13 CS_BARO=GPIO14 |
+| STM32F7 / STM32H7 | D3, D5, D6, D9 | UART0 (`Serial`) | Not assigned by default | SDA=D14 SCL=D15 | SCK=D13 MOSI=D11 MISO=D12 CS_GYRO=D10 CS_BARO=D4 |
+
+Notes:
+- RP2350B ARM and Hazard3 RISC-V environments share the same pin defaults.
+- ESP32-S3 variants (`esp32s3`, `esp32s3_devkitc`, `esp32s3_wroom`, `esp32s3_n8r8`, `esp32s3_n8r16`) share the same FC wiring defaults.
+- For any remap, use `get pin` and `set pin_*` commands in the CLI, then `save` and `reboot`.
+
 ```
 Pin | Function         | ESP-8266 Pin | ESPFC external device
 ----+------------------+--------------+----------------------------------------------

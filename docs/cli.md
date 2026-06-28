@@ -33,6 +33,29 @@ available commands:
  version
 ```
 
+## Command Function Index
+
+This index documents what each top-level CLI function does.
+
+| Command | Function | Typical Use |
+|---|---|---|
+| `help` | List supported top-level commands | Discover CLI capabilities on current firmware |
+| `version` | Print build version, API, compiler metadata | Confirm target/build before setup or debugging |
+| `status` | Show runtime rates, active sensors, arming flags, uptime | Live health/status checks |
+| `stats` | Show timing and CPU load per subsystem | Performance tuning and loop load validation |
+| `mode_debug` | Show AUX condition evaluation and active mode masks | Verify ARM/ANGLE/AIRMODE switch logic |
+| `dump` | Export full current configuration as CLI commands | Backup and migration |
+| `get` | Read one setting or list matching settings | Inspect current values before changing |
+| `set` | Write one or more configuration values | Board setup, tuning, remapping |
+| `cal` | Run calibration (for example gyro calibration) | Bench calibration after wiring changes |
+| `scaler` | Configure input/output scaling profiles | Advanced receiver/output shaping |
+| `mixer` | Configure mixer/output model | Custom output and mixer behavior |
+| `defaults` | Reset configuration to board defaults | Recover from invalid configuration |
+| `save` | Persist current config to storage | Commit changes before reboot |
+| `reboot` | Reboot board and reload saved config | Apply saved settings |
+
+All commands are available across supported targets, but effective behavior depends on board capabilities (serial ports, buses, wireless support). For board-specific limits, see [Board capability matrix](setup.md#board-capability-matrix).
+
 ## Informational
 
 ### Version
@@ -262,11 +285,135 @@ set mode_0 0 4 1300 2100 0 0
  - `{link_id}`: referenced condition index used when `logic_mode` is `1`
 
 Mode IDs:
- - 0: arming
- - 1: angle
- - 2: air mode
- - 3: buzzer
- - 4: failsafe
+ - 0: ARM
+ - 1: AIRMODE
+ - 2: ANGLE
+ - 3: HORIZON
+ - 4: ALTHOLD
+ - 5: BEEPER
+ - 6: FAILSAFE
+ - 7: BLACKBOX
+ - 8: BLACKBOX_ERASE
+ - 9: MAG
+ - 10: HEADFREE
+ - 11: HEADADJ
+ - 12: CALIB
+ - 13: GPS_RESCUE
+ - 14: PREARM
+ - 15: FLIP_OVER_AFTER_CRASH
+ - 16: USER1
+ - 17: USER2
+ - 18: USER3
+ - 19: USER4
+ - 20: ACRO_TRAINER
+ - 21: LAUNCH_CONTROL
+ - 22: MSP_OVERRIDE
+ - 23: STICK_COMMANDS_DISABLE
+ - 24: BEEPER_MUTE
+ - 25: PARALYZE
+
+### Advanced modes and CLI-only tuning
+
+This section documents advanced behavior that is not fully configurable from standard Betaflight tabs.
+
+| Mode / Feature | Activation | Betaflight GUI | CLI / protocol parameters |
+|---|---|---|---|
+| Altitude Hold (`MODE_ALTHOLD`, id `4`) | Assign with `mode_{index}` to an AUX channel range | Partially visible depending configurator mapping; CLI is the reliable path | `mode_*`, `pid_althold_vel_p`, `pid_althold_vel_i`, `pid_althold_vel_d`, `pid_althold_vel_f`, `pid_althold_iterm_center`, `pid_althold_iterm_range`, `alt_fuse_*`, `range_bottom_*`, `opflow_*` |
+| Landing Assist (automatic touchdown logic) | Automatic while armed when landing intent is detected (no dedicated mode ID) | Not directly configurable in standard BF tabs | `landing_assist_enabled`, `landing_assist_thr_margin`, `landing_assist_desc_rate`, `landing_assist_desc_gain`, `landing_assist_desc_max`, `landing_assist_baro_h`, `landing_assist_baro_v`, `landing_assist_gps_down`, `landing_assist_gps_ground`, `landing_assist_flow_q`, `landing_assist_flow_hand_q`, `landing_assist_flow_rate`, `landing_assist_flow_hand_rate`, `landing_assist_hand_vario`, `landing_assist_hand_h_min`, `landing_assist_hand_h_max`, `landing_assist_hold_ms`, `landing_assist_ramp` |
+| Obstacle Avoidance (front rangefinder assisted) | Automatic when enabled and front rangefinder is present (no dedicated mode ID) | Not exposed by standard BF tabs | No direct CLI key in current firmware. Configure via MSP2 custom messages: `MSP2_ESPFC_OBSTACLE_AVOIDANCE_CONFIG (0x1F0D)` / `MSP2_ESPFC_SET_OBSTACLE_AVOIDANCE_CONFIG (0x1F0E)`. Related sensor setup in CLI: `range_front_*`, `opflow_*`. |
+
+Example: assign Altitude Hold to AUX2 high range:
+
+```bash
+set mode_3 4 5 1700 2100 0 0
+save
+reboot
+```
+
+Landing assist and altitude-fusion presets are available from CLI:
+
+```bash
+preset landing_indoor
+# or
+preset landing_outdoor
+# or
+preset landing_freestyle
+save
+reboot
+```
+
+### Copy-paste profiles (advanced modes)
+
+Use these quick profiles as starting points.
+
+#### Indoor hand-catch landing profile
+
+```bash
+preset landing_indoor
+set landing_assist_enabled 1
+set mode_3 4 5 1700 2100 0 0
+save
+reboot
+```
+
+#### Outdoor landing profile
+
+```bash
+preset landing_outdoor
+set landing_assist_enabled 1
+set mode_3 4 5 1700 2100 0 0
+save
+reboot
+```
+
+#### Freestyle quick touchdown profile
+
+```bash
+preset landing_freestyle
+set landing_assist_enabled 1
+save
+reboot
+```
+
+#### Front obstacle sensor setup profile (CLI + MSP2)
+
+```bash
+# Front rangefinder device setup via CLI
+set range_front_bus I2C
+set range_front_dev VL53L0X
+set range_front_addr 41
+set range_front_enabled 1
+
+# Optional bottom rangefinder for altitude context
+set range_bottom_bus I2C
+set range_bottom_dev VL53L0X
+set range_bottom_addr 41
+set range_bottom_enabled 1
+
+save
+reboot
+```
+
+After this, apply obstacle behavior settings via MSP2 custom config messages:
+- `MSP2_ESPFC_OBSTACLE_AVOIDANCE_CONFIG (0x1F0D)`
+- `MSP2_ESPFC_SET_OBSTACLE_AVOIDANCE_CONFIG (0x1F0E)`
+
+#### Altitude-hold tuning starter profile
+
+```bash
+set pid_althold_vel_p 80
+set pid_althold_vel_i 60
+set pid_althold_vel_d 40
+set pid_althold_vel_f 20
+set pid_althold_iterm_center 50
+set pid_althold_iterm_range 50
+set alt_fuse_baro_h_w 65
+set alt_fuse_baro_v_w 70
+set alt_fuse_range_h_w 95
+set alt_fuse_flow_v_w 20
+save
+reboot
+```
 
 ### Serial port configuration
 ```
@@ -484,6 +631,203 @@ Mixer Sources:
  - 9: rc aux 1
  - 10: rc aux 2
  - 11: rc aux 3
+
+## Parameter Family Appendix (All Functions)
+
+This appendix groups all configuration parameters by prefix so you can quickly find what to `get` / `set`.
+
+### Core / Feature Flags
+- Prefixes: `feature_`, `debug_`, `model_name`
+- Includes: feature toggles (GPS, dynamic notch, motor stop, receiver paths), debug stream selection.
+- Quick query: `get feature_`
+
+### Sensors and Fusion
+- Prefixes: `gyro_`, `accel_`, `mag_`, `baro_`, `fusion_`, `board_align_`
+- Includes: sensor bus/device selection, filter chain, offsets, dynamic notch/RPM filter, AHRS fusion gains.
+- Quick query: `get gyro_`
+
+### RC Input and Failsafe
+- Prefixes: `input_`, `failsafe_`, `mode_`, `scaler_`
+- Includes: channel mapping, interpolation/filtering, per-channel failover behavior, AUX mode conditions, inflight scaling.
+- Quick query: `get input_`
+
+### PID and Flight Control
+- Prefixes: `pid_`
+- Includes: roll/pitch/yaw gains, level mode gains, d-term filters, I-term behavior, TPA.
+- Quick query: `get pid_`
+
+### Mixer and Outputs
+- Prefixes: `mixer_`, `output_`, `mix_`, `mix_outputs`
+- Includes: mixer type, custom mix rules, motor protocol/rate, throttle limits, per-output min/neutral/max.
+- Quick query: `get output_`
+
+### Pins and Hardware Mapping
+- Prefixes: `pin_`, `i2c_speed`
+- Includes: motor pins, serial pins, SPI/I2C pins, ADC pins, buzzer/LED polarity.
+- Quick query: `get pin_`
+
+### Serial, Telemetry, VTX, GPS
+- Prefixes: `serial_`, `telemetry_`, `gps_`, `vtx_`
+- Includes: serial role assignment, telemetry timing, GPS behavior, VTX band/channel/power.
+- Quick query: `get serial_`
+
+### Power and Battery
+- Prefixes: `vbat_`, `ibat_`
+- Includes: voltage/current source selection, scaling, offsets, warning thresholds.
+- Quick query: `get vbat_`
+
+### OSD, Display, and UI Devices
+- Prefixes: `osd_`, `oled_`, `buzzer`/beeper-related config
+- Includes: OSD profile/system/units/alarm, OLED bus/device/page timing, beeper mode behavior.
+- Quick query: `get osd_`
+
+### Blackbox and Logging
+- Prefixes: `blackbox_`
+- Includes: logging backend, rate, mode, per-signal logging switches.
+- Quick query: `get blackbox_`
+
+### Wireless / OTA
+- Prefixes: `wifi_`, `bt_ota`
+- Includes: WiFi SSID/password, TCP bridge port, OTA enable/port/password, BT OTA switch.
+- Quick query: `get wifi_`
+
+### Rescue / Misc Runtime
+- Prefixes: `rescue_`
+- Includes: rescue activation delay and related safety timing.
+- Quick query: `get rescue_`
+
+### Practical pattern-based lookup
+Use these commands to list complete parameter families directly from firmware:
+
+```bash
+get feature_
+get gyro_
+get accel_
+get mag_
+get baro_
+get fusion_
+get input_
+get failsafe_
+get mode_
+get scaler_
+get pid_
+get mixer_
+get output_
+get mix_
+get pin_
+get serial_
+get telemetry_
+get gps_
+get vtx_
+get vbat_
+get ibat_
+get osd_
+get oled_
+get blackbox_
+get wifi_
+get bt_ota
+get rescue_
+```
+
+Tip: after changing values, always run `save` and `reboot`.
+
+## Safe Defaults by Board Family
+
+These presets are intentionally conservative and focus on reliable first-flight behavior. Apply the profile that matches your target, then tune from there.
+
+### ESP32 Family (ESP32, ESP32-S2, ESP32-S3, ESP32-C3)
+
+Recommended for a stable initial setup with DShot and moderate filtering:
+
+```bash
+set feature_motor_stop 1
+set feature_rx_serial 1
+set output_motor_protocol DSHOT300
+set output_motor_poles 14
+set output_dshot_idle 550
+set gyro_lpf_type PT1
+set gyro_lpf_freq 100
+set gyro_lpf2_type PT1
+set gyro_lpf2_freq 213
+set pid_dterm_lpf_type PT1
+set pid_dterm_lpf_freq 128
+set input_rate_type ACTUAL
+set input_roll_rate 20
+set input_pitch_rate 20
+set input_yaw_rate 30
+set failsafe_delay 4
+save
+reboot
+```
+
+Optional on ESP32/ESP32-S3/ESP32-C3:
+
+```bash
+set wifi_ota 1
+save
+reboot
+```
+
+ESP32-S2 note: keep soft-serial WiFi disabled due to RAM limits.
+
+### RP2040 / RP2350 / RP2350B Family
+
+Recommended for USB-first bring-up with balanced loop load:
+
+```bash
+set feature_motor_stop 1
+set feature_rx_serial 1
+set output_motor_protocol DSHOT300
+set output_motor_poles 14
+set output_dshot_idle 550
+set gyro_lpf_type PT1
+set gyro_lpf_freq 100
+set pid_dterm_lpf_type PT1
+set pid_dterm_lpf_freq 128
+set input_interpolation AUTO
+set input_filter_type FILTER
+set failsafe_delay 4
+set telemetry_interval 1000
+save
+reboot
+```
+
+RP2350B note: ARM and Hazard3 RISC-V targets share the same runtime defaults and CLI profile.
+
+### STM32 Family (STM32F7, STM32H7, STM32H723, STM32H743VG)
+
+Recommended for scaffold targets where serial resources are limited:
+
+```bash
+set feature_motor_stop 1
+set feature_rx_serial 1
+set serial_0 1 115200 0
+set output_motor_protocol DSHOT300
+set output_motor_poles 14
+set gyro_lpf_type PT1
+set gyro_lpf_freq 100
+set pid_dterm_lpf_type PT1
+set pid_dterm_lpf_freq 128
+set failsafe_delay 4
+save
+reboot
+```
+
+STM32 note: assign RX/GPS/VTX serial roles manually after confirming available UART mappings on your board.
+
+### Battery and Arming Safety Baseline (All Boards)
+
+Apply these if you use analog battery monitoring:
+
+```bash
+set vbat_source 1
+set vbat_cell_warn 350
+set ibat_source 1
+save
+reboot
+```
+
+If your target does not have current-sense ADC wired, set `ibat_source 0`.
 
 ## All supported parameters
 

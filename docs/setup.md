@@ -56,6 +56,7 @@ Most flight controller features are available through the **Betaflight Configura
 | **ESP32-C3** | BFC GUI (Ports, I2C Sensors only, Motors, PID tabs) | WiFi config (soft-serial), pin remapping, I2C-only sensors |
 | **ESP8266** | BFC GUI (Ports, I2C Sensors, Motors, PID tabs) | I2C-only sensors, pin remapping (tight RAM) |
 | **RP2040** | BFC GUI + USB (best via USB CDC) | Pin remapping, rangefinder/opflow config, no WiFi |
+| **RP2350 / RP2350B** | BFC GUI + USB (best via USB CDC) | Pin remapping, optional Hazard3 RISC-V builds, no WiFi |
 | **STM32F7** | BFC GUI + UART/STLink workflow | Experimental scaffold setup, serial role remap, pin remap |
 | **STM32H7** (H743ZI/H723ZG/H743VGT6) | BFC GUI + UART/STLink workflow | Experimental scaffold setup, serial role remap, pin remap |
 
@@ -233,6 +234,7 @@ This behavior helps keep all boards configurable from Betaflight without serial-
 | ESP8266 | UART0 | Yes | Yes | No | Limited: prefer UART1 TX-only OSD targets or remapped pins |
 | RP2040 | USB CDC, UART0 | No | No | No | Yes, use free UART pins |
 | RP2350 | USB CDC, UART0 | No | No | No | Yes, use free UART pins |
+| RP2350B | USB CDC, UART0 | No | No | No | Yes, use free UART pins |
 | STM32F7 | UART0 (`Serial`) | No | No | No | Limited: assign manually on available serial resources |
 | STM32H7 | UART0 (`Serial`) | No | No | No | Limited: assign manually on available serial resources |
 
