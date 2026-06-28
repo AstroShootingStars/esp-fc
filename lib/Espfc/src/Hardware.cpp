@@ -117,12 +117,16 @@ int Hardware::begin()
   }
 #endif
 
+#if defined(ESPFC_I2C_0)
   _model.logger.info()
       .log(F("SENSORS"))
       .log(F("begin i2c sda/scl/speed"))
       .log(_model.config.pin[PIN_I2C_0_SDA])
       .log(_model.config.pin[PIN_I2C_0_SCL])
       .logln(_model.config.i2cSpeed);
+#else
+  _model.logger.info().log(F("SENSORS")).logln(F("i2c disabled"));
+#endif
 
   initBus();
 
@@ -345,6 +349,7 @@ void Hardware::detectGyro()
   if (_model.config.gyro.dev == GYRO_NONE) return;
 
   Device::GyroDevice* detectedGyro = nullptr;
+#if defined(ESPFC_I2C_0)
   auto scanGyroI2c = [&]() -> Device::GyroDevice* {
     Device::GyroDevice* gyro = nullptr;
     _model.logger.info().log(F("I2C")).log(F("scanning for gyro...")).logln("");
@@ -357,6 +362,7 @@ void Hardware::detectGyro()
     if (!gyro && detectDevice(lsm6dso, i2cBus)) gyro = &lsm6dso;
     return gyro;
   };
+#endif
 #if defined(ESPFC_SPI_0)
   if (_model.config.pin[PIN_SPI_CS0] != -1)
   {

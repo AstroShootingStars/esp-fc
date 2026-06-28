@@ -56,6 +56,15 @@ public:
     return *this;
   }
 
+  Logger& log(unsigned long long v)
+  {
+    LOG_SERIAL_DEBUG(' ')
+    LOG_SERIAL_DEBUG(v)
+    append(' ');
+    append(String((unsigned long)v));
+    return *this;
+  }
+
   template<typename T>
   Logger& loghex(const T& v)
   {
@@ -73,6 +82,15 @@ public:
     LOG_SERIAL_DEBUG(v)
     append(' ');
     append(String(v));
+    return endl();
+  }
+
+  Logger& logln(unsigned long long v)
+  {
+    LOG_SERIAL_DEBUG(' ')
+    LOG_SERIAL_DEBUG(v)
+    append(' ');
+    append(String((unsigned long)v));
     return endl();
   }
 

@@ -167,3 +167,11 @@ Espfc::Espfc espfc;
   }
 
 #endif
+
+#if defined(ESPFC_NATIVE_RUN_MAIN) && !defined(PIO_UNIT_TESTING)
+int main()
+{
+  setup();
+  return 0;
+}
+#endif

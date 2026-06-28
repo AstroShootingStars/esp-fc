@@ -375,7 +375,7 @@ bool Actuator::applyAdjustmentAbsolute(uint8_t stateIndex, uint8_t function, flo
       }
 
       const int effectiveCenter = center != 0 ? center : 100;
-      const int effectiveScale = scale != 0 ? std::abs(scale) : 125;
+      const int effectiveScale = scale != 0 ? (scale < 0 ? -scale : scale) : 125;
       const int multiplier = (int)std::clamp<long>(lrintf((float)effectiveCenter + input * (float)effectiveScale), 20l, 200l);
       bool changed = false;
       for(size_t axis = 0; axis < AXIS_COUNT_RPY; axis++)

@@ -188,8 +188,10 @@ void FAST_CODE_ATTR Controller::applyLandingAssist()
 
   if(gpsActive && state.gps.fix && state.gps.numSats >= _model.config.gps.minSats)
   {
-    gpsTouchdown = std::abs(state.gps.velocity.raw.down) < lac.gpsDownThresholdMms
-      && std::abs(state.gps.velocity.raw.groundSpeed) < lac.gpsGroundThresholdMms;
+    const int gpsDownAbs = state.gps.velocity.raw.down < 0 ? -state.gps.velocity.raw.down : state.gps.velocity.raw.down;
+    const int gpsGroundAbs = state.gps.velocity.raw.groundSpeed < 0 ? -state.gps.velocity.raw.groundSpeed : state.gps.velocity.raw.groundSpeed;
+    gpsTouchdown = gpsDownAbs < lac.gpsDownThresholdMms
+      && gpsGroundAbs < lac.gpsGroundThresholdMms;
   }
 
   if(flowActive)

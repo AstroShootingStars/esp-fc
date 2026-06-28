@@ -1592,7 +1592,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
       float max = _model.config.scaler[i].maxScale * 0.01f;
       float scale = Utils::map3(v, -1.f, 0.f, 1.f, min, min < 0 ? 0.f : 1.f, max);
       s.print(F("scaler: "));
-      s.print(i);
+      s.print((unsigned long)i);
       s.print(' ');
       s.print(mode);
       s.print(' ');
@@ -1614,7 +1614,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     for(size_t i = 0; i < MIXER_RULE_MAX; i++)
     {
       s.print(F("set mix_"));
-      s.print(i);
+      s.print((unsigned long)i);
       s.print(' ');
       p.print(s, mixer.mixes[i]);
       s.println();
@@ -1856,7 +1856,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
     s.println(getMotorCount());
     for (size_t i = 0; i < 8; i++)
     {
-      s.print(i);
+      s.print((unsigned long)i);
       s.print(PSTR(": "));
       if (i >= OUTPUT_CHANNELS || _model.config.pin[i + PIN_OUTPUT_0] == -1)
       {
@@ -1874,7 +1874,7 @@ void Cli::execute(CliCmd& cmd, Stream& s)
   {
     s.print(_model.logger.c_str());
     s.print(PSTR("usage: "));
-    s.println(_model.logger.length());
+    s.println((unsigned long)_model.logger.length());
   }
 #ifdef USE_FLASHFS
   else if(strcmp_P(cmd.args[0], PSTR("flash")) == 0)
@@ -2032,7 +2032,7 @@ void Cli::printModeDebug(Stream& s) const
     const int16_t val = input.us[c.ch];
 
     s.print(' ');
-    s.print(i);
+    s.print((unsigned long)i);
     s.print(' ');
     s.print(c.id);
     s.print(' ');
