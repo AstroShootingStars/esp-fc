@@ -407,14 +407,7 @@ void SerialManager::processMsp(SerialPortState& ss)
       }
 
       (void)byte;
-#ifdef ESPFC_SERIAL_USB
-      if(_current != SERIAL_USB)
-      {
-        _cli.process(*c, ss.cliCmd, *ss.stream);
-      }
-#else
       _cli.process(*c, ss.cliCmd, *ss.stream);
-#endif
     }
     c++;
   }

@@ -3705,6 +3705,12 @@ void MspProcessor::processCommand(MspMessage& m, MspResponse& r, Device::SerialD
       break;
 
     case MSP_TRANSPONDER_CONFIG:
+      // Return a disabled/default transponder config payload for compatibility.
+      // Payload format is provider + 6-byte ID data.
+      r.writeU8(0);
+      for(size_t i = 0; i < 6; i++) r.writeU8(0);
+      break;
+
     case MSP_V2_FRAME:
     case MSP_WP:
     case MSP_RESERVE_1:
