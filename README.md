@@ -4,7 +4,7 @@ The mini, DIY, Low cost, ESP32 based, high performance flight controller for hob
 
 # Features
 
-* Espressif targets (ESP32, ESP32-S3)
+* Multi-target support: ESP32 family, RP2040/RP2350, and experimental STM32F7/STM32H7
 * ESC protocols (PWM, Oneshot125/42, Multishot, Brushed, Dshot150/300/600 bidirectional)
 * PPM, SBUS, IBUS and CRSF Receivers
 * Builtin ESP-NOW receiver and WiFi configuration [read more...](/docs/wireless.md)
@@ -42,7 +42,7 @@ Join our **[Discord Channel](https://discord.gg/jhyPPM5UEH)** to get help
 ## Requirements
 
 Hardware:
-* ESP32 or ESP32-S3 board
+* Supported board (ESP32 family, RP2040/RP2350, or experimental STM32F7/STM32H7)
 * MPU9250 SPI or MPU6050 I2C gyro (GY-88, GY-91, GY-521 or similar)
 * PDB with 5V BEC
 * Buzzer and some electronic components (optional).
@@ -100,8 +100,8 @@ It prefers the TinyUSB CDC endpoint (typically used for MSP handshake), probes `
  * **ESP32-S3** - recommended
  * **ESP32-S2** - experimantal
  * **ESP32-C3** - experimantal, lack of performance, no FPU
-* **STM32F7** - experimental target scaffolding (STM32 core / HAL+LL)
-* **STM32H7** - experimental target scaffolding (STM32 core / HAL+LL)
+ * **STM32F7** - experimental target scaffolding (STM32 core / HAL+LL)
+ * **STM32H7** - experimental target scaffolding (STM32 core / HAL+LL)
  * **RP2350** - experimantal, partially works
  * **RP2040** - experimantal, lack of performance, no FPU
  * **ESP8266** - obsolete, no longer developed

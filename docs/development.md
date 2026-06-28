@@ -4,7 +4,7 @@
 
 ```
 pio run                      # build all targets
-pio run -e <target>          # build specific target like: esp32,esp32s3,...
+pio run -e <target>          # build specific target like: esp32,esp32s3,stm32f7,stm32h7,...
 pio run -e esp32 -t upload   # build and flash device
 pio test -e native           # run unit tests
 pio check                    # run static anlysis
@@ -25,6 +25,7 @@ examples
 
 ```
 docker compose run --rm espfc pio run -e esp32
+docker compose run --rm espfc pio run -e stm32f7
 docker compose run --rm espfc pio test -e native
 ```
 

@@ -20,6 +20,8 @@ Source of truth: target headers in `lib/Espfc/src/Target/Target*.h`, applied to 
 | **ESP8266** | GPIO16 (D0) | GPIO14 (D5) | GPIO12 (D6) | GPIO15 (D8) | None (4-output fixed) | Software PWM (≤400 Hz) |
 | **RP2040** (Pico) | GPIO2 | GPIO3 | GPIO4 | GPIO5 | Outputs 4–7 configurable (default `-1`) | Hardware PWM |
 | **RP2350** (Pico 2) | GPIO2 | GPIO3 | GPIO4 | GPIO5 | Outputs 4–7 configurable (default `-1`) | Hardware PWM |
+| **STM32F7** (Nucleo F767ZI, experimental) | D3 | D5 | D6 | D9 | None (4-output fixed) | Hardware PWM |
+| **STM32H7** (Nucleo H743ZI/H723ZG, H743VGT6 custom, experimental) | D3 | D5 | D6 | D9 | None (4-output fixed) | Hardware PWM |
 
 **Configuration:**
 - Use `set pin_output_n <gpio>` to remap a motor output to a different GPIO
@@ -27,6 +29,8 @@ Source of truth: target headers in `lib/Espfc/src/Target/Target*.h`, applied to 
 - **ESP32-S3 variants** (devkitc, wroom, n8r8, n8r16) share identical pin configuration
 - **ESP8266** uses software PWM with limited frequency (≤400 Hz); hardware PWM not available
 - **RP2040/RP2350** support up to 8 motor outputs (configure extras via `set pin_output_4..7`)
+- **STM32F7/STM32H7** support is currently experimental scaffold-level with board defaults tuned for Nucleo headers
+- **STM32H7** scaffold is build-validated on `nucleo_h743zi`, `nucleo_h723zg` (STM32H723ZGT6), and `stm32h743vgt6` (custom board definition)
 
 ## Default VTX Control Port Map
 
@@ -40,6 +44,8 @@ SmartAudio is the default VTX control protocol. Wire the VTX control line to the
 | ESP32-C3 | UART0 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO21 | GPIO20 | USB CDC remains default MSP link |
 | ESP8266 | UART1 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO2 (D4) | -1 | TX-only, suitable for SmartAudio |
 | RP2040 / RP2350 | UART0 / `SERIAL_FUNCTION_VTX_SMARTAUDIO` | GPIO0 | GPIO1 | USB CDC remains default MSP link |
+| STM32F7 | Not assigned by default | -1 | -1 | Single-UART scaffold; assign SmartAudio manually if needed |
+| STM32H7 | Not assigned by default | -1 | -1 | Single-UART scaffold; assign SmartAudio manually if needed |
 
 ## Default Buzzer / Beeper Pin Map
 
@@ -54,6 +60,62 @@ Default buzzer pins are assigned only where the target header defines `ESPFC_BUZ
 | ESP8266 | -1 | Not configured by default | Unassigned |
 | RP2040 | -1 | Not configured by default | Unassigned |
 | RP2350 | -1 | Not configured by default | Unassigned |
+| STM32F7 | -1 | Not configured by default | Unassigned |
+| STM32H7 | -1 | Not configured by default | Unassigned |
+
+## STM32F7 (Nucleo F767ZI, Experimental)
+
+**Overview**: Experimental STM32 scaffold target using Arduino STM32 core with HAL/LL integration.
+
+### Serial Ports
+- **UART0**: board default serial object (`Serial`) for MSP
+- **UART1/UART2**: not assigned by default in scaffold config
+
+### Communication Buses
+- **SPI**: SCK=D13, MOSI=D11, MISO=D12, CS_GYRO=D10, CS_BARO=D4
+- **I2C**: SCL=D15, SDA=D14
+
+### Sensors
+- **Gyroscope**: SPI or I2C (board wiring dependent)
+- **Barometer**: SPI or I2C (board wiring dependent)
+- **ADC**: available via remap; default ADC pins are unassigned (`-1`)
+
+### Motor Outputs
+- **Motor/ESC pins**: D3, D5, D6, D9
+
+### Features
+- ✅ MSP over serial
+- ✅ SPI/I2C sensor bus support
+- ⚠️ RX/VTX/OSD require manual serial function assignment
+- ❌ WiFi OTA / Bluetooth OTA / ESP-NOW
+
+---
+
+## STM32H7 (Nucleo H743ZI/H723ZG + H743VGT6 Custom, Experimental)
+
+**Overview**: Experimental STM32 scaffold target using Arduino STM32 core with HAL/LL integration. Build-validated on Nucleo H743ZI, Nucleo H723ZG (STM32H723ZGT6), and STM32H743VGT6 via custom PlatformIO board (`boards/stm32h743vgt6.json`).
+
+### Serial Ports
+- **UART0**: board default serial object (`Serial`) for MSP
+- **UART1/UART2**: not assigned by default in scaffold config
+
+### Communication Buses
+- **SPI**: SCK=D13, MOSI=D11, MISO=D12, CS_GYRO=D10, CS_BARO=D4
+- **I2C**: SCL=D15, SDA=D14
+
+### Sensors
+- **Gyroscope**: SPI or I2C (board wiring dependent)
+- **Barometer**: SPI or I2C (board wiring dependent)
+- **ADC**: available via remap; default ADC pins are unassigned (`-1`)
+
+### Motor Outputs
+- **Motor/ESC pins**: D3, D5, D6, D9
+
+### Features
+- ✅ MSP over serial
+- ✅ SPI/I2C sensor bus support
+- ⚠️ RX/VTX/OSD require manual serial function assignment
+- ❌ WiFi OTA / Bluetooth OTA / ESP-NOW
 
 ## ESP32 (Classic)
 
@@ -418,6 +480,9 @@ Default buzzer pins are assigned only where the target header defines `ESPFC_BUZ
 ---
 
 ## Feature Comparison Table
+
+> [!NOTE]
+> STM32F7/STM32H7 are experimental scaffold targets and are intentionally excluded from this condensed matrix; see the dedicated STM32 sections above for current defaults and limitations.
 
 | Feature | ESP32 | ESP32-S2 | ESP32-S3 | ESP32-C3 | ESP8266 | RP2040 | RP2350 |
 |---|---|---|---|---|---|---|---|

@@ -6,6 +6,9 @@ Espressif modules have a built-in WiFi module that can be used for configuration
 
 ESP-FC supports firmware flashing over WiFi OTA on ESP boards with WiFi.
 
+> [!NOTE]
+> STM32F7/STM32H7 targets are currently wired-only in ESP-FC (no WiFi/Bluetooth/ESP-NOW stack).
+
 CLI parameters:
 ```
 set wifi_ota 1

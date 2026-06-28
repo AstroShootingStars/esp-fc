@@ -1,6 +1,6 @@
 # ESP-FC wiring examples and PIN mapping
 
-ESP32 MCUs allows to remap pins, so the wiring is not final and you can remap intputs and outputs to your needs. To change pin function go to the CLI and use `get pin` command to check current assignment. For example, to set first output to pin 1 use command
+Most ESP-FC targets allow pin remapping, so wiring is not final and you can remap inputs/outputs to your needs. To change pin function go to the CLI and use `get pin` command to check current assignment. For example, to set first output to pin 1 use command
 
 `set pin_output_0 1`
 
@@ -13,23 +13,25 @@ Tu unmap pin function use -1 as pin number
 
 ## Default I2C pin mapping for gyro modules
 
-| Module Pin | CLI Name         | ESP32 | ESP32-S3 |
-|------------|------------------|------:|---------:|
-| SCK/SCL    | `pin_i2c_scl`    | 22    | 10       |
-| SDA/SDI    | `pin_i2c_sda`    | 21    | 9        |
+| Module Pin | CLI Name         | ESP32 | ESP32-S3 | STM32F7/H7* |
+|------------|------------------|------:|---------:|------------:|
+| SCK/SCL    | `pin_i2c_scl`    | 22    | 10       | 15          |
+| SDA/SDI    | `pin_i2c_sda`    | 21    | 9        | 14          |
+
+`*` STM32 values follow current experimental Nucleo scaffold defaults.
 
 > [!NOTE]
 > I2C driver accepts only pins from 1 to 31
 
 ## Default SPI pin mapping gyro modules
 
-| Module Pin  | CLI Name         | ESP32 | ESP32-S3 |
-|-------------|------------------|------:|---------:|
-| SCK/SCL     | `pin_spi_0_sck`  | 18    | 12       |
-| SDA/SDI     | `pin_spi_0_mosi` | 23    | 11       |
-| SAO/SDO/ADO | `pin_spi_0_miso` | 19    | 13       |
-| NCS         | `pin_spi_cs_0`   |  5    |  8       |
-| CSB*        | `pin_spi_cs_1`   | 13    |  7       |
+| Module Pin  | CLI Name         | ESP32 | ESP32-S3 | STM32F7/H7* |
+|-------------|------------------|------:|---------:|------------:|
+| SCK/SCL     | `pin_spi_0_sck`  | 18    | 12       | 13          |
+| SDA/SDI     | `pin_spi_0_mosi` | 23    | 11       | 11          |
+| SAO/SDO/ADO | `pin_spi_0_miso` | 19    | 13       | 12          |
+| NCS         | `pin_spi_cs_0`   |  5    |  8       | 10          |
+| CSB*        | `pin_spi_cs_1`   | 13    |  7       |  4          |
 
 **Note:** `CSB` is required for barometer on 10-DOF MPU-9250 modules
 
@@ -38,12 +40,12 @@ Tu unmap pin function use -1 as pin number
 
 ## Default Servo/Motor output mapping
 
-| Motor | CLI name | ESP32 | ESP32-S2 | ESP32-S3 | ESP32-C3 | ESP8266 | RP2040/RP2350 |
-|------:|----------|------:|---------:|---------:|---------:|--------:|--------------:|
-| 1 | `pin_output_0` | 27 | 39 | 39 | 2 | 16 (D0) | 2 |
-| 2 | `pin_output_1` | 25 | 40 | 40 | 3 | 14 (D5) | 3 |
-| 3 | `pin_output_2` | 4 | 41 | 41 | 4 | 12 (D6) | 4 |
-| 4 | `pin_output_3` | 12 | 42 | 42 | 5 | 15 (D8) | 5 |
+| Motor | CLI name | ESP32 | ESP32-S2 | ESP32-S3 | ESP32-C3 | ESP8266 | RP2040/RP2350 | STM32F7/H7* |
+|------:|----------|------:|---------:|---------:|---------:|--------:|--------------:|------------:|
+| 1 | `pin_output_0` | 27 | 39 | 39 | 2 | 16 (D0) | 2 | 3 |
+| 2 | `pin_output_1` | 25 | 40 | 40 | 3 | 14 (D5) | 3 | 5 |
+| 3 | `pin_output_2` | 4 | 41 | 41 | 4 | 12 (D6) | 4 | 6 |
+| 4 | `pin_output_3` | 12 | 42 | 42 | 5 | 15 (D8) | 5 | 9 |
 
 > [!NOTE]
 > ESP32 and RP2040 targets expose `pin_output_4` to `pin_output_7`, but those extra slots default to `-1` (unmapped).
@@ -297,6 +299,7 @@ SmartAudio is the default VTX control protocol. Connect the VTX control wire to 
 | ESP32-C3 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART0 | 21 | 20 | USB remains the default Betaflight/MSP port |
 | ESP8266 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART1 | 2 (D4) | -1 | TX-only default, suitable for SmartAudio |
 | RP2040/RP2350 | `SERIAL_FUNCTION_VTX_SMARTAUDIO` on UART0 | 0 | 1 | USB remains the default Betaflight/MSP port |
+| STM32F7/H7 | Not assigned by default | -1 | -1 | Experimental single-UART scaffold; assign manually if needed |
 
 ## Default Uart/Serial pin mapping
 
@@ -330,6 +333,7 @@ When `vbat_source` or `ibat_source` is set to `ADC`, firmware now auto-selects a
 | ESP32-C3 | GPIO0 | GPIO1 | Both are available ADC defaults |
 | ESP8266 | GPIO17 (A0) | Not available by default | Single ADC channel target |
 | RP2040 / RP2350 | GPIO26 | GPIO27 | Optional fallback can use GPIO28 |
+| STM32F7 / STM32H7 | Not assigned by default | Not assigned by default | ADC pins are available but unset in scaffold defaults |
 
 ### Auto-fallback Pin Selection by Target
 
@@ -343,6 +347,7 @@ If a configured ADC pin is invalid/conflicting, firmware picks a non-conflicting
 | ESP32-C3 | 0, 1 |
 | ESP8266 | 17 |
 | RP2040 / RP2350 | 26, 27, 28 |
+| STM32F7 / STM32H7 | none (configure manually) |
 
 > [!NOTE]
 > On ESP32, fallback selection intentionally stays on ADC1-capable pins to avoid ADC2 conflicts with WiFi.
@@ -515,7 +520,7 @@ Altitude hold uses a barometer to maintain constant altitude automatically.
 
 | Module | Interface | I2C Address | Board Support | Notes |
 |---|---|---|---|---|
-| BMP180 | I2C | 0x77 | ESP32, S2, S3, C3, ESP8266 | Older; 0.5 m accuracy |
+| BMP180 | I2C | 0x77 | ESP32, S2, S3, C3, ESP8266, STM32F7/H7 | Older; 0.5 m accuracy |
 | BMP280 | I2C/SPI | 0x76, 0x77 | All boards | Common; 1 m accuracy |
 | BME280 | I2C/SPI | 0x76, 0x77 | All boards | BMP280 + humidity; recommended |
 | MS5611 | I2C/SPI | 0x77 | All boards | High-precision; 0.1 m accuracy |
@@ -595,7 +600,7 @@ Landing assist automatically reduces throttle to zero when drone detects landing
 | Module | Type | Range | Interface | Board Support | Notes |
 |---|---|---|---|---|---|
 | HC-SR04 | Ultrasonic | 2–400 cm | PWM (GPIO) | All | Budget-friendly; 1 Hz update |
-| VL53L0X | ToF Laser | 5–200 cm | I2C | ESP32, S2, S3, C3, ESP8266 | Accurate; 50 Hz update |
+| VL53L0X | ToF Laser | 5–200 cm | I2C | ESP32, S2, S3, C3, ESP8266, STM32F7/H7 | Accurate; 50 Hz update |
 | TFMINI | ToF Laser | 0.3–12 m | UART/I2C | All | Industrial-grade; 100 Hz |
 | JSN-SR04T | Waterproof Sonar | 2–600 cm | PWM/UART | All | Weather-resistant |
 

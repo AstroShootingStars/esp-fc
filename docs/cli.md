@@ -187,7 +187,7 @@ Note that you don't have to enter all values, you can ommit last values if they 
 
 ### Pin functions
 
-For complete pin assignments for all boards (ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP8266, RP2040), see [Board Reference — Pin Assignments](boards.md).
+For complete pin assignments for all boards (ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP8266, RP2040, RP2350, STM32F7, STM32H7), see [Board Reference — Pin Assignments](boards.md).
 
 Default pin assignments for ESP32-S3 is listed below
 ```

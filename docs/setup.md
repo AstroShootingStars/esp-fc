@@ -24,6 +24,7 @@ Board behavior:
 
 - `RP2040/RP2350`: bootloader mode enters USB UF2 bootloader (`RPI-RP2` mass storage), matching Configurator flash expectations for RP targets.
 - `ESP32/ESP32-S2/ESP32-S3/ESP32-C3/ESP8266`: bootloader request is accepted and the board reboots; enter ROM flashing mode with normal board-specific boot procedure (BOOT/IO0 straps, USB/JTAG ROM downloader, etc.).
+- `STM32F7/STM32H7`: reboot request is accepted; for flashing use STM32 upload flow (typically STLink/DFU from PlatformIO or IDE tooling).
 
 Configurator workflow:
 
@@ -55,6 +56,8 @@ Most flight controller features are available through the **Betaflight Configura
 | **ESP32-C3** | BFC GUI (Ports, I2C Sensors only, Motors, PID tabs) | WiFi config (soft-serial), pin remapping, I2C-only sensors |
 | **ESP8266** | BFC GUI (Ports, I2C Sensors, Motors, PID tabs) | I2C-only sensors, pin remapping (tight RAM) |
 | **RP2040** | BFC GUI + USB (best via USB CDC) | Pin remapping, rangefinder/opflow config, no WiFi |
+| **STM32F7** | BFC GUI + UART/STLink workflow | Experimental scaffold setup, serial role remap, pin remap |
+| **STM32H7** (H743ZI/H723ZG/H743VGT6) | BFC GUI + UART/STLink workflow | Experimental scaffold setup, serial role remap, pin remap |
 
 **See [Configuration Methods in Board Reference](boards.md#configuration-methods-gui-vs-cli) for detailed feature tables.**
 
@@ -78,6 +81,8 @@ Use this when wiring analog voltage/current sensors and calibrating values for t
 | ESP32-C3 | 0 | 1 |
 | ESP8266 | 17 (A0) | not available by default |
 | RP2040 / RP2350 | 26 | 27 |
+| STM32F7 | not assigned by default | not assigned by default |
+| STM32H7 | not assigned by default | not assigned by default |
 
 > [!NOTE]
 > Firmware now auto-selects a safe ADC fallback if your configured ADC pin is missing/conflicting. If no safe pin exists, that source is disabled.
@@ -228,6 +233,8 @@ This behavior helps keep all boards configurable from Betaflight without serial-
 | ESP8266 | UART0 | Yes | Yes | No | Limited: prefer UART1 TX-only OSD targets or remapped pins |
 | RP2040 | USB CDC, UART0 | No | No | No | Yes, use free UART pins |
 | RP2350 | USB CDC, UART0 | No | No | No | Yes, use free UART pins |
+| STM32F7 | UART0 (`Serial`) | No | No | No | Limited: assign manually on available serial resources |
+| STM32H7 | UART0 (`Serial`) | No | No | No | Limited: assign manually on available serial resources |
 
 Notes:
 
@@ -278,9 +285,60 @@ set serial_0 1 115200 0
 set serial_1 64 115200 0
 ```
 
+**STM32F7 / STM32H7** (single UART scaffold, MSP on UART0):
+```
+set serial_0 1 115200 0
+```
+
 Serial function codes: `1=MSP`, `2=GPS`, `64=RX_SERIAL`, `65536=frsky_osd (external OSD)`, `65537=MSP+OSD`.
 
 After applying these, go to Betaflight **Ports** tab to verify the allocations and adjust if needed.
+
+## STM32 (Experimental) First-Power Checklist
+
+Use this sequence for initial STM32F7/STM32H7 bring-up.
+
+STM32H7 scaffold builds are validated for `nucleo_h743zi`, `nucleo_h723zg` (STM32H723ZGT6), and `stm32h743vg` using custom board definition `boards/stm32h743vgt6.json`.
+
+1. Build firmware for your target:
+```
+py -m platformio run -e stm32f7
+# or
+py -m platformio run -e stm32h7
+# or
+py -m platformio run -e stm32h723
+# or
+py -m platformio run -e stm32h743vg
+```
+
+2. Flash via STLink (or your configured STM32 upload method):
+```
+py -m platformio run -e stm32f7 -t upload
+# or
+py -m platformio run -e stm32h7 -t upload
+# or
+py -m platformio run -e stm32h723 -t upload
+# or
+py -m platformio run -e stm32h743vg -t upload
+```
+
+3. Connect Betaflight Configurator to the STM32 MSP serial port (default scaffold: UART0 / `Serial`, 115200).
+
+4. In CLI, verify baseline runtime state:
+```
+version
+status
+get pin
+```
+
+5. Verify sensor detection in Setup/Sensors tab and ensure board orientation/gyro movement is correct.
+
+6. Verify motor outputs in Motors tab **without propellers** first.
+
+7. If using RX/GPS/VTX/OSD on STM32, assign serial functions manually in CLI (experimental scaffold uses minimal default serial allocation).
+
+> [!IMPORTANT]
+> STM32F7/H7 support is currently experimental. Use conservative loop rates initially (for example 1 kHz) and increase only after validating CPU load and sensor stability.
 
 ## Gyro calibration
 

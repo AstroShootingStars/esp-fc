@@ -1,6 +1,6 @@
 # WEMOS D1 MINI pinout
 
-**Before wiring any board:** Check [Board Reference](boards.md) for your target's serial ports, I2C/SPI pins, sensor support, and available features. This page shows ESP8266 pinout as an example; see the Board Reference for other targets (ESP32 variants, RP2040).
+**Before wiring any board:** Check [Board Reference](boards.md) for your target's serial ports, I2C/SPI pins, sensor support, and available features. This page shows ESP8266 pinout as an example; see the Board Reference for other targets (ESP32 variants, RP2040/RP2350, STM32F7, STM32H7).
 
 For quick per-target feature and serial-port availability, see [Board capability matrix](setup.md#board-capability-matrix).
 
