@@ -427,6 +427,63 @@ After this, apply obstacle behavior settings via MSP2 custom config messages:
 - `MSP2_ESPFC_OBSTACLE_AVOIDANCE_CONFIG (0x1F0D)`
 - `MSP2_ESPFC_SET_OBSTACLE_AVOIDANCE_CONFIG (0x1F0E)`
 
+### Obstacle avoidance implementation (current behavior)
+
+Obstacle avoidance is front-rangefinder based and runs automatically in the control loop.
+
+Activation conditions:
+- `obstacleAvoidance.enabled` must be set (via MSP2 custom config)
+- front rangefinder must be detected and present
+- craft must be armed
+- current flight mode must be allowed by obstacle config (`enableInAcro`, `enableInAngle`, `enableInHorizon`, `enableInAltHold`)
+
+Distance handling:
+- front distance is read in mm, converted to cm, then filtered
+- if distance is above `maxAvoidanceDistance`, avoidance is considered inactive
+- if distance is below `avoidanceDistance`, warning avoidance is active
+- if distance is below `minSafeDistance`, danger state forces strongest throttle cut
+
+Current output action:
+- active avoidance currently scales **throttle output only**
+- mode `0` (slow down): applies `slowdownPercent`
+- mode `1` (stop): applies `stopPercent`
+- mode `2` (bypass): currently still applies throttle slowdown; axis-bypass steering is not yet applied in controller outputs
+- mode `3` (auto): computes throttle factor from distance ratio
+
+Operational note:
+- obstacle avoidance does not currently inject direct roll/pitch/yaw steering corrections around objects; it is implemented as obstacle-aware thrust limiting.
+
+### Landing assist implementation (current behavior)
+
+Landing assist runs automatically in controller logic and is designed to smooth descent and auto-disarm after confirmed touchdown.
+
+Activation conditions:
+- `landing_assist_enabled = 1`
+- landing assist readiness requires accelerometer availability
+- craft must be armed
+- landing intent must be present:
+  - low-throttle intent (`throttle <= min_check + landing_assist_thr_margin`), or
+  - failsafe landing phase
+
+What it does:
+- applies descent-rate limiting correction to thrust when descent is too fast
+- evaluates touchdown candidates from available sensors:
+  - baro-based height + vario thresholds
+  - GPS down/ground speed thresholds (if GPS is active and fixed)
+  - optical-flow low-motion thresholds with quality gating
+  - separate hand-catch path using flow + vario + altitude window
+- touchdown confirmation logic:
+  - normal case: at least 2 sensor votes (`baro`, `gps`, `flow`), or
+  - fallback: baro-only when GPS and flow are unavailable, or
+  - hand-catch condition
+- when touchdown stays confirmed:
+  - ramps thrust down by `landing_assist_ramp`
+  - after `landing_assist_hold_ms`, disarms with throttle-timeout reason
+
+CLI tuning path:
+- full landing-assist parameter set is exposed in CLI (`landing_assist_*`)
+- presets (`landing_indoor`, `landing_outdoor`, `landing_freestyle`) provide practical starting points
+
 #### Altitude-hold tuning starter profile
 
 ```bash
