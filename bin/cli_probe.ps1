@@ -11,12 +11,12 @@ if([string]::IsNullOrWhiteSpace($Port)) {
     Select-Object -First 1
 
   if(-not $p) {
-    throw 'No RP2040 serial port detected (VID_2E8A).'
+    throw 'No RP-family serial port detected (VID_2E8A).'
   }
 
   $Port = ([regex]::Match($p.FriendlyName, 'COM\d+')).Value
   if([string]::IsNullOrWhiteSpace($Port)) {
-    throw 'Could not parse COM port name from RP2040 device.'
+    throw 'Could not parse COM port name from RP-family device.'
   }
 }
 

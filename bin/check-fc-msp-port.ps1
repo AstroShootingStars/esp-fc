@@ -172,11 +172,11 @@ function Confirm-Ready {
 
 $present = @(Get-PresentPorts)
 if($present.Count -eq 0) {
-  Write-Host 'No matching RP2040 serial ports are currently present.' -ForegroundColor Yellow
+  Write-Host 'No matching RP-family serial ports are currently present (VID_2E8A).' -ForegroundColor Yellow
   exit 1
 }
 
-Write-Host 'Present RP2040 ports:' -ForegroundColor Cyan
+Write-Host 'Present RP-family ports (VID_2E8A):' -ForegroundColor Cyan
 $present | Sort-Object Com | Format-Table Com,BusDesc,FriendlyName -AutoSize
 
 if($WaitForTinyUsb) {
