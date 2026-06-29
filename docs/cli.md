@@ -11,6 +11,35 @@
 
 **To access CLI**: Open Betaflight Configurator → **CLI tab** (or press Ctrl+L) → Type commands below.
 
+## Windows CMD Quick Start
+
+If you prefer running CLI commands from Windows Command Prompt, use the helper script at `bin/cli_send.ps1`.
+
+Open CMD and run:
+
+```bat
+cd /d "C:\Users\rahul\OneDrive\Documents\Esp32 Drone\esp-fc"
+powershell -ExecutionPolicy Bypass -File .\bin\cli_send.ps1 -Port COM4 -Baud 115200 -Commands @('status','mode_debug')
+```
+
+Notes:
+- Close Betaflight Configurator first, otherwise COM port access will fail.
+- Use the board COM port (example above uses `COM4`).
+- CLI values that are boolean are safest as numeric values (`0` or `1`).
+
+Common Windows CMD examples:
+
+```bat
+:: Read one parameter
+powershell -ExecutionPolicy Bypass -File .\bin\cli_send.ps1 -Port COM4 -Baud 115200 -Commands @('get output_motor_protocol')
+
+:: Set brushed motor protocol and save
+powershell -ExecutionPolicy Bypass -File .\bin\cli_send.ps1 -Port COM4 -Baud 115200 -Commands @('set output_motor_protocol BRUSHED','set output_motor_async 1','save')
+
+:: Arming diagnostics snapshot
+powershell -ExecutionPolicy Bypass -File .\bin\cli_send.ps1 -Port COM4 -Baud 115200 -Commands @('status','mode_debug','get failsafe','get arming_small_angle')
+```
+
 ---
 
 ## Help

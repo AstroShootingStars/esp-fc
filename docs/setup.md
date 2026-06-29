@@ -62,6 +62,109 @@ Most flight controller features are available through the **Betaflight Configura
 
 **See [Configuration Methods in Board Reference](boards.md#configuration-methods-gui-vs-cli) for detailed feature tables.**
 
+## Full Erase, Build, and Flash Commands (Per Board)
+
+Use these PlatformIO commands from project root for each board environment.
+
+General notes:
+1. Replace `COM4` with your actual upload port.
+2. ESP targets support full erase with `-t erase -t upload`.
+3. RP2040/RP2350 and STM32 targets typically use UF2/STLink flows where PlatformIO `erase` target is not used; use build + upload.
+
+### ESP32 / ESP8266 targets (full erase + flash)
+
+```bat
+:: ESP32
+py -m platformio run -e esp32
+py -m platformio run -e esp32 --upload-port COM4 -t erase -t upload
+
+:: ESP32-S2
+py -m platformio run -e esp32s2
+py -m platformio run -e esp32s2 --upload-port COM4 -t erase -t upload
+
+:: ESP32-S3 (lolin_s3_mini)
+py -m platformio run -e esp32s3
+py -m platformio run -e esp32s3 --upload-port COM4 -t erase -t upload
+
+:: ESP32-S3 DevKitC
+py -m platformio run -e esp32s3_devkitc
+py -m platformio run -e esp32s3_devkitc --upload-port COM4 -t erase -t upload
+
+:: ESP32-S3 WROOM
+py -m platformio run -e esp32s3_wroom
+py -m platformio run -e esp32s3_wroom --upload-port COM4 -t erase -t upload
+
+:: ESP32-S3 N8R8
+py -m platformio run -e esp32s3_n8r8
+py -m platformio run -e esp32s3_n8r8 --upload-port COM4 -t erase -t upload
+
+:: ESP32-S3 N8R16
+py -m platformio run -e esp32s3_n8r16
+py -m platformio run -e esp32s3_n8r16 --upload-port COM4 -t erase -t upload
+
+:: ESP32-C3
+py -m platformio run -e esp32c3
+py -m platformio run -e esp32c3 --upload-port COM4 -t erase -t upload
+
+:: ESP8266
+py -m platformio run -e esp8266
+py -m platformio run -e esp8266 --upload-port COM4 -t erase -t upload
+```
+
+### RP2040 / RP2350 targets (build + upload)
+
+```bat
+:: RP2040
+py -m platformio run -e rp2040
+py -m platformio run -e rp2040 -t upload
+
+:: RP2350
+py -m platformio run -e rp2350
+py -m platformio run -e rp2350 -t upload
+
+:: RP2350B
+py -m platformio run -e rp2350b
+py -m platformio run -e rp2350b -t upload
+
+:: RP2350B (overclock)
+py -m platformio run -e rp2350b_oc
+py -m platformio run -e rp2350b_oc -t upload
+
+:: RP2350B RISC-V
+py -m platformio run -e rp2350b_riscv
+py -m platformio run -e rp2350b_riscv -t upload
+
+:: RP2350B RISC-V (overclock)
+py -m platformio run -e rp2350b_riscv_oc
+py -m platformio run -e rp2350b_riscv_oc -t upload
+```
+
+### STM32 targets (build + flash via STLink)
+
+```bat
+:: STM32F7
+py -m platformio run -e stm32f7
+py -m platformio run -e stm32f7 -t upload
+
+:: STM32H7 (Nucleo H743ZI)
+py -m platformio run -e stm32h7
+py -m platformio run -e stm32h7 -t upload
+
+:: STM32H723
+py -m platformio run -e stm32h723
+py -m platformio run -e stm32h723 -t upload
+
+:: STM32H743VG (custom board json)
+py -m platformio run -e stm32h743vg
+py -m platformio run -e stm32h743vg -t upload
+```
+
+If your workflow is always erase+upload for ESP, this pattern works for all ESP environments:
+
+```bat
+py -m platformio run -e <env> --upload-port COM4 -t erase -t upload
+```
+
 ## Configure wiring
 
 Go to the `CLI` tab and type `get pin`. This command will show what pins are associated to specified functions. If you wiring is diferrent, you can make some adjustments here. For more details, see [Pin Functions CLI Reference](/docs/cli.md#pin-functions)
