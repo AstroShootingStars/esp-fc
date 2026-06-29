@@ -33,6 +33,26 @@ def _pick_port():
     if not ports:
         return None
 
+    pioenv = _normalize(env.get("PIOENV", ""))
+
+    # For RP targets, only consider Raspberry Pi VID devices.
+    # Never fall back to unrelated USB-UART bridges (e.g. CH340 on COM3).
+    if pioenv.startswith("RP2040") or pioenv.startswith("RP2350"):
+        preferred = [
+            (0x2E8A, 0x000A),
+            (0x2E8A, None),
+        ]
+        for vid, pid in preferred:
+            for p in ports:
+                p_vid = getattr(p, "vid", None)
+                p_pid = getattr(p, "pid", None)
+                if p_vid != vid:
+                    continue
+                if pid is not None and p_pid != pid:
+                    continue
+                return p.device
+        return None
+
     # Prefer native ESP USB first, then CH340 bridge as fallback.
     preferred = [
         (0x303A, 0x1001),

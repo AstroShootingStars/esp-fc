@@ -18,7 +18,7 @@
 #define ESPFC_SERIAL_0_DEV_T SerialUART
 #define ESPFC_SERIAL_0_TX 0
 #define ESPFC_SERIAL_0_RX 1
-#define ESPFC_SERIAL_0_FN (SERIAL_FUNCTION_MSP)
+#define ESPFC_SERIAL_0_FN (SERIAL_FUNCTION_VTX_SMARTAUDIO)
 #define ESPFC_SERIAL_0_BAUD (SERIAL_SPEED_115200)
 #define ESPFC_SERIAL_0_BBAUD (SERIAL_SPEED_NONE)
 
@@ -33,12 +33,16 @@
 
 #define ESPFC_SERIAL_USB
 #define ESPFC_SERIAL_USB_DEV Serial
+#if defined(USE_TINYUSB)
+#define ESPFC_SERIAL_USB_DEV_T Adafruit_USBD_CDC
+#else
 #define ESPFC_SERIAL_USB_DEV_T SerialUSB
+#endif
 #define ESPFC_SERIAL_USB_FN (SERIAL_FUNCTION_MSP)
 
 #define ESPFC_SERIAL_REMAP_PINS
 #define SERIAL_TX_FIFO_SIZE 256
-#define ESPFC_SERIAL_DEBUG_PORT SERIAL_USB
+#define ESPFC_SERIAL_DEBUG_PORT SERIAL_UART_0
 
 #define ESPFC_SPI_0
 #define ESPFC_SPI_0_DEV SPI1
@@ -124,9 +128,12 @@ inline int targetSerialInit(T& dev, const SerialDeviceConfig& conf)
 }
 
 template<>
-inline int targetSerialInit(SerialUSB& dev, const SerialDeviceConfig& conf)
+inline int targetSerialInit(ESPFC_SERIAL_USB_DEV_T& dev, const SerialDeviceConfig& conf)
 {
   dev.begin(conf.baud);
+#if !defined(USE_TINYUSB)
+  dev.ignoreFlowControl(true);
+#endif
   //while(!dev) delay(10);
   return 1;
 }

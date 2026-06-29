@@ -1,5 +1,5 @@
 param(
-  [string]$VidPid = 'VID_303A&PID_1001',
+  [string]$VidPid = 'VID_2E8A&PID_',
   [int]$Baud = 115200,
   [int]$Attempts = 8,
   [int]$ReadyChecks = 3,
@@ -172,11 +172,11 @@ function Confirm-Ready {
 
 $present = @(Get-PresentPorts)
 if($present.Count -eq 0) {
-  Write-Host 'No matching ESP32-S3 serial ports are currently present.' -ForegroundColor Yellow
+  Write-Host 'No matching RP2040 serial ports are currently present.' -ForegroundColor Yellow
   exit 1
 }
 
-Write-Host 'Present ESP32-S3 ports:' -ForegroundColor Cyan
+Write-Host 'Present RP2040 ports:' -ForegroundColor Cyan
 $present | Sort-Object Com | Format-Table Com,BusDesc,FriendlyName -AutoSize
 
 if($WaitForTinyUsb) {

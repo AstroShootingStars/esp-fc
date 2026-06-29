@@ -220,6 +220,13 @@ int SerialManager::begin()
       _model.logger.info().logln(F("UART USB fallback MSP"));
     }
   }
+
+  // Prefer USB MSP for startup handshake when available.
+  // This reduces first-connect races in Configurator on USB-native targets (RP/ESP32-Sx/C3).
+  if(_model.state.serial[SERIAL_USB].stream && (_model.config.serial[SERIAL_USB].functionMask & SERIAL_FUNCTION_MSP))
+  {
+    g_startupMspPort = SERIAL_USB;
+  }
 #endif
 
 #ifdef ESPFC_SERIAL_SOFT_0_WIFI
@@ -233,6 +240,21 @@ int FAST_CODE_ATTR SerialManager::update()
 {
   const uint32_t nowMs = millis();
   bool startupMspPriority = !g_mspSeen && g_mspInitMs && (uint32_t)(nowMs - g_mspInitMs) <= USB_STARTUP_PRIORITY_MS;
+
+#ifdef ESPFC_SERIAL_USB
+  // Runtime preference: when USB has pending bytes, service it first.
+  // This improves Configurator handshake reliability on USB-native targets.
+  if(_model.state.serial[SERIAL_USB].stream
+    && (_model.config.serial[SERIAL_USB].functionMask & SERIAL_FUNCTION_MSP)
+    && _model.state.serial[SERIAL_USB].stream->available())
+  {
+    _current = SERIAL_USB;
+    SerialPortState& usbState = _model.state.serial[SERIAL_USB];
+    processMsp(usbState);
+    next();
+    return 1;
+  }
+#endif
 
   if(startupMspPriority)
   {

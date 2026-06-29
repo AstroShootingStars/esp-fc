@@ -163,7 +163,7 @@ inline void SerialDeviceAdapter<SerialUART>::updateBaudRate(int baud)
 }
 
 template<>
-inline void SerialDeviceAdapter<SerialUSB>::updateBaudRate(int baud) {}
+inline void SerialDeviceAdapter<ESPFC_SERIAL_USB_DEV_T>::updateBaudRate(int baud) {}
 #endif
 
 }

@@ -1,9 +1,26 @@
 param(
-  [string]$Port = 'COM4',
+  [string]$Port = '',
   [int]$Baud = 115200
 )
 
 $ErrorActionPreference = 'Stop'
+
+if([string]::IsNullOrWhiteSpace($Port)) {
+  $p = Get-PnpDevice -Class Ports -PresentOnly |
+    Where-Object { $_.InstanceId -match 'VID_2E8A&PID_' } |
+    Select-Object -First 1
+
+  if(-not $p) {
+    throw 'No RP2040 serial port detected (VID_2E8A).'
+  }
+
+  $Port = ([regex]::Match($p.FriendlyName, 'COM\d+')).Value
+  if([string]::IsNullOrWhiteSpace($Port)) {
+    throw 'Could not parse COM port name from RP2040 device.'
+  }
+}
+
+Write-Output ("Using port {0} @ {1}" -f $Port, $Baud)
 
 function Read-All {
   param(
@@ -44,13 +61,25 @@ try {
   Start-Sleep -Milliseconds 150
   $status = Read-All -Serial $sp -Loops 14
 
-  $sp.Write("mode_debug`r`n")
-  Start-Sleep -Milliseconds 150
-  $modeDebug = Read-All -Serial $sp -Loops 20
+  if($sp.IsOpen) {
+    $sp.Write("mode_debug`r`n")
+    Start-Sleep -Milliseconds 150
+    $modeDebug = Read-All -Serial $sp -Loops 20
+  } else {
+    $modeDebug = 'PORT_CLOSED_BEFORE_MODE_DEBUG'
+  }
 
-  $sp.Write("exit`r`n")
-  Start-Sleep -Milliseconds 120
-  $exit = Read-All -Serial $sp -Loops 6
+  if($sp.IsOpen) {
+    $sp.Write("exit`r`n")
+    Start-Sleep -Milliseconds 120
+    $exit = Read-All -Serial $sp -Loops 6
+  } else {
+    $exit = 'PORT_CLOSED_BEFORE_EXIT'
+  }
+}
+catch {
+  Write-Output ("CLI probe failed on {0}: {1}" -f $Port, $_.Exception.Message)
+  throw
 }
 finally {
   if($sp.IsOpen) { $sp.Close() }
